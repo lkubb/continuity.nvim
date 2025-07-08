@@ -1,6 +1,9 @@
 local config = require("resession.config")
 local M = {}
 
+local seeded
+local uuid_v4_template = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx"
+
 ---@param opt string
 ---@return string
 local function get_option_scope(opt)
@@ -175,6 +178,48 @@ M.event = function(event)
     vim.api.nvim_exec_autocmds("User", { pattern = event, modeline = false })
   end
   vim.schedule(emit_event)
+end
+
+M.generate_uuid = function()
+  if not seeded then
+    math.randomseed(os.time())
+    seeded = true
+  end
+  local uuid = string.gsub(uuid_v4_template, "[xy]", function(c)
+    local r = math.random()
+    local v = c == "x" and math.floor(r * 0x10) or (math.floor(r * 0x4) + 8)
+    return string.format("%x", v)
+  end)
+  return uuid
+end
+
+local function list_untitled_buffers()
+  local res = {}
+  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.api.nvim_buf_get_name(buf) == "" then
+      table.insert(res, { buf = buf, uuid = vim.b[buf].resession_uuid })
+    end
+  end
+  return res
+end
+
+M.ensure_buf = function(name, uuid)
+  local bufnr
+  if name ~= "" then
+    bufnr = vim.fn.bufadd(name)
+  else
+    for _, buf in ipairs(list_untitled_buffers()) do
+      if buf.uuid == uuid then
+        bufnr = buf.buf
+        break
+      end
+      if not bufnr then
+        bufnr = vim.fn.bufadd("")
+      end
+    end
+  end
+  vim.b[bufnr].resession_uuid = vim.b[bufnr].resession_uuid or uuid or M.generate_uuid()
+  return bufnr
 end
 
 return M

@@ -43,6 +43,12 @@ local default_config = {
   extensions = {
     quickfix = {},
   },
+  -- Configuration for plenary.log
+  log = {
+    level = "warn",
+    use_console = "async",
+    use_file = true,
+  },
 }
 
 local autosave_timer

@@ -34,6 +34,7 @@ M.get_win_info = function(tabnr, winid, current_win)
   end
   win = vim.tbl_extend("error", win, {
     bufname = vim.api.nvim_buf_get_name(bufnr),
+    bufuuid = vim.b[bufnr].resession_uuid,
     current = winid == current_win,
     cursor = vim.api.nvim_win_get_cursor(winid),
     width = vim.api.nvim_win_get_width(winid),
@@ -122,6 +123,7 @@ end
 ---@param layout table
 ---@param scale_factor number[] Scaling factor for [width, height]
 local function set_winlayout_data(layout, scale_factor, visit_data)
+  local log = require("resession.log")
   local type = layout[1]
   if type == "leaf" then
     local win = layout[2]
@@ -143,12 +145,21 @@ local function set_winlayout_data(layout, scale_factor, visit_data)
         end
       end
     else
-      local bufnr = vim.fn.bufadd(win.bufname)
+      local bufnr = util.ensure_buf(win.bufname, win.bufuuid)
+      log.fmt_debug("Loading buffer %s (uuid: %s) in win %s", win.bufname, win.bufuuid, win.winid)
       vim.api.nvim_win_set_buf(win.winid, bufnr)
       -- After setting the buffer into the window, manually set the filetype to trigger syntax highlighting
+      log.fmt_trace("Triggering filetype from winlayout for buf %s", bufnr)
       vim.o.eventignore = ""
       vim.bo[bufnr].filetype = vim.bo[bufnr].filetype
       vim.o.eventignore = "all"
+      -- Save the last position of the cursor in case buf_load plugins
+      -- change the buffer text and request restoration
+      local temp_pos_table = vim.b[bufnr].resession_last_win_pos or {}
+      temp_pos_table[tostring(win.winid)] = win.cursor
+      vim.b[bufnr].resession_last_win_pos = temp_pos_table
+      -- We don't need to restore last cursor position on buffer load
+      -- because the triggered :edit command keeps it
       vim.b[bufnr].resession_restore_last_pos = nil
     end
     util.restore_win_options(win.winid, win.options)
@@ -156,7 +167,24 @@ local function set_winlayout_data(layout, scale_factor, visit_data)
     vim.api.nvim_win_set_width(win.winid, scale(win.width, width_scale))
     local height_scale = vim.wo.winfixheight and 1 or scale_factor[2]
     vim.api.nvim_win_set_height(win.winid, scale(win.height, height_scale))
-    pcall(vim.api.nvim_win_set_cursor, win.winid, win.cursor)
+    log.fmt_debug(
+      "Restoring cursor for bufnr %s (uuid: %s) in win %s to %s",
+      win.bufname,
+      win.bufuuid,
+      win.winid,
+      win.cursor
+    )
+    local ok, err = pcall(vim.api.nvim_win_set_cursor, win.winid, win.cursor)
+    if not ok then
+      log.fmt_error(
+        "Failed restoring cursor for bufnr %s (uuid: %s) in win %s to %s: %s",
+        win.bufname,
+        win.bufuuid,
+        win.winid,
+        win.cursor,
+        err
+      )
+    end
     if win.current then
       visit_data.winid = win.winid
     end
