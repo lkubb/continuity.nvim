@@ -109,6 +109,15 @@ M.delete_file = function(filename)
   end
 end
 
+---@param dirname string
+---@param opts {recursive?: boolean}
+M.rmdir = function(dirname, opts)
+  if M.exists(dirname) then
+    opts = opts or {}
+    return vim.fs.rm(dirname, opts)
+  end
+end
+
 ---@param filename string
 ---@param obj any
 M.write_json_file = function(filename, obj)

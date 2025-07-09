@@ -405,8 +405,11 @@ local function reload()
   load(autosession)
 end
 
+---@class continuity.ResetOpts: resession.DeleteOpts
+---@field reload? boolean Restart a new autosession after reset. Defaults to true.
+
 -- Reset the currently active autosession. Rerender the autosession name and begin anew.
----@param opts? resession.DeleteOpts Parameters for resession.delete
+---@param opts? continuity.ResetOpts Options to influence execution (TODO docs)
 local function reset(opts)
   if not _current_session then
     return
@@ -418,6 +421,25 @@ local function reset(opts)
   require("resession").detach()
   require("resession").delete(_last_session.session, opts)
   close_everything()
+  if opts.reload ~= false then
+    reload()
+  end
+end
+
+---@param opts {cwd?: string}? Specify the project to reset. If unspecified, resets current project, if available.
+local function reset_project(opts)
+  opts = opts or {}
+  local ctx = render_autosession_context(opts.cwd or util.cwd())
+  if not ctx then
+    return
+  end
+  if _current_session and ctx.dir == _current_session.dir then
+    reset({ reload = false })
+  end
+  require("resession.files").rmdir(
+    require("resession.util").get_session_dir(ctx.dir),
+    { recursive = true }
+  )
   reload()
 end
 
@@ -517,6 +539,29 @@ local function initial_load()
     group = init_group,
     nested = true, -- otherwise the focused buffer is not initialized correctly
   })
+
+  vim.api.nvim_create_user_command("Continuity", function(params)
+    require("continuity.cli").run(params)
+  end, {
+    force = true,
+    nargs = "*",
+    range = true,
+    complete = function(arglead, line)
+      return require("continuity.cli").complete(arglead, line)
+    end,
+  })
+end
+
+--- List autosessions associated with this project.
+---@param opts {cwd?: string}? Specify the project to list. If unspecified, lists current project, if available.
+---@return string[]
+local function list(opts)
+  opts = opts or {}
+  local ctx = render_autosession_context(opts.cwd or util.cwd())
+  if ctx then
+    return require("resession").list({ dir = ctx.dir })
+  end
+  return {}
 end
 
 ---@param opts Continuity.UserConfig?
@@ -532,6 +577,8 @@ end
 return {
   save = save,
   reset = reset,
+  reset_project = reset_project,
+  list = list,
   reload = reload,
   load = load,
   detach = detach,
