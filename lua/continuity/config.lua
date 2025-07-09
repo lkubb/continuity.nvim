@@ -44,7 +44,10 @@ M.log = nil
 ---@param opts Continuity.UserConfig?
 function M.setup(opts)
   M.opts = vim.tbl_deep_extend("force", {}, defaults, opts or {})
-  M.log = require("plenary.log").new(vim.tbl_deep_extend("force", { plugin = "continuity" }, M.opts.log), false)
+  M.log = require("plenary.log").new(
+    vim.tbl_deep_extend("force", { plugin = "continuity" }, M.opts.log),
+    false
+  )
 end
 
 return M

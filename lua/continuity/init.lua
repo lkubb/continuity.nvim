@@ -94,11 +94,19 @@ local function save_modified_buffers()
   if not _current_session then
     return
   end
-  local state_dir =
-    vim.fs.joinpath(vim.fn.stdpath("data"), _current_session.dir, _current_session.session, "modified_buffers")
+  local state_dir = vim.fs.joinpath(
+    vim.fn.stdpath("data"),
+    _current_session.dir,
+    _current_session.session,
+    "modified_buffers"
+  )
   local modified_buffers = util.list_modified_buffers()
   local active_buf = vim.api.nvim_get_current_buf()
-  config.log.fmt_debug("Saving modified buffers in state dir (%s)\nModified buffers: %s", state_dir, modified_buffers)
+  config.log.fmt_debug(
+    "Saving modified buffers in state dir (%s)\nModified buffers: %s",
+    state_dir,
+    modified_buffers
+  )
   local ok, err = pcall(vim.fn.mkdir, state_dir, "p")
   if not ok then
     config.log.fmt_error("Error making state dir: %s", err)
@@ -110,7 +118,13 @@ local function save_modified_buffers()
     if not vim.b[buf.buf]._continuity_unrestored then
       local save_file = vim.fs.joinpath(state_dir, buf.uuid .. ".buffer")
       local undo_file = vim.fs.joinpath(state_dir, buf.uuid .. ".undo")
-      config.log.fmt_debug("Saving modified buffer %s (%s) named '%s' to %s", buf.buf, buf.uuid, buf.name, save_file)
+      config.log.fmt_debug(
+        "Saving modified buffer %s (%s) named '%s' to %s",
+        buf.buf,
+        buf.uuid,
+        buf.name,
+        save_file
+      )
       -- TODO: use nvim_buf_call
       vim.api.nvim_set_current_buf(buf.buf)
       vim.cmd.w({ save_file, bang = true })
@@ -154,7 +168,8 @@ local function restore_modified_buffer(buf, data)
   end
   if not vim.b[buf].resession_uuid then
     config.log.fmt_error(
-      "Not restoring '%s' because it does not have an internal uuid set." .. " This is likely an internal error.",
+      "Not restoring '%s' because it does not have an internal uuid set."
+        .. " This is likely an internal error.",
       vim.api.nvim_buf_get_name(buf) or "unnamed buffer"
     )
     return
@@ -181,8 +196,12 @@ local function restore_modified_buffer(buf, data)
     --   local swapinfo = vim.fn.swapinfo(vim.b[buf]._resession_swapfile)
     -- end
   end
-  local state_dir =
-    vim.fs.joinpath(vim.fn.stdpath("data"), _effective_session.dir, _effective_session.session, "modified_buffers")
+  local state_dir = vim.fs.joinpath(
+    vim.fn.stdpath("data"),
+    _effective_session.dir,
+    _effective_session.session,
+    "modified_buffers"
+  )
   local save_file = vim.fs.joinpath(state_dir, vim.b[buf].resession_uuid .. ".buffer")
   if not require("resession.files").exists(save_file) then
     vim.b[buf]._continuity_needs_restore = nil
@@ -195,7 +214,11 @@ local function restore_modified_buffer(buf, data)
   config.log.fmt_debug("Loading buffer changes for buffer %s", vim.b[buf].resession_uuid, buf)
   local ok, file_lines = pcall(util.read_lines, save_file)
   if ok then
-    config.log.fmt_debug("Loaded buffer changes for buffer %s, loading into %s", vim.b[buf].resession_uuid, buf)
+    config.log.fmt_debug(
+      "Loaded buffer changes for buffer %s, loading into %s",
+      vim.b[buf].resession_uuid,
+      buf
+    )
     vim.api.nvim_buf_set_lines(buf, 0, -1, true, file_lines)
     -- Don't read the undo file if we're inside a recovered buffer, which should ensure the
     -- user can undo the recovery overwrite. This should be handled better.
@@ -203,15 +226,27 @@ local function restore_modified_buffer(buf, data)
       local undo_file = vim.fs.joinpath(state_dir, vim.b.resession_uuid .. ".undo")
       config.log.fmt_debug("Loading undo history for buffer %s", vim.b[buf].resession_uuid)
       local err
-      ok, err = pcall(vim.api.nvim_cmd, { cmd = "rundo", args = { undo_file }, mods = { silent = true } }, {})
+      ok, err = pcall(
+        vim.api.nvim_cmd,
+        { cmd = "rundo", args = { undo_file }, mods = { silent = true } },
+        {}
+      )
       if not ok then
-        config.log.fmt_error("Failed loading undo history for buffer %s: %s", vim.b[buf].resession_uuid, err)
+        config.log.fmt_error(
+          "Failed loading undo history for buffer %s: %s",
+          vim.b[buf].resession_uuid,
+          err
+        )
       end
     end
     vim.b[buf]._continuity_needs_restore = nil
     vim.b[buf].resession_restore_last_pos = true
   end
-  config.log.fmt_trace("Finished restoring modified buffer %s into %s", vim.b[buf].resession_uuid, buf)
+  config.log.fmt_trace(
+    "Finished restoring modified buffer %s into %s",
+    vim.b[buf].resession_uuid,
+    buf
+  )
 end
 
 -- Restores modified buffers before they are re-:edit-ed for
@@ -220,15 +255,23 @@ local function restore_modified_buffers(data)
   if not _loading_session or not data then
     return
   end
-  local state_dir =
-    vim.fs.joinpath(vim.fn.stdpath("data"), _loading_session.dir, _loading_session.session, "modified_buffers")
+  local state_dir = vim.fs.joinpath(
+    vim.fn.stdpath("data"),
+    _loading_session.dir,
+    _loading_session.session,
+    "modified_buffers"
+  )
   local bufs = util.list_buffers()
   config.log.fmt_debug("Restoring modified buffers before reload: %s", data)
   for _, modified in pairs(data) do
     local save_file = vim.fs.joinpath(state_dir, tostring(modified.uuid) .. ".buffer")
     local ok, file_lines = pcall(util.read_lines, save_file)
     if not ok then
-      config.log.fmt_warn("Not restoring %s because its save file could not be read: %s", modified.uuid, file_lines)
+      config.log.fmt_warn(
+        "Not restoring %s because its save file could not be read: %s",
+        modified.uuid,
+        file_lines
+      )
     else
       local new_buf
       for _, buf in ipairs(bufs) do
@@ -281,7 +324,12 @@ local function load(autosession, opts)
     return
   end
   -- No need to detach, it's handled by the pre-load hook.
-  opts = vim.tbl_extend("force", { attach = true, reset = true }, opts or {}, { silence_errors = false })
+  opts = vim.tbl_extend(
+    "force",
+    { attach = true, reset = true },
+    opts or {},
+    { silence_errors = false }
+  )
   opts.dir = autosession.dir
   local resession = require("resession")
 

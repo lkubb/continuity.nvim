@@ -510,10 +510,10 @@ local function restore_buf_cursor(bufnr, win_only)
     )
   else
     log.fmt_debug("Restoring cursor for buffer %s in window %s at %s", bufnr, current_win, last_pos)
-    vim.notify(
-      "current cursor pre-restore: "
-        .. vim.inspect(vim.api.nvim_win_call(current_win, vim.fn.winsaveview))
-    )
+    -- log.lazy_debug(function()
+    --   return "current cursor pre-restore: "
+    --     .. vim.inspect(vim.api.nvim_win_call(current_win, vim.fn.winsaveview))
+    -- end)
     local ok, msg = pcall(vim.api.nvim_win_set_cursor, current_win, last_pos)
     if not ok then
       log.fmt_error(
