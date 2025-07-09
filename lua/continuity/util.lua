@@ -159,6 +159,7 @@ function M.list_modified_buffers()
   for _, buf in ipairs(vim.api.nvim_list_bufs()) do
     if
       vim.b[buf]._continuity_needs_restore
+      or vim.b[buf]._continuity_modified_but_saved
       or vim.api.nvim_get_option_value("modified", { buf = buf })
     then
       table.insert(res, {

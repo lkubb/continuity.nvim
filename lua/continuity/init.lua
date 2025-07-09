@@ -79,6 +79,26 @@ local function save(opts)
   require("resession").save(_current_session.session, opts)
 end
 
+local function close_everything()
+  local is_floating_win = vim.api.nvim_win_get_config(0).relative ~= ""
+  if is_floating_win then
+    -- Go to the first window, which will not be floating
+    vim.cmd.wincmd({ args = { "w" }, count = 1 })
+  end
+
+  local scratch = vim.api.nvim_create_buf(false, true)
+  vim.bo[scratch].bufhidden = "wipe"
+  vim.api.nvim_win_set_buf(0, scratch)
+  vim.bo[scratch].buftype = ""
+  for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.bo[bufnr].buflisted then
+      vim.api.nvim_buf_delete(bufnr, { force = true })
+    end
+  end
+  vim.cmd.tabonly({ mods = { emsg_silent = true } })
+  vim.cmd.only({ mods = { emsg_silent = true } })
+end
+
 local function clean_remembered_buffers(state_dir, data)
   local remembered_buffers = vim.fn.glob(vim.fs.joinpath(state_dir, "*.buffer"), true, true)
   for _, sav in ipairs(remembered_buffers) do
@@ -91,7 +111,9 @@ local function clean_remembered_buffers(state_dir, data)
 end
 
 local function save_modified_buffers()
+  config.log.fmt_trace("save_modified_buffers called")
   if not _current_session then
+    config.log.fmt_trace("save_modified_buffers skipped: no current session")
     return
   end
   local state_dir = vim.fs.joinpath(
@@ -134,6 +156,10 @@ local function save_modified_buffers()
       if not ok then
         config.log.fmt_debug("Error setting nomodified: ", err)
       end
+      -- Cannot schedule this because the buffer might be gone then.
+      -- Also, don't need to schedule because events which would reset this immediately
+      -- (looking at you, BufWritePost) are ignored in this function.
+      vim.b[buf.buf]._continuity_modified_but_saved = true
     else
       config.log.fmt_debug(
         "Modified buf %s (%s) named '%s' has not been restored yet, skipping save",
@@ -356,8 +382,48 @@ local function load(autosession, opts)
   end
 end
 
+--- If an autosession is active, save it and detach. Then try to start a new one.
+local function reload()
+  -- Don't call save here, it's done in a pre_load hook which calls detach().
+  -- If we call it twice, the second call would see the buffer as unmodified
+  -- if we didn't set vim.b._continuity_modified_but_saved on it. Either way, it's superfluous.
+  config.log.fmt_trace("Reloading. Current session: %s", _current_session)
+  local effective_cwd = util.cwd()
+  local autosession = render_autosession_context(effective_cwd)
+  config.log.fmt_trace(
+    "Reloading. Current session:\n%s\nNew session:\n%s",
+    _current_session or "nil",
+    autosession or "nil"
+  )
+  if not autosession then
+    if _current_session then
+      detach()
+      close_everything()
+    end
+    return
+  end
+  load(autosession)
+end
+
+-- Reset the currently active autosession. Rerender the autosession name and begin anew.
+---@param opts? resession.DeleteOpts Parameters for resession.delete
+local function reset(opts)
+  if not _current_session then
+    return
+  end
+  local _last_session
+  _last_session, _current_session = _current_session, nil
+  opts = vim.tbl_extend("force", { notify = false }, opts or {})
+  opts.dir = _last_session.dir
+  require("resession").detach()
+  require("resession").delete(_last_session.session, opts)
+  close_everything()
+  reload()
+end
+
 -- When Continuity determines it should run, create hooks to ensure the session is saved automatically.
-local function create_hooks()
+---@param cwd string The cwd of the initially loaded autosession
+local function create_hooks(cwd)
   local autosave_group = vim.api.nvim_create_augroup("ContinuityHooks", { clear = true })
   local resession = require("resession")
 
@@ -365,6 +431,7 @@ local function create_hooks()
   -- Might also be related to nested autocmds.
   -- This is not idempotent though, issue?
   resession.add_hook("pre_load", function()
+    config.log.fmt_trace("Continuity: Detaching on pre_load")
     detach()
   end)
 
@@ -374,10 +441,37 @@ local function create_hooks()
   -- Ensure we save the current autosession before leaving neovim
   vim.api.nvim_create_autocmd("VimLeavePre", {
     callback = function()
+      config.log.fmt_trace("Continuity: Saving on VimLeavePre")
       save()
     end,
     group = autosave_group,
   })
+
+  -- Ensure we don't consider saved buffers modified still
+  vim.api.nvim_create_autocmd("BufWritePost", {
+    callback = function(ev)
+      vim.b[ev.buf]._continuity_modified_but_saved = nil
+    end,
+    group = autosave_group,
+  })
+
+  local last_head = vim.g.gitsigns_head or util.current_branch(cwd)
+
+  vim.defer_fn(function()
+    -- Integrate with GitSigns to watch current branch, but not immediately after start
+    -- to avoid race conditions
+    vim.api.nvim_create_autocmd("User", {
+      pattern = "GitSignsUpdate",
+      callback = function()
+        last_head = last_head or vim.g.gitsigns_head or util.current_branch(util.cwd())
+        if last_head ~= vim.g.gitsigns_head then
+          reload()
+        end
+        last_head = vim.g.gitsigns_head or util.current_branch(util.cwd())
+      end,
+      group = autosave_group,
+    })
+  end, 500)
 end
 
 local function initial_load()
@@ -417,7 +511,7 @@ local function initial_load()
       if not autosession then
         return
       end
-      create_hooks()
+      create_hooks(effective_cwd)
       load(autosession)
     end,
     group = init_group,
@@ -437,6 +531,8 @@ end
 
 return {
   save = save,
+  reset = reset,
+  reload = reload,
   load = load,
   detach = detach,
   setup = setup,
