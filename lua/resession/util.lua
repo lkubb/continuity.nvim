@@ -7,6 +7,7 @@ local uuid_v4_template = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx"
 ---@param opt string
 ---@return string
 local function get_option_scope(opt)
+  ---@diagnostic disable-next-line: unnecessary-if
   -- This only exists in nvim-0.9
   if vim.api.nvim_get_option_info2 then
     return vim.api.nvim_get_option_info2(opt, {}).scope
@@ -25,6 +26,7 @@ M.get_extension = function(name)
   end
   local has_ext, ext = pcall(require, string.format("resession.extensions.%s", name))
   if has_ext then
+    ---@cast ext resession.Extension
     if ext.config then
       local ok, err = pcall(ext.config, config.extensions[name])
       if not ok then
@@ -35,8 +37,10 @@ M.get_extension = function(name)
         return
       end
     end
+    ---@diagnostic disable-next-line: undefined-field
     if ext.on_load then
       -- TODO maybe add some deprecation notice in the future
+      ---@diagnostic disable-next-line: undefined-field
       ext.on_post_load = ext.on_load
     end
     ext_cache[name] = ext
@@ -81,6 +85,7 @@ M.save_buf_options = function(bufnr)
   return ret
 end
 
+---@diagnostic disable-next-line: unused
 ---@param bufnr integer
 ---@return table<string, any>
 M.save_tab_options = function(bufnr)
@@ -165,6 +170,7 @@ M.shorten_path = function(path)
   end
   local idx, chars = string.find(path, home)
   if idx == 1 then
+    ---@cast chars integer
     return "~" .. string.sub(path, idx + chars)
   else
     return path
@@ -180,6 +186,8 @@ M.event = function(event)
   vim.schedule(emit_event)
 end
 
+--- Generate a UUID for a buffer.
+---@return string
 M.generate_uuid = function()
   if not seeded then
     math.randomseed(os.time())
@@ -193,6 +201,8 @@ M.generate_uuid = function()
   return uuid
 end
 
+--- List all untitled buffers using bufnr and uuid.
+---@return {buf: number, uuid: string?}[]
 local function list_untitled_buffers()
   local res = {}
   for _, buf in ipairs(vim.api.nvim_list_bufs()) do
@@ -203,6 +213,12 @@ local function list_untitled_buffers()
   return res
 end
 
+--- Ensure a specific buffer exists (represented by file path or UUID) and has any UUID.
+--- File path: Ensure the file is loaded into a buffer and has any UUID. If it does not, assign it the specified one.
+--- Unnamed: Ensure an unnamed buffer with the specified UUID exists. If not, create a new unnamed buffer and assign the specified UUID.
+---@param name string The path of the buffer or the empty string ("") for unnamed buffers.
+---@param uuid? string The UUID the buffer should have.
+---@return integer The buffer ID of the specified buffer.
 M.ensure_buf = function(name, uuid)
   local bufnr
   if name ~= "" then

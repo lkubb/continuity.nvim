@@ -1,5 +1,6 @@
 local M = {}
 
+---@diagnostic disable-next-line: deprecated
 local uv = vim.uv or vim.loop
 
 ---@type boolean

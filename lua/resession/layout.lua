@@ -164,8 +164,10 @@ local function set_winlayout_data(layout, scale_factor, visit_data)
     end
     util.restore_win_options(win.winid, win.options)
     local width_scale = vim.wo.winfixwidth and 1 or scale_factor[1]
+    ---@cast width_scale number
     vim.api.nvim_win_set_width(win.winid, scale(win.width, width_scale))
     local height_scale = vim.wo.winfixheight and 1 or scale_factor[2]
+    ---@cast height_scale number
     vim.api.nvim_win_set_height(win.winid, scale(win.height, height_scale))
     log.fmt_debug(
       "Restoring cursor for bufnr %s (uuid: %s) in win %s to %s",

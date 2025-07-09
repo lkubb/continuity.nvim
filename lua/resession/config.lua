@@ -1,5 +1,6 @@
 local M = {}
 
+---@diagnostic disable-next-line: deprecated
 local uv = vim.uv or vim.loop
 
 local default_config = {
@@ -29,6 +30,7 @@ local default_config = {
   -- Custom logic for determining if the buffer should be included
   buf_filter = require("resession").default_buf_filter,
   -- Custom logic for determining if a buffer should be included in a tab-scoped session
+  ---@diagnostic disable-next-line: unused
   tab_buf_filter = function(tabpage, bufnr)
     return true
   end,

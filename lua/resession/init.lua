@@ -1,8 +1,6 @@
 local M = {}
 
--- TODO remove after https://github.com/folke/neodev.nvim/pull/163 lands
----@diagnostic disable: inject-field
-
+---@diagnostic disable-next-line: deprecated
 local uv = vim.uv or vim.loop
 
 local has_setup = false
@@ -16,7 +14,7 @@ local hooks = setmetatable({
   pre_save = {},
   post_save = {},
 }, {
-  __index = function(t, key)
+  __index = function(_, key)
     error(string.format('Unrecognized hook "%s"', key))
   end,
 })
@@ -117,10 +115,10 @@ M.list = function(opts)
   if not files.exists(session_dir) then
     return {}
   end
-  ---@diagnostic disable-next-line: param-type-mismatch
+  ---@diagnostic disable-next-line: param-type-mismatch, param-type-not-match
   local fd = assert(uv.fs_opendir(session_dir, nil, 256))
   ---@diagnostic disable-next-line: cast-type-mismatch
-  ---@cast fd luv_dir_t
+  ---@cast fd uv.luv_dir_t
   local entries = uv.fs_readdir(fd)
   local ret = {}
   while entries do
@@ -583,6 +581,9 @@ local function finish_restore_buf(bufnr, buf, data)
   end
 end
 
+---@type fun(bufnr: integer, buf: table<string,any>, data: table<string,any>)
+local plan_restore
+
 -- Restore a single buffer. This tries to to trigger necessary autocommands that have been
 -- suppressed during session loading, then provides plugins the possibility to alter
 -- the buffer in some way (e.g. recover unsaved changes) and finally initiates recovery
@@ -639,9 +640,11 @@ local function restore_buf(bufnr, buf, data)
     nested = true,
     group = restore_group,
   })
+
   local current_win = vim.api.nvim_get_current_win()
   -- Schedule this to avoid issues with triggering nested AutoCmds (unsure if necessary)
   vim.schedule(function()
+    -- Ensure the active window has not changed, otherwise reschedule restoration
     if vim.api.nvim_get_current_win() ~= current_win then
       log.fmt_debug("Failed :edit-ing buf %s: Active window changed, rescheduling", bufnr)
       for auname, autocmd in pairs({ swapcheck = swapcheck, finish_restore = finish_restore }) do
@@ -650,33 +653,7 @@ local function restore_buf(bufnr, buf, data)
           log.fmt_debug("Failed deleting %s autocmd for buf %s: %s", auname, bufnr, res)
         end
       end
-      vim.b[bufnr]._resession_need_edit = true
-      vim.api.nvim_create_autocmd("BufEnter", {
-        desc = "Resession: complete setup of restored buffer (1a)",
-        callback = function(args)
-          if vim.g._resession_verylazy_done then
-            log.fmt_trace("BufEnter triggered, VeryLazy done for: %s", args)
-            restore_buf(args.buf, buf, data)
-          else
-            log.fmt_trace("BufEnter triggered, waiting for VeryLazy for: %s", args)
-            vim.api.nvim_create_autocmd("User", {
-              pattern = "VeryLazy",
-              desc = "Resession: complete setup of restored buffer (1b)",
-              callback = function()
-                log.fmt_trace("BufEnter triggered, VeryLazy done for: %s", args)
-                restore_buf(args.buf, buf, data)
-              end,
-              once = true,
-              nested = true,
-              group = restore_group,
-            })
-          end
-        end,
-        buffer = bufnr,
-        once = true,
-        nested = true,
-        group = restore_group,
-      })
+      plan_restore(bufnr, buf, data)
       return
     end
     local ok, err = pcall(vim.cmd.edit, { mods = { emsg_silent = true } })
@@ -684,6 +661,40 @@ local function restore_buf(bufnr, buf, data)
       log.fmt_error("Failed :edit-ing buf %s: %s", bufnr, err)
     end
   end)
+end
+
+---@param bufnr integer The number of the buffer to schedule restoration for
+---@param buf table<string,any> The saved buffer metadata of the buffer to schedule restoration for
+---@param data table<string,any> The extension data saved to the session
+function plan_restore(bufnr, buf, data)
+  local log = require("resession.log")
+  vim.b[bufnr]._resession_need_edit = true
+  vim.api.nvim_create_autocmd("BufEnter", {
+    desc = "Resession: complete setup of restored buffer (1a)",
+    callback = function(args)
+      if vim.g._resession_verylazy_done then
+        log.fmt_trace("BufEnter triggered for buf %s, VeryLazy done for: %s", bufnr, args)
+        restore_buf(bufnr, buf, data)
+      else
+        log.fmt_trace("BufEnter triggered for buf %s, waiting for VeryLazy for: %s", bufnr, args)
+        vim.api.nvim_create_autocmd("User", {
+          pattern = "VeryLazy",
+          desc = "Resession: complete setup of restored buffer (1b)",
+          callback = function()
+            log.fmt_trace("BufEnter triggered, VeryLazy done for: %s", args)
+            restore_buf(bufnr, buf, data)
+          end,
+          once = true,
+          nested = true,
+          group = restore_group,
+        })
+      end
+    end,
+    buffer = bufnr,
+    once = true,
+    nested = true,
+    group = restore_group,
+  })
 end
 
 local _is_loading = false
@@ -812,34 +823,8 @@ M.load = function(name, opts)
 
     if buf.loaded then
       vim.fn.bufload(bufnr)
-      vim.b[bufnr]._resession_need_edit = true
       vim.b[bufnr].resession_restore_last_pos = true
-      vim.api.nvim_create_autocmd("BufEnter", {
-        desc = "Resession: complete setup of restored buffer (1a)",
-        callback = function(args)
-          if vim.g._resession_verylazy_done then
-            log.fmt_trace("BufEnter triggered, VeryLazy done for: %s", args)
-            restore_buf(args.buf, buf, data)
-          else
-            log.fmt_trace("BufEnter triggered, waiting for VeryLazy for: %s", args)
-            vim.api.nvim_create_autocmd("User", {
-              pattern = "VeryLazy",
-              desc = "Resession: complete setup of restored buffer (1b)",
-              callback = function()
-                log.fmt_trace("BufEnter triggered, VeryLazy done for: %s", args)
-                restore_buf(args.buf, buf, data)
-              end,
-              once = true,
-              nested = true,
-              group = restore_group,
-            })
-          end
-        end,
-        buffer = bufnr,
-        once = true,
-        nested = true,
-        group = restore_group,
-      })
+      plan_restore(bufnr, buf, data)
     end
     vim.b[bufnr].resession_last_buffer_pos = buf.last_pos
     util.restore_buf_options(bufnr, buf.options)

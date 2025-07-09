@@ -23,14 +23,17 @@ M.on_pre_load = function(data)
   vim.fn.setqflist(data)
 end
 
+---@diagnostic disable-next-line: unused
 M.is_win_supported = function(winid, bufnr)
   return vim.bo[bufnr].buftype == "quickfix"
 end
 
+---@diagnostic disable-next-line: unused
 M.save_win = function(winid)
   return {}
 end
 
+---@diagnostic disable-next-line: unused
 M.load_win = function(winid, config)
   vim.api.nvim_set_current_win(winid)
   vim.cmd("copen")
