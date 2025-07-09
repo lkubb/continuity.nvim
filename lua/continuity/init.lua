@@ -341,7 +341,11 @@ local function load(autosession, opts)
   _current_session = autosession
 
   if not ok then
-    vim.notify("error loading session: " .. err)
+    ---@cast err string
+    if not err:find("Could not find session", nil, true) then
+      vim.notify("Error loading session: " .. err, vim.log.levels.ERROR)
+      return
+    end
     -- TODO: Check if error message actually contains 'Could not find session',
     -- meaning we didn't fail for some other reason.
     --

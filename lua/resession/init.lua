@@ -497,7 +497,7 @@ local function restore_buf_cursor(bufnr, win_only)
   -- that is scrolled to via vim.lsp.util.show_document with focus=true. This would reset
   -- the wanted position to the last one instead, causing confusion.
   local _, cline, ccol = vim.fn.getcurpos(current_win)
-  if cline ~= 1 or ccol ~= 0 then
+  if (cline or 1) ~= 1 or (ccol or 0) ~= 0 then
     -- TODO: Consider adding the saved position one step ahead of the current
     -- position of the jumplist via vim.fn.getjumplist/vim.fn.setjumplist.
     log.fmt_debug(
