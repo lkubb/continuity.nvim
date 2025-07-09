@@ -755,6 +755,7 @@ M.load = function(name, opts)
   end
   local filename = util.get_session_file(name, opts.dir)
   local data = files.load_json_file(filename)
+  log.fmt_trace("Loading session %s. Data: %s", name, data or "nil")
   if not data then
     if not opts.silence_errors then
       error(string.format('Could not find session "%s"', name))
@@ -803,7 +804,7 @@ M.load = function(name, opts)
   }
   -- Special case for folke/lazy.nvim - we want to wait with :edit-ing a buffer
   -- until all plugins are done loading, otherwise some configs might not work as expected.
-  if vim.g.lazy_did_setup then
+  if vim.g.lazy_did_setup and not vim.g._resession_verylazy_done then
     vim.g._resession_verylazy_done = false
     vim.api.nvim_create_autocmd("User", {
       pattern = "VeryLazy",
