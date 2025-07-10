@@ -502,6 +502,25 @@ local function create_hooks(cwd)
       group = autosave_group,
     })
   end, 500)
+
+  vim.api.nvim_create_autocmd("DirChangedPre", {
+    pattern = "global",
+    callback = function()
+      -- Ensure we detach before the global cwd is changed, otherwise
+      -- Resession saves the new one in the current session instead.
+      detach()
+    end,
+    group = autosave_group,
+  })
+  vim.api.nvim_create_autocmd("DirChanged", {
+    pattern = "global",
+    callback = function()
+      if not _loading_session then
+        reload()
+      end
+    end,
+    group = autosave_group,
+  })
 end
 
 local function initial_load()
