@@ -1,15 +1,64 @@
 local M = {}
 
--- Run `git` commands.
+---@class Continuity.util.GitCmdOpts: vim.SystemOpts
+---@field ignore_error? boolean Don't raise errors when the command fails.
+---@field trim_empty_lines? boolean When splitting stdout, remove empty elements of the array. Defaults to false.
+---@field gitdir? string A gitdir path to pass to Git explicitly.
+---@field worktree? string A worktree path to pass to Git explicitly.
+
+--- Wrapper for vim.system for git commands. Raises errors by default.
+---@param cmd string[] The command to run
+---@param opts Continuity.util.GitCmdOpts? Modifiers for vim.system and additional ignore_errors option.
+---@return string[] stdout_lines
+---@return string? stderr
+---@return integer exitcode
+local function git_cmd(cmd, opts)
+  local sysopts = vim.tbl_extend("force", { text = true }, opts or {})
+  local gitcmd = {
+    "git",
+    "--no-pager",
+    "--literal-pathspecs",
+    "--no-optional-locks",
+    "-c",
+    "gc.auto=0",
+  }
+  for opt, param in pairs({ gitdir = "gitdir", worktree = "work-tree" }) do
+    if sysopts[opt] then
+      gitcmd = vim.list_extend(gitcmd, { ("--%s"):format(param), sysopts[opt] })
+    end
+  end
+  gitcmd = vim.list_extend(gitcmd, cmd)
+  local res = vim.system(gitcmd, sysopts):wait()
+  if res.code > 0 and sysopts.ignore_error ~= true then
+    error(
+      ("Failed running command (code: %d/signal: %d)!\nCommand: %s\nstderr: %s\nstdout: %s"):format(
+        res.code,
+        res.signal,
+        table.concat(cmd, " "),
+        res.stderr,
+        res.stdout
+      )
+    )
+  end
+  local lines =
+    vim.split(res.stdout or "", "\n", { plain = true, trimempty = sysopts.trim_empty_lines })
+  if sysopts.text and lines[#lines] == "" then
+    lines[#lines] = nil
+  end
+  return lines, res.stderr, res.code
+end
+
+-- Run `git` commands with varargs. Returns nil on error.
 ---@param cwd string The directory to run the command in.
 ---@param ... string The subcommand + options/params to run
+---@return string[]?
 local function git(cwd, ...)
-  local res = vim.system({ "git", ... }, { cwd = cwd }):wait()
-  if res.code > 0 then
+  local stdout, _, code = git_cmd({ ... }, { cwd = cwd, ignore_error = true, text = true })
+  if code > 0 then
     -- TODO: Logging, also fail completely if path is a git repo and we're here anyways
     return nil
   end
-  return res
+  return stdout
 end
 
 --- Get the effective process cwd.
@@ -37,8 +86,7 @@ end
 ---@param path string The path of the repository to retrieve the branches of
 ---@return string[]?
 function M.list_branches(path)
-  local res = git(path, "branch", "--list", "--format=%(refname:short)")
-  return res and vim.split(res.stdout, "\n", { trimempty = true, plain = true }) or nil
+  return git(path, "branch", "--list", "--format=%(refname:short)")
 end
 
 -- Get the checked out branch of a git repository.
@@ -46,7 +94,82 @@ end
 ---@return string?
 function M.current_branch(path)
   local res = git(path, "branch", "--show-current")
-  return res and vim.trim(res.stdout) or nil
+  if res and res[1] and res[1] ~= "" then
+    return res[1]
+  end
+
+  -- We might be in the process of an interactive rebase
+  local gitdir = git(path, "rev-parse", "--absolute-git-dir")
+  if not (gitdir and gitdir[1] and gitdir[1] ~= "") then
+    return
+  end
+  local f = require("resession.files")
+  for _, dir in ipairs({ "rebase-merge", "rebase-apply" }) do
+    local head_name_path = f.join(gitdir[1], dir, "head-name")
+    local short_name = f.read_file(head_name_path)
+    if short_name then
+      return vim.trim(short_name:gsub("^refs/heads/", ""))
+    end
+  end
+end
+
+---@param path? string Override CWD of the git process
+---@param gitdir? string Override GIT_DIR of the git process
+---@param worktree? string Override GIT_WORK_TREE of the git process
+---@return {toplevel?: string, gitdir?: string, branch?: string, default_branch?: string}?
+function M.git_info(path, gitdir, worktree)
+  local stdout, stderr, code = git_cmd({
+    "rev-parse",
+    "--show-toplevel", -- 1
+    "--absolute-git-dir", -- 2
+    "--abbrev-ref", -- 3
+    "HEAD",
+    "--abbrev-ref", -- 4
+    "origin/HEAD",
+  }, {
+    ignore_error = true,
+    text = true,
+    gitdir = gitdir,
+    worktree = worktree,
+    cwd = not worktree and path or nil,
+  })
+  -- ignore uninitialized repos
+  if
+    code > 0
+    and stderr
+    and (
+      stderr:match("fatal: ambiguous argument 'HEAD'")
+      or stderr:match("fatal: ambiguous argument 'origin/HEAD'")
+    )
+  then
+    code = 0
+  end
+  if code > 0 then
+    return
+  end
+  if #stdout < 3 then
+    -- We expect at least 3 lines, the 4th one misses if the 3rd one fails (abbrev-ref HEAD)
+    -- because we're in an empty repo. In this case, git just returns HEAD for the 3rd one.
+    return
+  end
+  local toplevel = stdout[1]
+  local gitdir_r = stdout[2]
+  -- This is not really the branch, but HEAD.
+  local branch = stdout[3]
+  if branch == "HEAD" and path then
+    -- No commits in this repo yet (or during rebase)
+    branch = M.current_branch(path)
+  end
+  local default_branch = stdout[4] and vim.trim(assert(stdout[4]):sub(8))
+  if not default_branch and path then
+    default_branch = M.default_branch(path)
+  end
+  return {
+    toplevel = toplevel,
+    gitdir = gitdir_r,
+    branch = branch,
+    default_branch = default_branch,
+  }
 end
 
 -- Get the "default branch" of a git repository.
@@ -56,7 +179,7 @@ end
 function M.default_branch(path)
   local res = git(path, "rev-parse", "--abbrev-ref", "origin/HEAD")
   if res then
-    return string.sub(vim.trim(res.stdout), 8)
+    return string.sub(assert(res[1]), 8)
   end
   local branches = M.list_branches(path) or {}
   if #branches == 1 then
@@ -75,8 +198,8 @@ end
 
 -- If `path` is part of a git repository, return the workspace root path, otherwise `path` itself
 ---@param path string The effective cwd of the current scope
----@return string
----@return boolean
+---@return string root The workspace root path or `path` itself
+---@return boolean is_repo Whether `path` is in a git repo
 function M.find_workspace_root(path)
   local root = vim.fs.root(path, ".git")
   if root then
@@ -106,8 +229,8 @@ function M.find_git_dir(path)
   if not res then
     return path
   end
-  local gitdir = vim.trim(res.stdout)
-  return select(1, M.find_workspace_root(gitdir))
+  local root = M.find_workspace_root(assert(res[1]))
+  return root
 end
 
 -- Return the sha256 digest of `data`.
