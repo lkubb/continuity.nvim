@@ -360,6 +360,7 @@ local function load(autosession, opts)
   local resession = require("resession")
 
   _loading_session = autosession
+  -- TODO: Use xpcall and error handler to show better stacktrace
   local ok, err = pcall(resession.load, autosession.session, opts)
   -- Only set current session after loading it to allow pre-load hook
   -- to function properly.
@@ -485,11 +486,18 @@ local function create_hooks(cwd)
     vim.api.nvim_create_autocmd("User", {
       pattern = "GitSignsUpdate",
       callback = function()
-        last_head = last_head or vim.g.gitsigns_head or util.current_branch(util.cwd())
-        if last_head ~= vim.g.gitsigns_head then
+        if not vim.g.gitsigns_head then
+          return
+        end
+        if (last_head or vim.g.gitsigns_head) ~= vim.g.gitsigns_head then
+          config.log.fmt_trace(
+            "Reloading project, switched from branch %s to branch %s",
+            last_head or "nil",
+            vim.g.gitsigns_head or "nil"
+          )
           reload()
         end
-        last_head = vim.g.gitsigns_head or util.current_branch(util.cwd())
+        last_head = vim.g.gitsigns_head
       end,
       group = autosave_group,
     })

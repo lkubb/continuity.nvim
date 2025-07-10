@@ -172,18 +172,18 @@ local function set_winlayout_data(layout, scale_factor, visit_data)
     log.fmt_debug(
       "Restoring cursor for bufnr %s (uuid: %s) in win %s to %s",
       win.bufname,
-      win.bufuuid,
-      win.winid,
-      win.cursor
+      win.bufuuid or 'nil',
+      win.winid or 'nil',
+      win.cursor or 'nil'
     )
     local ok, err = pcall(vim.api.nvim_win_set_cursor, win.winid, win.cursor)
     if not ok then
       log.fmt_error(
         "Failed restoring cursor for bufnr %s (uuid: %s) in win %s to %s: %s",
         win.bufname,
-        win.bufuuid,
-        win.winid,
-        win.cursor,
+        win.bufuuid or 'nil',
+        win.winid or 'nil',
+        win.cursor or 'nil',
         err
       )
     end
