@@ -496,17 +496,17 @@ local function restore_buf_cursor(bufnr, win_only)
   -- Ensure the cursor has not been moved already, e.g. when restoring a saved buffer
   -- that is scrolled to via vim.lsp.util.show_document with focus=true. This would reset
   -- the wanted position to the last one instead, causing confusion.
-  local _, cline, ccol = vim.fn.getcurpos(current_win)
-  if (cline or 1) ~= 1 or (ccol or 0) ~= 0 then
+  local cline, ccol = unpack(vim.api.nvim_win_get_cursor(current_win))
+  if cline ~= 1 or ccol ~= 0 then
     -- TODO: Consider adding the saved position one step ahead of the current
     -- position of the jumplist via vim.fn.getjumplist/vim.fn.setjumplist.
     log.fmt_debug(
       "Not restoring cursor for buffer %s in window %s at %s because it has already been moved to (%s|%s)",
       bufnr,
-      current_win,
+      current_win or "nil",
       last_pos,
-      cline,
-      ccol
+      cline or "nil",
+      ccol or "nil"
     )
   else
     log.fmt_debug("Restoring cursor for buffer %s in window %s at %s", bufnr, current_win, last_pos)
