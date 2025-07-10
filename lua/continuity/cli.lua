@@ -4,6 +4,7 @@ local M = {}
 local continuity = require("continuity")
 
 local funcs = {
+  info = continuity.info,
   list = continuity.list,
   load = continuity.load,
   reload = continuity.reload,

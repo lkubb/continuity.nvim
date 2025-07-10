@@ -565,7 +565,7 @@ end
 ---@return string[]
 local function list(opts)
   opts = opts or {}
-  local ctx = render_autosession_context(opts.cwd or util.cwd())
+  local ctx = render_autosession_context(opts.cwd or assert(util.cwd()))
   if ctx then
     return require("resession").list({ dir = ctx.dir })
   end
@@ -578,8 +578,15 @@ local function setup(opts)
   initial_load()
 end
 
-local function get_info()
-  return vim.deepcopy(_current_session or {})
+local function info()
+  local files = require("resession.files")
+  local rutil = require("resession.util")
+  return {
+    current_session = vim.deepcopy(_current_session or {}),
+    current_session_data = _current_session and files.load_json_file(
+      rutil.get_session_file(_current_session.session, _current_session.dir)
+    ),
+  }
 end
 
 return {
@@ -594,5 +601,5 @@ return {
   save_modified_buffers = save_modified_buffers,
   restore_modified_buffers = restore_modified_buffers,
   restore_modified_buffer = restore_modified_buffer,
-  get_info = get_info,
+  info = info,
 }
