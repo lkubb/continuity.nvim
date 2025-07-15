@@ -137,7 +137,11 @@ local function save_modified_buffers()
   local res = {}
   for _, buf in ipairs(modified_buffers) do
     -- Unrestored buffers should not overwrite the save file, but still be remembered
-    if not vim.b[buf.buf]._continuity_unrestored then
+    -- _continuity_unrestored are buffers that were not restored at all due to swapfile and being opened read-only
+    -- _continuity_needs_restore are buffers that were restored initially, but have never been entered since loading.
+    -- If we saved the latter, we would lose the undo history since it hasn't been loaded for them.
+    -- This at least affects unnamed buffers since we solely manage the history for them.
+    if not (vim.b[buf.buf]._continuity_unrestored or vim.b[buf.buf]._continuity_needs_restore) then
       local save_file = vim.fs.joinpath(state_dir, buf.uuid .. ".buffer")
       local undo_file = vim.fs.joinpath(state_dir, buf.uuid .. ".undo")
       config.log.fmt_debug(

@@ -607,6 +607,8 @@ local function restore_buf(bufnr, buf, data)
     -- The order is backwards then though, usually it's [Syntax] > Filetype > BufEnter
     -- now it's BufEnter > [Syntax] > Filetype. Issue?
     vim.bo[bufnr].filetype = vim.bo[bufnr].filetype
+    -- Don't forget to finish restoration since we don't trigger edit here (cursor, extensions)
+    finish_restore_buf(bufnr, buf, data)
     return
   end
   log.fmt_debug("Triggering :edit for %s", buf)
