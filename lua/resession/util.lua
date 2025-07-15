@@ -238,4 +238,40 @@ M.ensure_buf = function(name, uuid)
   return bufnr
 end
 
+function M.open_clean_tab()
+  -- Detect if we're already in a "clean" tab
+  -- (one window, and one empty scratch buffer)
+  if #vim.api.nvim_tabpage_list_wins(0) == 1 then
+    if vim.api.nvim_buf_get_name(0) == "" then
+      local lines = vim.api.nvim_buf_get_lines(0, -1, 2, false)
+      if vim.tbl_isempty(lines) then
+        vim.bo.buflisted = false
+        vim.bo.bufhidden = "wipe"
+        return
+      end
+    end
+  end
+  vim.cmd.tabnew()
+end
+
+function M.close_everything()
+  local is_floating_win = vim.api.nvim_win_get_config(0).relative ~= ""
+  if is_floating_win then
+    -- Go to the first window, which will not be floating
+    vim.cmd.wincmd({ args = { "w" }, count = 1 })
+  end
+
+  local scratch = vim.api.nvim_create_buf(false, true)
+  vim.bo[scratch].bufhidden = "wipe"
+  vim.api.nvim_win_set_buf(0, scratch)
+  vim.bo[scratch].buftype = ""
+  for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.bo[bufnr].buflisted then
+      vim.api.nvim_buf_delete(bufnr, { force = true })
+    end
+  end
+  vim.cmd.tabonly({ mods = { emsg_silent = true } })
+  vim.cmd.only({ mods = { emsg_silent = true } })
+end
+
 return M
