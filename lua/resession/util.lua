@@ -229,9 +229,9 @@ M.ensure_buf = function(name, uuid)
         bufnr = buf.buf
         break
       end
-      if not bufnr then
-        bufnr = vim.fn.bufadd("")
-      end
+    end
+    if not bufnr then
+      bufnr = vim.fn.bufadd("")
     end
   end
   vim.b[bufnr].resession_uuid = vim.b[bufnr].resession_uuid or uuid or M.generate_uuid()
