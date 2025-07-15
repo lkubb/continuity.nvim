@@ -22,7 +22,7 @@ local function git_cmd(cmd, opts)
     "-c",
     "gc.auto=0",
   }
-  for opt, param in pairs({ gitdir = "gitdir", worktree = "work-tree" }) do
+  for opt, param in pairs({ gitdir = "git-dir", worktree = "work-tree" }) do
     if sysopts[opt] then
       gitcmd = vim.list_extend(gitcmd, { ("--%s"):format(param), sysopts[opt] })
     end
