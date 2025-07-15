@@ -443,7 +443,7 @@ local function restore_buf_cursor(bufnr, win_only)
       "Trying to restore cursor for buf %s in win %s from saved win cursor pos: %s",
       bufnr,
       current_win,
-      last_pos
+      last_pos or "nil"
     )
     -- Cannot change individual fields, need to re-assign the whole table
     local temp_pos_table = vim.b[bufnr].resession_last_win_pos
@@ -867,11 +867,14 @@ M.load = function(name, opts)
     end
   end
 
-  -- curwin can be nil if we saved a session in a window with an unsupported buffer, in which case we will switch to
-  -- the last restored buffer.
+  -- curwin can be nil if we saved a session in a window with an unsupported buffer. If this was the only window in the active tabpage,
+  -- the user is confronted with an empty, unlisted buffer after loading the session. To avoid that situation,
+  -- we will switch to the last restored buffer. If the last restored tabpage has at least a single defined window,
+  -- we shouldn't do that though, it can result in unexpected behavior.
+  -- TODO: Remember and at least switch to active tabpage if there are multiple.
   if curwin then
     vim.api.nvim_set_current_win(curwin)
-  elseif last_bufnr then
+  elseif data.tabs[#data.tabs].wins == false and last_bufnr then
     vim.cmd("buffer " .. last_bufnr)
   end
 
