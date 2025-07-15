@@ -79,7 +79,7 @@ M.load_json_file = function(filepath)
 end
 
 ---@param dirname string
----@param perms? number
+---@param perms? integer
 M.mkdir = function(dirname, perms)
   if not perms then
     perms = 493 -- 0755

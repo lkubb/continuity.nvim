@@ -1,3 +1,4 @@
+---@type resession.Extension
 local M = {}
 
 ---Get the saved data for this extension

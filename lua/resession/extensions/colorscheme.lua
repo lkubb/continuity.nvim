@@ -1,3 +1,4 @@
+---@type resession.Extension
 local M = {}
 
 M.on_save = function()

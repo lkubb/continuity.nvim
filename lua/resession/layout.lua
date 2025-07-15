@@ -15,8 +15,10 @@ M.get_win_info = function(tabnr, winid, current_win)
   for ext_name in pairs(config.extensions) do
     local ext = util.get_extension(ext_name)
     if ext and ext.is_win_supported and ext.is_win_supported(winid, bufnr) then
+      ---@diagnostic disable-next-line: param-type-not-match
       local ok, extension_data = pcall(ext.save_win, winid)
       if ok then
+        ---@cast extension_data -string
         win.extension_data = extension_data
         win.extension = ext_name
         supported_by_ext = true
@@ -34,7 +36,9 @@ M.get_win_info = function(tabnr, winid, current_win)
   end
   win = vim.tbl_extend("error", win, {
     bufname = vim.api.nvim_buf_get_name(bufnr),
-    bufuuid = vim.b[bufnr].resession_uuid,
+    bufuuid = vim.b[
+      bufnr --[[@as integer]]
+    ].resession_uuid,
     current = winid == current_win,
     cursor = vim.api.nvim_win_get_cursor(winid),
     width = vim.api.nvim_win_get_width(winid),
@@ -133,6 +137,7 @@ local function set_winlayout_data(layout, scale_factor, visit_data)
       if ext then
         -- Re-enable autocmds so if the extensions rely on BufReadCmd it works
         vim.o.eventignore = ""
+        ---@diagnostic disable-next-line: param-type-not-match
         local ok, new_winid = pcall(ext.load_win, win.winid, win.extension_data)
         vim.o.eventignore = "all"
         if ok then
@@ -172,18 +177,18 @@ local function set_winlayout_data(layout, scale_factor, visit_data)
     log.fmt_debug(
       "Restoring cursor for bufnr %s (uuid: %s) in win %s to %s",
       win.bufname,
-      win.bufuuid or 'nil',
-      win.winid or 'nil',
-      win.cursor or 'nil'
+      win.bufuuid or "nil",
+      win.winid or "nil",
+      win.cursor or "nil"
     )
     local ok, err = pcall(vim.api.nvim_win_set_cursor, win.winid, win.cursor)
     if not ok then
       log.fmt_error(
         "Failed restoring cursor for bufnr %s (uuid: %s) in win %s to %s: %s",
         win.bufname,
-        win.bufuuid or 'nil',
-        win.winid or 'nil',
-        win.cursor or 'nil',
+        win.bufuuid or "nil",
+        win.winid or "nil",
+        win.cursor or "nil",
         err
       )
     end

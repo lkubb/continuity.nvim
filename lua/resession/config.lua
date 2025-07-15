@@ -53,6 +53,7 @@ local default_config = {
   },
 }
 
+---@type uv.uv_timer_t?
 local autosave_timer
 M.setup = function(config)
   local resession = require("resession")

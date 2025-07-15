@@ -4,7 +4,9 @@ local M = {}
 local uv = vim.uv or vim.loop
 
 local has_setup = false
+---@type table?
 local pending_config
+---@type string?
 local current_session
 local tab_sessions = {}
 local session_configs = {}
@@ -115,7 +117,7 @@ M.list = function(opts)
   if not files.exists(session_dir) then
     return {}
   end
-  ---@diagnostic disable-next-line: param-type-mismatch, param-type-not-match
+  ---@diagnostic disable-next-line: param-type-mismatch, param-type-not-match, unnecessary-assert
   local fd = assert(uv.fs_opendir(session_dir, nil, 256))
   ---@diagnostic disable-next-line: cast-type-mismatch
   ---@cast fd uv.luv_dir_t
@@ -839,6 +841,7 @@ M.load = function(name, opts)
     vim.g._resession_verylazy_done = true
   end
 
+  ---@type integer?
   local last_bufnr
   for _, buf in ipairs(data.buffers) do
     local bufnr = util.ensure_buf(buf.name, buf.uuid)
@@ -879,6 +882,7 @@ M.load = function(name, opts)
     vim.api.nvim_set_current_dir(data.global.cwd)
   end
 
+  ---@type integer?
   local curwin
   for i, tab in ipairs(data.tabs) do
     if i > 1 then

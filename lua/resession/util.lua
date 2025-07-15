@@ -202,7 +202,7 @@ M.generate_uuid = function()
 end
 
 --- List all untitled buffers using bufnr and uuid.
----@return {buf: number, uuid: string?}[]
+---@return {buf: integer, uuid: string?}[]
 local function list_untitled_buffers()
   local res = {}
   for _, buf in ipairs(vim.api.nvim_list_bufs()) do
