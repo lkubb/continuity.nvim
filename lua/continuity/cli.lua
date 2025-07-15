@@ -7,6 +7,9 @@ local continuity = require("continuity")
 local funcs = {
   detach = {
     func = continuity.detach,
+    kwargs = {
+      notify = { "true", "false" },
+    },
   },
   info = {
     func = continuity.info,
@@ -23,16 +26,17 @@ local funcs = {
   migrate_projects = {
     func = continuity.migrate_projects,
   },
-  -- load = {
-  --   func = continuity.load,
-  --   args = {
-  --     { complete = continuity.list },
-  --   },
-  --   kwargs = {
-  --     attach = { "true", "false" },
-  --     reset = { "true", "false", "auto" },
-  --   },
-  -- },
+  load = {
+    func = continuity.load,
+    args = {
+      -- This would need to complete directory paths
+      { complete = {}, required = true },
+    },
+    kwargs = {
+      attach = { "true", "false" },
+      reset = { "true", "false", "auto" },
+    },
+  },
   reload = {
     func = continuity.reload,
   },
@@ -88,7 +92,9 @@ local function parse_args(args, skip)
         acc.kwargs[param] = to_lua(val)
         return acc
       end
-      table.insert(acc.args, to_lua(v))
+      if v ~= "" then
+        table.insert(acc.args, to_lua(v))
+      end
       return acc
     end)
 end
@@ -96,6 +102,7 @@ end
 ---@return string[]
 M.complete = function(_, line)
   local words = vim.split(line, "%s+", { trimempty = true })
+  local current_arg_finished = line:sub(-1) == " "
   local n = #words
 
   ---@type string[]
@@ -108,6 +115,9 @@ M.complete = function(_, line)
       return matches
     end
     local parsed = parse_args(words, 2)
+    local required_arg_cnt = vim.iter(func.args or {}):fold(0, function(acc, v)
+      return acc + (v.required and 1 or 0)
+    end)
     if #vim.tbl_keys(parsed.kwargs) == 0 and #parsed.args < #(func.args or {}) then
       local completion = ((func.args or {})[#parsed.args + 1] or {}).complete or {}
       if type(completion) == "function" then
@@ -116,7 +126,13 @@ M.complete = function(_, line)
         matches = vim.list_extend(matches, completion)
       end
     end
-    if func.kwargs then
+    if
+      func.kwargs
+      and (
+        #parsed.args > required_arg_cnt
+        or #parsed.args == required_arg_cnt and current_arg_finished
+      )
+    then
       local possible_kwargs = vim.tbl_keys(func.kwargs)
       local parsed_kwargs = vim.tbl_keys(parsed.kwargs)
       for _, kwarg in

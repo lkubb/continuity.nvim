@@ -376,6 +376,7 @@ local function restore_modified_buffers(data)
 end
 
 ---Save the currently active autosession and stop autosaving it after.
+---Does not close anything after detaching.
 ---@param opts? resession.SaveOpts Parameters for resession.save
 local function detach(opts)
   if not _current_session then
@@ -691,7 +692,7 @@ local function start(cwd, opts)
 end
 
 ---Stop Continuity:
----1. If we're inside an active autosession, saves it, detaches and closes everything.
+---1. If we're inside an active autosession, save it and detaches. Does not close everything by default.
 ---2. In any case, stop monitoring for directory or branch changes.
 local function stop()
   stop_monitoring()
