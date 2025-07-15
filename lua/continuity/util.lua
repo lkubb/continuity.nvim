@@ -281,9 +281,8 @@ function M.list_modified_buffers()
   local res = {}
   for _, buf in ipairs(vim.api.nvim_list_bufs()) do
     if
-      vim.b[buf]._continuity_needs_restore
-      or vim.b[buf]._continuity_modified_but_saved
-      or vim.api.nvim_get_option_value("modified", { buf = buf })
+      vim.b[buf].resession_uuid -- Only list buffers that are known to resession. This funtion is called during save, a missing uuid means the buffer should not be saved at all
+      and (vim.b[buf]._continuity_needs_restore or vim.bo[buf].modified)
     then
       table.insert(res, {
         buf = buf,

@@ -262,8 +262,26 @@ local function save(name, opts, target_tabpage)
   end
   local current_tabpage = vim.api.nvim_get_current_tabpage()
   local tabpages = target_tabpage and { target_tabpage } or vim.api.nvim_list_tabpages()
+  -- When the cmd window (e.g. q:) is active, calling nvim_set_current_tabpage causes an error:
+  -- E11: Invalid in command-line window. Try to avoid that error, otherwise abort.
+  local skip_set_current = false
+  ---@diagnostic disable-next-line: unnecessary-if
+  if vim.fn.getcmdwintype() ~= "" then
+    if #tabpages > 1 or tabpages[1] ~= current_tabpage then
+      -- Setting the current tabpage fails when a cmd window is active.
+      -- Since we really only need to do it to save the single tab-scoped option (cmdheight),
+      -- warn about it, but resume anyways. This means we cannot assume the current tabpage anywhere,
+      -- including in extensions! Also, all tab pages will use cmdheight of the current one.
+      require("resession.log").warn(
+        "Command-line window is active. Cannot properly save sessions that contain more tab pages than the active one. At least the cmdheight option will be affected."
+      )
+    end
+    skip_set_current = true
+  end
   for _, tabpage in ipairs(tabpages) do
-    vim.api.nvim_set_current_tabpage(tabpage)
+    if not skip_set_current then
+      vim.api.nvim_set_current_tabpage(tabpage)
+    end
     local tab = {}
     local tabnr = vim.api.nvim_tabpage_get_number(tabpage)
     if target_tabpage or vim.fn.haslocaldir(-1, tabnr) == 1 then
@@ -274,7 +292,9 @@ local function save(name, opts, target_tabpage)
     local winlayout = vim.fn.winlayout(tabnr)
     tab.wins = layout.add_win_info_to_layout(tabnr, winlayout, current_win)
   end
-  vim.api.nvim_set_current_tabpage(current_tabpage)
+  if not skip_set_current then
+    vim.api.nvim_set_current_tabpage(current_tabpage)
+  end
 
   for ext_name, ext_config in pairs(config.extensions) do
     local ext = util.get_extension(ext_name)

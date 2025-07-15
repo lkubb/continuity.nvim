@@ -123,18 +123,19 @@ local function save_modified_buffers()
     "modified_buffers"
   )
   local modified_buffers = util.list_modified_buffers()
-  local active_buf = vim.api.nvim_get_current_buf()
   config.log.fmt_debug(
     "Saving modified buffers in state dir (%s)\nModified buffers: %s",
     state_dir,
     modified_buffers
   )
-  local ok, err = pcall(vim.fn.mkdir, state_dir, "p")
-  if not ok then
-    config.log.fmt_error("Error making state dir: %s", err)
-    return
-  end
+
+  -- We don't need to mkdir the state dir since write_file does that automatically
   local res = {}
+  -- Can't call :wundo when the cmd window (e.g. q:) is active, otherwise we receive
+  -- E11: Invalid in command-line window
+  -- TODO: Should we save modified buffers at all if we can't guarantee undo history?
+  ---@type boolean
+  local skip_wundo = vim.fn.getcmdwintype() ~= ""
   for _, buf in ipairs(modified_buffers) do
     -- Unrestored buffers should not overwrite the save file, but still be remembered
     -- _continuity_unrestored are buffers that were not restored at all due to swapfile and being opened read-only
@@ -151,19 +152,35 @@ local function save_modified_buffers()
         buf.name,
         save_file
       )
-      -- TODO: use nvim_buf_call
-      vim.api.nvim_set_current_buf(buf.buf)
-      vim.cmd.w({ save_file, bang = true })
-      vim.cmd.wundo({ undo_file, bang = true })
-      ok, err = pcall(vim.cmd.setlocal, "nomodified")
-      -- FIXME: Necessary/issue?
+
+      local ok, msg = pcall(function()
+        -- Backup the current buffer contents. Avoid vim.cmd.w because that can have side effects, even with keepalt/noautocmd.
+        local lines = vim.api.nvim_buf_get_text(buf.buf, 0, 0, -1, -1, {})
+        files.write_file(save_file, table.concat(lines, "\n") .. "\n")
+
+        if not skip_wundo then
+          vim.api.nvim_buf_call(buf.buf, function()
+            vim.cmd.wundo({ undo_file, bang = true, mods = { noautocmd = true, silent = true } })
+          end)
+        else
+          config.log.fmt_warn(
+            "Need to skip backing up undo history for modified buffer %s (%s) named '%s' to %s because cmd window is active",
+            buf.buf,
+            buf.uuid,
+            buf.name,
+            undo_file
+          )
+        end
+      end)
       if not ok then
-        config.log.fmt_debug("Error setting nomodified: ", err)
+        config.log.fmt_error(
+          "Error saving modified buffer %s (%s) named '%s': %s",
+          buf.buf,
+          buf.uuid,
+          buf.name,
+          msg
+        )
       end
-      -- Cannot schedule this because the buffer might be gone then.
-      -- Also, don't need to schedule because events which would reset this immediately
-      -- (looking at you, BufWritePost) are ignored in this function.
-      vim.b[buf.buf]._continuity_modified_but_saved = true
     else
       config.log.fmt_debug(
         "Modified buf %s (%s) named '%s' has not been restored yet, skipping save",
@@ -174,7 +191,6 @@ local function save_modified_buffers()
     end
     res[buf.uuid] = buf
   end
-  vim.api.nvim_set_current_buf(active_buf)
   -- Clean up any remembered buffers that have been removed from the session
   -- or have been saved in the meantime. We can do that after completing the save.
   vim.schedule(function()
@@ -474,13 +490,6 @@ local function create_hooks(cwd)
     group = autosave_group,
   })
 
-  -- Ensure we don't consider saved buffers modified still
-  vim.api.nvim_create_autocmd("BufWritePost", {
-    callback = function(ev)
-      vim.b[ev.buf]._continuity_modified_but_saved = nil
-    end,
-    group = autosave_group,
-  })
 
   local last_head = vim.g.gitsigns_head or util.current_branch(cwd)
 
