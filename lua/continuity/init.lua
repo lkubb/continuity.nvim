@@ -33,72 +33,80 @@
 local config = require("continuity.config")
 local util = require("continuity.util")
 
----@class Continuity.Autosession
----@field cwd string The working directory neovim was started from before entering an autosession
----@field workspace string The root directory of the current workspace
----@field project_name string The name of the project the current workspace is part of, usually the same (unless git worktrees are used)
----@field project_dir string The name of the project directory used for resession
----@field session string The name of the session for resession
----@field dir string The project's full session directory relative to the nvim data dir
-
----@type Continuity.Autosession?
+---@type continuity.Autosession?
 local _current_session
----@type Continuity.Autosession?
+---@type continuity.Autosession?
 local _loading_session
+-- Monitor the currently active branch and check if we need to reload when it changes
+---@type string?
+local last_head
+-- Save the effective cwd determined during startup. If we concluded we shouldn't initialize,
+-- this will stay nil and continuity will not become active during this nvim session.
+---@type string|false
+local startup_cwd
+-- When an autosession is active, the augroup that monitors for changes (git branch, global cwd)
+-- to automatically save and reload when necessary
+---@type integer?
+local autosave_group
 
--- Receives the effective cwd of the current invocation and returns project metadata.
----@param effective_cwd string The effective working directory of the nvim invocation
----@return Continuity.Autosession?
-local function render_autosession_context(effective_cwd)
-  local workspace, is_git = config.opts.workspace(effective_cwd)
-  workspace = vim.fn.fnamemodify(workspace, ":p") -- normalize workspace dir, adds trailing /
-  local project_name = config.opts.project_name(workspace, is_git)
-  if not config.opts.enabled(effective_cwd, workspace, project_name) then
+---Renders autosession metadata for a specific directory.
+---Returns nil when autosessions are disabled for this directory.
+---@param cwd string The working directory the autosession should be rendered for.
+---@return continuity.Autosession?
+local function render_autosession_context(cwd)
+  local workspace, is_git = config.opts.workspace(cwd)
+  -- normalize workspace dir, ensure trailing /
+  workspace = util.norm(workspace)
+  local git_info
+  if is_git then
+    git_info = util.git_info({ cwd = workspace })
+  end
+  local project_name = config.opts.project_name(workspace, git_info)
+  local session_name = config.opts.session_name({
+    cwd = cwd,
+    git_info = git_info,
+    project_name = project_name,
+    workspace = workspace,
+  })
+  if
+    not config.opts.enabled({
+      cwd = cwd,
+      git_info = git_info,
+      project_name = project_name,
+      session_name = session_name,
+      workspace = workspace,
+    })
+  then
     return nil
   end
-  local project_dir = config.opts.project_encode(project_name)
-  local session_name = config.opts.session_name(effective_cwd, workspace, project_name)
+  local project_dir = util.hash(project_name)
   return {
-    cwd = effective_cwd,
-    workspace = workspace,
-    project_name = project_name,
-    project_dir = project_dir,
-    session = session_name,
-    dir = vim.fs.joinpath(config.opts.dir, project_dir),
+    cwd = cwd,
+    name = session_name,
+    root = workspace,
+    project = {
+      name = project_name,
+      data_dir = require("resession.files").join(config.opts.dir, project_dir),
+      repo = git_info,
+    },
   }
 end
 
--- Save the currently active autosession.
+---Save the currently active autosession.
 ---@param opts? resession.SaveOpts Parameters for resession.save
 local function save(opts)
   if not _current_session then
     return
   end
   opts = vim.tbl_extend("force", { attach = true, notify = false }, opts or {})
-  opts.dir = _current_session.dir
-  require("resession").save(_current_session.session, opts)
+  opts.dir = _current_session.project.data_dir
+  require("resession").save(_current_session.name, opts)
 end
 
-local function close_everything()
-  local is_floating_win = vim.api.nvim_win_get_config(0).relative ~= ""
-  if is_floating_win then
-    -- Go to the first window, which will not be floating
-    vim.cmd.wincmd({ args = { "w" }, count = 1 })
-  end
-
-  local scratch = vim.api.nvim_create_buf(false, true)
-  vim.bo[scratch].bufhidden = "wipe"
-  vim.api.nvim_win_set_buf(0, scratch)
-  vim.bo[scratch].buftype = ""
-  for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
-    if vim.bo[bufnr].buflisted then
-      vim.api.nvim_buf_delete(bufnr, { force = true })
-    end
-  end
-  vim.cmd.tabonly({ mods = { emsg_silent = true } })
-  vim.cmd.only({ mods = { emsg_silent = true } })
-end
-
+---Remove previously saved buffers and their undo history when they are
+---no longer part of Continuity's state (most likely have been written).
+---@param state_dir string The path to the modified_buffers directory of the session represented by `data`.
+---@param data table Most recently saved session metadata.
 local function clean_remembered_buffers(state_dir, data)
   local remembered_buffers = vim.fn.glob(vim.fs.joinpath(state_dir, "*.buffer"), true, true)
   for _, sav in ipairs(remembered_buffers) do
@@ -110,16 +118,20 @@ local function clean_remembered_buffers(state_dir, data)
   end
 end
 
+---Iterate over modified buffers, save them and their undo history
+---and return data to resession.
+---@return table<string, continuity.util.ManagedBufInfo>?
 local function save_modified_buffers()
   config.log.fmt_trace("save_modified_buffers called")
   if not _current_session then
     config.log.fmt_trace("save_modified_buffers skipped: no current session")
     return
   end
-  local state_dir = vim.fs.joinpath(
-    vim.fn.stdpath("data"),
-    _current_session.dir,
-    _current_session.session,
+  local files = require("resession.files")
+  local state_dir = files.get_stdpath_filename(
+    "data",
+    _current_session.project.data_dir,
+    _current_session.name,
     "modified_buffers"
   )
   local modified_buffers = util.list_modified_buffers()
@@ -199,7 +211,9 @@ local function save_modified_buffers()
   return res
 end
 
--- Restores a single modified buffer on load.
+---Restore a single modified buffer when it is first focused in a window.
+---@param buf integer The buffer ID of the buffer to restore.
+---@param data table Resession save data for the currently active session
 local function restore_modified_buffer(buf, data)
   config.log.fmt_trace("Restoring modified buffer %s with data %s", buf, data)
   local _effective_session = _loading_session or _current_session
@@ -242,10 +256,10 @@ local function restore_modified_buffer(buf, data)
     --   local swapinfo = vim.fn.swapinfo(vim.b[buf]._resession_swapfile)
     -- end
   end
-  local state_dir = vim.fs.joinpath(
-    vim.fn.stdpath("data"),
-    _effective_session.dir,
-    _effective_session.session,
+  local state_dir = require("resession.files").get_stdpath_filename(
+    "data",
+    _effective_session.project.data_dir,
+    _effective_session.name,
     "modified_buffers"
   )
   local save_file = vim.fs.joinpath(state_dir, vim.b[buf].resession_uuid .. ".buffer")
@@ -260,6 +274,7 @@ local function restore_modified_buffer(buf, data)
   config.log.fmt_debug("Loading buffer changes for buffer %s", vim.b[buf].resession_uuid, buf)
   local ok, file_lines = pcall(util.read_lines, save_file)
   if ok then
+    ---@cast file_lines -string
     config.log.fmt_debug(
       "Loaded buffer changes for buffer %s, loading into %s",
       vim.b[buf].resession_uuid,
@@ -284,6 +299,12 @@ local function restore_modified_buffer(buf, data)
           err
         )
       end
+    else
+      config.log.warn(
+        "Skipped loading undo history for buffer %s because it had a swapfile: %s",
+        vim.b[buf].resession_uuid,
+        vim.b[buf]._resession_swapfile
+      )
     end
     vim.b[buf]._continuity_needs_restore = nil
     vim.b[buf].resession_restore_last_pos = true
@@ -295,16 +316,17 @@ local function restore_modified_buffer(buf, data)
   )
 end
 
--- Restores modified buffers before they are re-:edit-ed for
--- presentation purposes only.
+---Restore modified buffers during session load, i.e. before they are re-:edit-ed.
+---For presentation purposes only (e.g. ensures unfocused windows show the correct data).
+---@param data table Resession save data
 local function restore_modified_buffers(data)
   if not _loading_session or not data then
     return
   end
-  local state_dir = vim.fs.joinpath(
-    vim.fn.stdpath("data"),
-    _loading_session.dir,
-    _loading_session.session,
+  local state_dir = require("resession.files").get_stdpath_filename(
+    "data",
+    _loading_session.project.data_dir,
+    _loading_session.name,
     "modified_buffers"
   )
   local bufs = util.list_buffers()
@@ -319,6 +341,7 @@ local function restore_modified_buffers(data)
         file_lines
       )
     else
+      ---@cast file_lines -string
       local new_buf
       for _, buf in ipairs(bufs) do
         if buf.uuid == modified.uuid then
@@ -337,6 +360,7 @@ local function restore_modified_buffers(data)
         end
       end
       config.log.fmt_debug("Restoring modified buf %s into bufnr %s", modified.uuid, new_buf)
+      ---@diagnostic disable-next-line: unnecessary-if
       if new_buf then
         vim.api.nvim_buf_set_lines(new_buf, 0, -1, true, file_lines)
         -- Ensure autocmd :edit works. It will trigger the final restoration.
@@ -351,7 +375,7 @@ local function restore_modified_buffers(data)
   end
 end
 
--- Save the currently active autosession and stop autosaving it after.
+---Save the currently active autosession and stop autosaving it after.
 ---@param opts? resession.SaveOpts Parameters for resession.save
 local function detach(opts)
   if not _current_session then
@@ -362,10 +386,17 @@ local function detach(opts)
   _current_session = nil
 end
 
--- Load an autosession.
----@param autosession Continuity.Autosession? The autosession table as rendered by render_autosession_context
+---@type fun(autosession: continuity.Autosession?)
+local monitor
+
+---Load an autosession.
+---@param autosession (continuity.Autosession|string)? The autosession table as rendered by render_autosession_context
 ---@param opts resession.LoadOpts? Parameters for resession.load. silence_errors is forced to true.
 local function load(autosession, opts)
+  if type(autosession) == "string" then
+    autosession = render_autosession_context(autosession)
+  end
+  monitor(autosession)
   if not autosession then
     return
   end
@@ -376,12 +407,12 @@ local function load(autosession, opts)
     opts or {},
     { silence_errors = false }
   )
-  opts.dir = autosession.dir
+  opts.dir = autosession.project.data_dir
   local resession = require("resession")
 
   _loading_session = autosession
   -- TODO: Use xpcall and error handler to show better stacktrace
-  local ok, err = pcall(resession.load, autosession.session, opts)
+  local ok, err = pcall(resession.load, autosession.name, opts)
   -- Only set current session after loading it to allow pre-load hook
   -- to function properly.
   _loading_session = nil
@@ -398,90 +429,88 @@ local function load(autosession, opts)
     --
     -- The session did not exist, need to save.
     -- First, change cwd to workspace root since resession saves/restores cwd.
-    vim.api.nvim_set_current_dir(autosession.workspace)
+    vim.api.nvim_set_current_dir(autosession.root)
     save()
   end
 end
 
---- If an autosession is active, save it and detach. Then try to start a new one.
+---If an autosession is active, save it and detach. Then try to start a new one.
 local function reload()
-  -- Don't call save here, it's done in a pre_load hook which calls detach().
-  -- If we call it twice, the second call would see the buffer as unmodified
-  -- if we didn't set vim.b._continuity_modified_but_saved on it. Either way, it's superfluous.
-  config.log.fmt_trace("Reloading. Current session: %s", _current_session)
+  config.log.fmt_trace("Reload called. Checking if we need to reload")
   local effective_cwd = util.cwd()
   local autosession = render_autosession_context(effective_cwd)
-  config.log.fmt_trace(
-    "Reloading. Current session:\n%s\nNew session:\n%s",
-    _current_session or "nil",
-    autosession or "nil"
-  )
   if not autosession then
     if _current_session then
+      config.log.fmt_trace("Reload check result: New context disables active autosession")
       detach()
-      close_everything()
+      require("resession.util").close_everything()
+    else
+      config.log.fmt_trace(
+        "Reload check result: No active autosession, new context is disabled as well. Nothing to do."
+      )
     end
     return
   end
+  if
+    _current_session
+    and _current_session.project.name == autosession.project.name
+    and _current_session.name == autosession.name
+  then
+    config.log.fmt_trace(
+      "Reload check result: Not reloading because new context has same project and session name as active session"
+    )
+    return
+  end
+  config.log.fmt_trace(
+    "Reloading. Current session:\n%s\nNew session:\n%s",
+    _current_session or "nil",
+    autosession
+  )
+  -- Don't call save here, it's done in a pre_load hook which calls detach().
   load(autosession)
 end
 
----@class continuity.ResetOpts: resession.DeleteOpts
----@field reload? boolean Restart a new autosession after reset. Defaults to true.
-
--- Reset the currently active autosession. Rerender the autosession name and begin anew.
----@param opts? continuity.ResetOpts Options to influence execution (TODO docs)
-local function reset(opts)
-  if not _current_session then
-    return
-  end
-  local _last_session
-  _last_session, _current_session = _current_session, nil
-  opts = vim.tbl_extend("force", { notify = false }, opts or {})
-  opts.dir = _last_session.dir
-  require("resession").detach()
-  require("resession").delete(_last_session.session, opts)
-  close_everything()
-  if opts.reload ~= false then
-    reload()
-  end
-end
-
----@param opts {cwd?: string}? Specify the project to reset. If unspecified, resets current project, if available.
-local function reset_project(opts)
-  opts = opts or {}
-  local ctx = render_autosession_context(opts.cwd or util.cwd())
-  if not ctx then
-    return
-  end
-  if _current_session and ctx.dir == _current_session.dir then
-    reset({ reload = false })
-  end
-  require("resession.files").rmdir(
-    require("resession.util").get_session_dir(ctx.dir),
-    { recursive = true }
-  )
-  reload()
-end
-
--- When Continuity determines it should run, create hooks to ensure the session is saved automatically.
----@param cwd string The cwd of the initially loaded autosession
-local function create_hooks(cwd)
-  local autosave_group = vim.api.nvim_create_augroup("ContinuityHooks", { clear = true })
-  local resession = require("resession")
-
-  -- Cannot rely on autocmds since they are not executed strictly procedurally.
-  -- Might also be related to nested autocmds.
-  -- This is not idempotent though, issue?
-  resession.add_hook("pre_load", function()
+---Called by resession before loading a new session. Ensures we save and detach a currently active one.
+local function pre_load_hook()
+  if _current_session then
     config.log.fmt_trace("Continuity: Detaching on pre_load")
     detach()
-  end)
+  end
+end
 
-  -- Add extension for save/restore of unsaved buffers
+---Remove all monitoring hooks.
+local function stop_monitoring()
+  if autosave_group then
+    vim.api.nvim_clear_autocmds({ group = autosave_group })
+    autosave_group = nil
+  end
+  local resession = require("resession")
+  resession.remove_hook("pre_load", pre_load_hook)
+  last_head = nil
+  -- TODO: Should we remove buffer-local variables like _continuity_needs_restore?
+end
+
+---Load the continuity extension for resession and create hooks that:
+---1. When resession loads another session, try to detach/save an active autosession.
+---2. When neovim exits, save an active autosession.
+---3. When the session is associated with a git repo and gitsigns is available, save/detach/reload active autosession on branch changes.
+---4. When the global CWD changes, save/detach/reload active autosession.
+---@param autosession continuity.Autosession? The active autosession that should be monitored
+function monitor(autosession)
+  stop_monitoring() -- Ensures the resession hook is not added twice, augroup would be cleared anyways
+  autosave_group = vim.api.nvim_create_augroup("ContinuityHooks", { clear = true })
+  local resession = require("resession")
+
+  -- Cannot rely on autocmds since they are executed
+  -- only after the new session has begun loading. Hooks are called procedurally.
+  -- TODO: Make this call idempotent
+  resession.add_hook("pre_load", pre_load_hook)
+
+  -- Add extension for save/restore of unsaved buffers. Note: This is idempotent
   resession.load_extension("continuity", {})
 
   -- Ensure we save the current autosession before leaving neovim
+  -- FIXME: This duplicates resession autosave functionality!
   vim.api.nvim_create_autocmd("VimLeavePre", {
     callback = function()
       config.log.fmt_trace("Continuity: Saving on VimLeavePre")
@@ -490,8 +519,38 @@ local function create_hooks(cwd)
     group = autosave_group,
   })
 
+  ---@type boolean?
+  local gitsigns_in_sync = false
+  local autosession_head = autosession
+    and autosession.project.repo
+    and autosession.project.repo.branch
+  last_head = nil
 
-  local last_head = vim.g.gitsigns_head or util.current_branch(cwd)
+  if not autosession then
+    -- If we're not inside an autosession currently, just set it later so it's
+    -- in sync with gitsigns
+    gitsigns_in_sync = nil
+  elseif vim.g.gitsigns_head then
+    if vim.g.gitsigns_head == "" then
+      config.log.debug("vim.g.gitsigns_head is empty string, this is likely an empty repo")
+    elseif not autosession_head then
+      config.log.debug(
+        "vim.g.gitsigns_head is set, while the loading autosession does not have a branch"
+      )
+    ---@diagnostic disable-next-line: need-check-nil
+    elseif vim.g.gitsigns_head ~= autosession.project.repo.branch then
+      config.log.debug("vim.g.gitsigns_head does not match autosession branch")
+    else
+      last_head = vim.g.gitsigns_head
+      gitsigns_in_sync = true
+    end
+  elseif autosession_head then
+    config.log.debug(
+      "vim.g.gitsigns_head is not set, while the loading autosession has a branch. Either gitsigns is not enabled or needs to catch up still"
+    )
+  else
+    gitsigns_in_sync = true
+  end
 
   vim.defer_fn(function()
     -- Integrate with GitSigns to watch current branch, but not immediately after start
@@ -499,10 +558,20 @@ local function create_hooks(cwd)
     vim.api.nvim_create_autocmd("User", {
       pattern = "GitSignsUpdate",
       callback = function()
-        if not vim.g.gitsigns_head then
-          return
+        if not gitsigns_in_sync then
+          if gitsigns_in_sync == nil then
+            -- We don't have an active session, just follow gitsigns' lead
+            autosession_head = vim.g.gitsigns_head
+          elseif autosession_head ~= vim.g.gitsigns_head then
+            -- gitsigns does not assign this in 'detached' state (e.g. bare repo with worktree)
+            -- and assigns an empty string when it's an empty repo.
+            -- In either case, we don't want to react here. This means worktrees are not watched for branch changes.
+            return
+          end
+          gitsigns_in_sync = true
+          last_head = autosession_head
         end
-        if (last_head or vim.g.gitsigns_head) ~= vim.g.gitsigns_head then
+        if last_head ~= vim.g.gitsigns_head then
           config.log.fmt_trace(
             "Reloading project, switched from branch %s to branch %s",
             last_head or "nil",
@@ -519,9 +588,31 @@ local function create_hooks(cwd)
   vim.api.nvim_create_autocmd("DirChangedPre", {
     pattern = "global",
     callback = function()
-      -- Ensure we detach before the global cwd is changed, otherwise
-      -- Resession saves the new one in the current session instead.
-      detach()
+      config.log.fmt_trace(
+        "DirChangedPre: Global directory is going to change, checking if we need to detach before"
+      )
+      if not _current_session or _loading_session then
+        -- We don't need to detach if we don't have an active session or
+        -- if we're in the process of loading one
+        return
+      end
+      ---@diagnostic disable-next-line: undefined-field
+      local lookahead = render_autosession_context(vim.v.event.directory)
+      if
+        not lookahead
+        or _current_session.project.name ~= lookahead.project.name
+        or _current_session.name ~= lookahead.name
+      then
+        config.log.fmt_trace(
+          "DirChangedPre: Need to detach because session is going to change. Current session:\n%s\nNew session:\n%s",
+          _current_session,
+          lookahead or "nil"
+        )
+        -- We're going to switch/disable the active autosession.
+        -- Ensure we detach before the global cwd is changed, otherwise
+        -- Resession saves the new one in the current session instead.
+        detach()
+      end
     end,
     group = autosave_group,
   })
@@ -529,6 +620,7 @@ local function create_hooks(cwd)
     pattern = "global",
     callback = function()
       if not _loading_session then
+        config.log.fmt_trace("DirChanged: trying reload")
         reload()
       end
     end,
@@ -536,26 +628,38 @@ local function create_hooks(cwd)
   })
 end
 
+local initialized
+
+---Needs to be called very early. Determines if Continuity should start automatically during startup.
 local function initial_load()
+  ---@diagnostic disable-next-line: unnecessary-if
+  if initialized then
+    return
+  end
+  initialized = true
+
   -- First, check if we should setup at all.
   -- We don't want to do that if we're running headless or were invoked
   -- with path arguments that were not a single directory.
   -- We also don't want to run if we're running as a pager, but that
   -- detection relies on an event that hasn't been fired yet.
   if util.is_headless() then
+    startup_cwd = false
     return
   end
-  local effective_cwd = util.cwd()
-  if not effective_cwd then
+
+  startup_cwd = util.cwd_init()
+  if startup_cwd == false then
     return
   end
 
   local init_group = vim.api.nvim_create_augroup("ContinuityInit", { clear = true })
 
   -- This event is triggered before VimEnter and indicates we're running as a pager
+  -- Disable continuity in that case.
   vim.api.nvim_create_autocmd("StdinReadPre", {
     callback = function()
-      vim.g._is_pager = true
+      startup_cwd = false
     end,
     group = init_group,
   })
@@ -566,72 +670,274 @@ local function initial_load()
   vim.api.nvim_create_autocmd("VimEnter", {
     callback = function()
       -- Don't load if we're in pager mode
-      if vim.g._is_pager then
+      if startup_cwd == false then
         return
       end
-      local autosession = render_autosession_context(effective_cwd)
-      if not autosession then
-        return
-      end
-      create_hooks(effective_cwd)
-      load(autosession)
+      ---@cast startup_cwd -false
+      load(startup_cwd)
     end,
     group = init_group,
     nested = true, -- otherwise the focused buffer is not initialized correctly
   })
+end
+
+---Start Continuity:
+---1. If the current working directory has an associated project and session, closes everything and loads that session.
+---2. In any case, start monitoring for directory or branch changes.
+---@param cwd string? The working directory to switch to before starting autosession. Defaults to nvim's process' cwd.
+---@param opts resession.LoadOpts? Parameters for resession.load. silence_errors is forced to true.
+local function start(cwd, opts)
+  load(cwd or util.cwd(), opts)
+end
+
+---Stop Continuity:
+---1. If we're inside an active autosession, saves it, detaches and closes everything.
+---2. In any case, stop monitoring for directory or branch changes.
+local function stop()
+  stop_monitoring()
+  if _current_session then
+    detach()
+  end
+end
+
+---@class continuity.ResetOpts: resession.DeleteOpts
+---@field reload? boolean Restart a new autosession after reset. Defaults to true.
+
+---Reset the currently active autosession. Closes everything.
+---@param opts? continuity.ResetOpts Options to influence execution (TODO docs)
+local function reset(opts)
+  if not _current_session then
+    return
+  end
+  local _last_session
+  _last_session, _current_session = _current_session, nil
+  opts = vim.tbl_extend("force", { notify = false }, opts or {})
+  opts.dir = _last_session.project.data_dir
+  require("resession").detach()
+  require("resession").delete(_last_session.name, opts)
+  require("resession.util").close_everything()
+  if opts.reload ~= false then
+    reload()
+  end
+end
+
+---Remove all autosessions associated with a project.
+---If the target is the active project, resets current session as well and closes everything.
+---@param opts {name?: string}? Specify the project to reset. If unspecified, resets active project, if available.
+local function reset_project(opts)
+  opts = opts or {}
+  local name = opts.name
+  if not name then
+    if not _current_session then
+      return
+    end
+    name = _current_session.project.name
+  end
+
+  local rutil = require("resession.util")
+  local files = require("resession.files")
+  local continuity_dir = rutil.get_session_dir(config.opts.dir)
+  local project_dir = files.join(continuity_dir, util.hash(name))
+  if not files.exists(project_dir) then
+    return
+  end
+
+  local resetting_active = false
+  -- If we're resetting the active project, ensure we detach from the active session before deleting the data
+  if _current_session and project_dir:find(_current_session.project.data_dir) then
+    reset({ reload = false })
+    resetting_active = true
+  end
+
+  local expected_parent = files.get_stdpath_filename("data", "continuity")
+  assert(project_dir:sub(1, #expected_parent) == expected_parent) -- sanity check before recursively deleting
+  require("resession.files").rmdir(project_dir, { recursive = true })
+
+  if resetting_active then
+    reload()
+  end
+end
+
+---List autosessions associated with a project.
+---@param opts {cwd?: string}? Specify the project to list. If unspecified, lists active project, if available.
+---@return string[]
+local function list(opts)
+  opts = opts or {}
+  local ctx = render_autosession_context(opts.cwd or assert(util.cwd_init()))
+  if ctx then
+    return require("resession").list({ dir = ctx.project.data_dir })
+  end
+  return {}
+end
+
+---List all known projects.
+---@return string[]
+local function list_projects()
+  --TODO: This is quite inefficient and could benefit from an inventory somewhere.
+  local rutil = require("resession.util")
+  local files = require("resession.files")
+  local projects = {}
+
+  local continuity_dir = rutil.get_session_dir(config.opts.dir)
+  for name, typ in vim.fs.dir(continuity_dir) do
+    if typ == "directory" then
+      local save_file = vim.fs.find(function(fname)
+        return fname:match(".*%.json$")
+      end, { limit = 1, path = files.join(continuity_dir, name) })
+      if save_file[1] then
+        local save_contents = files.load_json_file(assert(save_file[1]))
+        local cwd = save_contents.global.cwd
+        if files.exists(cwd) then
+          local ctx = render_autosession_context(cwd)
+          if ctx then
+            projects[#projects + 1] = ctx.project.name
+          end
+        end
+      end
+    end
+  end
+  return projects
+end
+
+---Dev helper currently (beware: unstable/inefficient).
+---When changing the mapping from workspace to project name, all previously
+---saved states would be lost. This tries to migrate state data to the new mapping,
+---cleans projects whose cwd does not exist anymore or which are disabled
+---Caution! This does not account for projects with multiple associated directories/sessions!
+---Checks the first session's cwd/enabled state only!
+local function migrate_projects()
+  local ret = {
+    broken = {},
+    missing = {},
+    skipped = {},
+    migrated = {},
+    deactivated = {},
+    duplicate = {},
+    errors = {},
+  }
+  local rutil = require("resession.util")
+  local files = require("resession.files")
+
+  local function rm(dir, scope, root)
+    local ok, msg = pcall(files.rmdir, dir, { recursive = true })
+    if ok then
+      table.insert(ret[scope], { root = root, old_dir = dir })
+    else
+      table.insert(ret.errors, { type = scope, root = root, old_dir = dir, msg = msg })
+    end
+  end
+
+  local function mv(old, new, root, new_name)
+    if files.exists(new) then
+      table.insert(ret.errors, {
+        type = "migration",
+        root = root,
+        old_dir = old,
+        new_dir = new,
+        msg = "Target project exists, cannot merge",
+      })
+      -- rm(old, "duplicate", root)
+    else
+      local ok, msg = pcall(os.rename, old, new)
+      if ok then
+        table.insert(ret.migrated, {
+          root = root,
+          new_name = new_name,
+        })
+      else
+        table.insert(ret.errors, {
+          type = "migration",
+          root = root,
+          new_name = new_name,
+          old_dir = old,
+          new_dir = new,
+          msg = msg,
+        })
+      end
+    end
+  end
+
+  local continuity_dir = rutil.get_session_dir(config.opts.dir)
+  for name, typ in vim.fs.dir(continuity_dir) do
+    if typ == "directory" then
+      local project_dir = files.join(continuity_dir, name)
+      local save_file = vim.fs.find(function(fname)
+        return fname:match(".*%.json$")
+      end, { limit = 1, path = project_dir })
+      if save_file[1] then
+        local save_contents = files.load_json_file(assert(save_file[1]))
+        local cwd = save_contents.global.cwd
+        if not cwd or cwd == "" or vim.fn.isabsolutepath(cwd) == 0 then
+          rm(project_dir, "broken", cwd)
+        elseif files.exists(cwd) then
+          local ctx = render_autosession_context(cwd)
+          if ctx then
+            if not ctx.project.data_dir:find(name, nil, true) then
+              local new_dir = files.join(continuity_dir, util.hash(ctx.project.name))
+              mv(project_dir, new_dir, cwd, ctx.project.name)
+            else
+              table.insert(ret.skipped, { root = cwd, name = ctx.project.name })
+            end
+          else
+            -- FIXME: This would delete related sessions, not sure if sensible for a broader application
+            rm(project_dir, "deactivated", cwd)
+          end
+        else
+          rm(project_dir, "missing", cwd)
+        end
+      end
+    end
+  end
+  return ret
+end
+
+---Return info about the currently active autosession.
+---@return {current_session: continuity.Autosession|false, current_session_data?: table}
+local function info()
+  local rutil = require("resession.util")
+  return {
+    current_session = _current_session and vim.deepcopy(_current_session) or false,
+    current_session_data = _current_session and require("resession.files").load_json_file(
+      rutil.get_session_file(_current_session.name, _current_session.project.data_dir)
+    ),
+  }
+end
+
+---@param opts continuity.UserConfig?
+local function setup(opts)
+  config.setup(opts)
 
   vim.api.nvim_create_user_command("Continuity", function(params)
     require("continuity.cli").run(params)
   end, {
     force = true,
     nargs = "*",
-    range = true,
     complete = function(arglead, line)
       return require("continuity.cli").complete(arglead, line)
     end,
   })
-end
 
---- List autosessions associated with this project.
----@param opts {cwd?: string}? Specify the project to list. If unspecified, lists current project, if available.
----@return string[]
-local function list(opts)
-  opts = opts or {}
-  local ctx = render_autosession_context(opts.cwd or assert(util.cwd()))
-  if ctx then
-    return require("resession").list({ dir = ctx.dir })
-  end
-  return {}
-end
-
----@param opts Continuity.UserConfig?
-local function setup(opts)
-  config.setup(opts)
   initial_load()
 end
 
-local function info()
-  local files = require("resession.files")
-  local rutil = require("resession.util")
-  return {
-    current_session = vim.deepcopy(_current_session or {}),
-    current_session_data = _current_session and files.load_json_file(
-      rutil.get_session_file(_current_session.session, _current_session.dir)
-    ),
-  }
-end
-
-return {
+---@class continuity
+local M = {
   save = save,
   reset = reset,
   reset_project = reset_project,
   list = list,
+  list_projects = list_projects,
+  migrate_projects = migrate_projects,
   reload = reload,
   load = load,
   detach = detach,
   setup = setup,
+  start = start,
+  stop = stop,
   save_modified_buffers = save_modified_buffers,
   restore_modified_buffers = restore_modified_buffers,
   restore_modified_buffer = restore_modified_buffer,
   info = info,
 }
+
+return M
