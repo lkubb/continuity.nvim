@@ -37,6 +37,8 @@ local util = require("continuity.util")
 local _current_session
 ---@type continuity.Autosession?
 local _loading_session
+---@type table?
+local _loading_session_data
 -- Monitor the currently active branch and check if we need to reload when it changes
 ---@type string?
 local last_head
@@ -123,6 +125,10 @@ end
 ---@return table<string, continuity.util.ManagedBufInfo>?
 local function save_modified_buffers()
   config.log.fmt_trace("save_modified_buffers called")
+  if _loading_session and _loading_session_data then
+    config.log.fmt_warn("save_modified_buffers called before full session restoration")
+    return _loading_session_data
+  end
   if not _current_session then
     config.log.fmt_trace("save_modified_buffers skipped: no current session")
     return
@@ -319,10 +325,13 @@ end
 ---Restore modified buffers during session load, i.e. before they are re-:edit-ed.
 ---For presentation purposes only (e.g. ensures unfocused windows show the correct data).
 ---@param data table Resession save data
-local function restore_modified_buffers(data)
+local function restore_modified_buffers(data, visible_only)
   if not _loading_session or not data then
     return
   end
+  -- Remember this until we have finished loading in case an autosave
+  -- is triggered before full restoration
+  _loading_session_data = data
   local state_dir = require("resession.files").get_stdpath_filename(
     "data",
     _loading_session.project.data_dir,
@@ -332,46 +341,52 @@ local function restore_modified_buffers(data)
   local bufs = util.list_buffers()
   config.log.fmt_debug("Restoring modified buffers before reload: %s", data)
   for _, modified in pairs(data) do
-    local save_file = vim.fs.joinpath(state_dir, tostring(modified.uuid) .. ".buffer")
-    local ok, file_lines = pcall(util.read_lines, save_file)
-    if not ok then
-      config.log.fmt_warn(
-        "Not restoring %s because its save file could not be read: %s",
-        modified.uuid,
-        file_lines
-      )
-    else
-      ---@cast file_lines -string
-      local new_buf
-      for _, buf in ipairs(bufs) do
-        if buf.uuid == modified.uuid then
-          new_buf = buf.buf
-          break
-        end
-      end
-      -- NOTE: This should not be needed during regular operation. Can be avoided by integrating this into resession
-      if not new_buf and modified.name ~= "" then
-        -- in case something has gone wrong, at least restore named buffers
+    if (modified.in_win == false) ~= visible_only then
+      local save_file = vim.fs.joinpath(state_dir, tostring(modified.uuid) .. ".buffer")
+      local ok, file_lines = pcall(util.read_lines, save_file)
+      if not ok then
+        config.log.fmt_warn(
+          "Not restoring %s because its save file could not be read: %s",
+          modified.uuid,
+          file_lines
+        )
+      else
+        ---@cast file_lines -string
+        local new_buf
         for _, buf in ipairs(bufs) do
-          if buf.name == modified.name then
+          if buf.uuid == modified.uuid then
             new_buf = buf.buf
             break
           end
         end
-      end
-      config.log.fmt_debug("Restoring modified buf %s into bufnr %s", modified.uuid, new_buf)
-      ---@diagnostic disable-next-line: unnecessary-if
-      if new_buf then
-        vim.api.nvim_buf_set_lines(new_buf, 0, -1, true, file_lines)
-        -- Ensure autocmd :edit works. It will trigger the final restoration.
-        -- Don't do it for unnamed buffers since :edit cannot be called for them.
-        if modified.name ~= "" then
-          vim.bo[new_buf].modified = false
+        -- NOTE: This should not be needed during regular operation. Can be avoided by integrating this into resession
+        if not new_buf and modified.name ~= "" then
+          -- in case something has gone wrong, at least restore named buffers
+          for _, buf in ipairs(bufs) do
+            if buf.name == modified.name then
+              new_buf = buf.buf
+              break
+            end
+          end
         end
-        -- Ensure the buffer is remembered as modified if it is never loaded until the next save
-        vim.b[new_buf]._continuity_needs_restore = true
+        config.log.fmt_debug("Restoring modified buf %s into bufnr %s", modified.uuid, new_buf)
+        ---@diagnostic disable-next-line: unnecessary-if
+        if new_buf then
+          vim.api.nvim_buf_set_lines(new_buf, 0, -1, true, file_lines)
+          -- Ensure autocmd :edit works. It will trigger the final restoration.
+          -- Don't do it for unnamed buffers since :edit cannot be called for them.
+          if modified.name ~= "" then
+            vim.bo[new_buf].modified = false
+          end
+          -- Ensure the buffer is remembered as modified if it is never loaded until the next save
+          vim.b[new_buf]._continuity_needs_restore = true
+        end
       end
     end
+  end
+  if not visible_only then
+    -- This means we have restored everything now, not just visible buffers.
+    _current_session, _loading_session, _loading_session_data = _loading_session, nil, nil
   end
 end
 
@@ -414,10 +429,8 @@ local function load(autosession, opts)
   _loading_session = autosession
   -- TODO: Use xpcall and error handler to show better stacktrace
   local ok, err = pcall(resession.load, autosession.name, opts)
-  -- Only set current session after loading it to allow pre-load hook
-  -- to function properly.
-  _loading_session = nil
-  _current_session = autosession
+  -- Only set current session after finishing buffer restoration (restore_modified_buffers)
+  -- to allow pre-load hook to function properly.
 
   if not ok then
     ---@cast err string
@@ -431,6 +444,11 @@ local function load(autosession, opts)
     -- The session did not exist, need to save.
     -- First, change cwd to workspace root since resession saves/restores cwd.
     vim.api.nvim_set_current_dir(autosession.root)
+    -- This also means there is nothing to restore anymore.
+    -- If we had a session before, the above call only loads visible buffers
+    -- and waits for the first CursorHold event to load the rest.
+    _loading_session = nil
+    _current_session = autosession
     save()
   end
 end

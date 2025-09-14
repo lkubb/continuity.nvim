@@ -274,4 +274,21 @@ function M.close_everything()
   vim.cmd.only({ mods = { emsg_silent = true } })
 end
 
+--- Run a function in a specific eventignore/shortmess context.
+---@generic T
+---@param evt string The o:eventignore to use for the inner context
+---@param mess string The o:shortmess to use for the inner context
+---@param inner fun(): T
+---@return T
+function M.suppress(evt, mess, inner)
+  local eventignore = vim.o.eventignore
+  vim.o.eventignore = evt
+  local shortmess = vim.o.shortmess
+  vim.o.shortmess = mess
+  local ret = inner()
+  vim.o.eventignore = eventignore
+  vim.o.shortmess = shortmess
+  return ret
+end
+
 return M

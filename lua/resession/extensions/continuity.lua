@@ -16,9 +16,9 @@ end
 
 ---Restore modified buffers for presentation purposes.
 ---@param data table The value returned from on_save
-M.on_post_bufinit = function(data)
+M.on_post_bufinit = function(data, visible_only)
   local continuity = require("continuity")
-  continuity.restore_modified_buffers(data)
+  continuity.restore_modified_buffers(data, visible_only)
 end
 
 ---Restore modified buffer when re-:edit-ed.

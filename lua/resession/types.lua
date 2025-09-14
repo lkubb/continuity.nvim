@@ -25,7 +25,7 @@
 ---@class (exact) resession.Extension
 ---@field on_save? fun(opts: resession.Extension.OnSaveOpts):any
 ---@field on_pre_load? fun(data: any)
----@field on_post_bufinit? fun(data: any)
+---@field on_post_bufinit? fun(data: any, visible_only: boolean)
 ---@field on_buf_load? fun(buffer: table, data: any)
 ---@field on_post_load? fun(data: any)
 ---@field config? fun(options: table)

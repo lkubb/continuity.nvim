@@ -8,6 +8,8 @@ local has_setup = false
 local pending_config
 ---@type string?
 local current_session
+---@type boolean
+local _is_loading = false
 local tab_sessions = {}
 local session_configs = {}
 local hooks = setmetatable({
@@ -213,6 +215,10 @@ end
 ---@param target_tabpage? integer
 local function save(name, opts, target_tabpage)
   local config = require("resession.config")
+  if _is_loading then
+    require("resession.log").warn("Save triggered while still loading session. Skipping save.")
+    return
+  end
   local files = require("resession.files")
   local layout = require("resession.layout")
   local util = require("resession.util")
@@ -259,6 +265,8 @@ local function save(name, opts, target_tabpage)
         ) or vim.api.nvim_buf_get_mark(bufnr, '"'),
         uuid = vim.b[bufnr].resession_uuid,
       }
+      local in_win = vim.fn.bufwinid(bufnr)
+      buf.in_win = in_win > 0 and in_win or false
       table.insert(data.buffers, buf)
     end
   end
@@ -685,7 +693,44 @@ function plan_restore(bufnr, buf, data)
   })
 end
 
-local _is_loading = false
+---@param buf table
+---@param data table
+local function load_buf(buf, data)
+  local util = require("resession.util")
+  local bufnr = util.ensure_buf(buf.name, buf.uuid)
+
+  if buf.loaded then
+    vim.fn.bufload(bufnr)
+    vim.b[bufnr].resession_restore_last_pos = true
+    plan_restore(bufnr, buf, data)
+  end
+  vim.b[bufnr].resession_last_buffer_pos = buf.last_pos
+  util.restore_buf_options(bufnr, buf.options)
+  return bufnr
+end
+
+---@param data table
+---@param visible_only bool
+local function dispatch_post_bufinit(data, visible_only)
+  local config = require("resession.config")
+  local util = require("resession.util")
+
+  for ext_name in pairs(config.extensions) do
+    if data[ext_name] then
+      local ext = util.get_extension(ext_name)
+      if ext and ext.on_post_bufinit then
+        local ok, err = pcall(ext.on_post_bufinit, data[ext_name], visible_only)
+        if not ok then
+          vim.notify(
+            string.format("[resession] Extension %s on_post_bufinit error: %s", ext_name, err),
+            vim.log.levels.ERROR
+          )
+        end
+      end
+    end
+  end
+end
+
 ---Load a session
 ---@param name? string
 ---@param opts? resession.LoadOpts
@@ -760,162 +805,160 @@ M.load = function(name, opts)
   else
     util.open_clean_tab()
   end
+
+  -- Keep track of buffers that are not displayed for later restoration
+  -- to speed up startup
+  local buffers_later = {}
+
   -- Don't trigger autocmds during session load
-  local eventignore = vim.o.eventignore
-  vim.o.eventignore = "all"
   -- Ignore all messages (including swapfile messages) during session load
-  local shortmess = vim.o.shortmess
-  vim.o.shortmess = "aAF"
-  if not data.tab_scoped then
-    -- Set the options immediately
-    util.restore_global_options(data.global.options)
-  end
+  util.suppress("all", "aAF", function()
+    if not data.tab_scoped then
+      -- Set the options immediately
+      util.restore_global_options(data.global.options)
+    end
 
-  for ext_name in pairs(config.extensions) do
-    if data[ext_name] then
-      local ext = util.get_extension(ext_name)
-      if ext and ext.on_pre_load then
-        local ok, err = pcall(ext.on_pre_load, data[ext_name])
-        if not ok then
-          vim.notify(
-            string.format("[resession] Extension %s on_pre_load error: %s", ext_name, err),
-            vim.log.levels.ERROR
-          )
+    for ext_name in pairs(config.extensions) do
+      if data[ext_name] then
+        local ext = util.get_extension(ext_name)
+        if ext and ext.on_pre_load then
+          local ok, err = pcall(ext.on_pre_load, data[ext_name])
+          if not ok then
+            vim.notify(
+              string.format("[resession] Extension %s on_pre_load error: %s", ext_name, err),
+              vim.log.levels.ERROR
+            )
+          end
         end
       end
     end
-  end
 
-  local scale = {
-    vim.o.columns / data.global.width,
-    (vim.o.lines - vim.o.cmdheight) / data.global.height,
-  }
-  -- Special case for folke/lazy.nvim - we want to wait with :edit-ing a buffer
-  -- until all plugins are done loading, otherwise some configs might not work as expected.
-  if vim.g.lazy_did_setup and not vim.g._resession_verylazy_done then
-    vim.g._resession_verylazy_done = false
-    vim.api.nvim_create_autocmd("User", {
-      pattern = "VeryLazy",
-      callback = function()
-        vim.g._resession_verylazy_done = true
-      end,
-      once = true,
-    })
-  else
-    vim.g._resession_verylazy_done = true
-  end
-
-  ---@type integer?
-  local last_bufnr
-  for _, buf in ipairs(data.buffers) do
-    local bufnr = util.ensure_buf(buf.name, buf.uuid)
-    last_bufnr = bufnr
-
-    if buf.loaded then
-      vim.fn.bufload(bufnr)
-      vim.b[bufnr].resession_restore_last_pos = true
-      plan_restore(bufnr, buf, data)
-    end
-    vim.b[bufnr].resession_last_buffer_pos = buf.last_pos
-    util.restore_buf_options(bufnr, buf.options)
-    -- Cannot restore m" here because unsaved restoration can increase
-    -- the number of lines/rows, on which the mark could rely. This is currently
-    -- worked around when saving buffers, but could be refactored once
-    -- restoration of unsaved changes is included here.
-  end
-
-  -- TODO: Need to refactor unsaved buffer loading into here for simplicity.
-  -- Without this, the buffer preview cursor might be off
-  for ext_name in pairs(config.extensions) do
-    if data[ext_name] then
-      local ext = util.get_extension(ext_name)
-      if ext and ext.on_post_bufinit then
-        local ok, err = pcall(ext.on_post_bufinit, data[ext_name])
-        if not ok then
-          vim.notify(
-            string.format("[resession] Extension %s on_post_bufinit error: %s", ext_name, err),
-            vim.log.levels.ERROR
-          )
-        end
-      end
-    end
-  end
-
-  -- Ensure the cwd is set correctly for each loaded buffer
-  if not data.tab_scoped then
-    vim.api.nvim_set_current_dir(data.global.cwd)
-  end
-
-  ---@type integer?
-  local curwin
-  for i, tab in ipairs(data.tabs) do
-    if i > 1 then
-      vim.cmd.tabnew()
-      -- Tabnew creates a new empty buffer. Dispose of it when hidden.
-      vim.bo.buflisted = false
-      vim.bo.bufhidden = "wipe"
-    end
-    if tab.cwd then
-      vim.cmd.tcd({ args = { tab.cwd } })
-    end
-    local win = layout.set_winlayout(tab.wins, scale)
-    if win then
-      curwin = win
-    end
-    if tab.options then
-      util.restore_tab_options(tab.options)
-    end
-  end
-
-  -- curwin can be nil if we saved a session in a window with an unsupported buffer. If this was the only window in the active tabpage,
-  -- the user is confronted with an empty, unlisted buffer after loading the session. To avoid that situation,
-  -- we will switch to the last restored buffer. If the last restored tabpage has at least a single defined window,
-  -- we shouldn't do that though, it can result in unexpected behavior.
-  -- TODO: Remember and at least switch to active tabpage if there are multiple.
-  if curwin then
-    vim.api.nvim_set_current_win(curwin)
-  elseif data.tabs[#data.tabs].wins == false and last_bufnr then
-    vim.cmd("buffer " .. last_bufnr)
-  end
-
-  for ext_name in pairs(config.extensions) do
-    if data[ext_name] then
-      local ext = util.get_extension(ext_name)
-      if ext and ext.on_post_load then
-        local ok, err = pcall(ext.on_post_load, data[ext_name])
-        if not ok then
-          vim.notify(
-            string.format('[resession] Extension "%s" on_post_load error: %s', ext_name, err),
-            vim.log.levels.ERROR
-          )
-        end
-      end
-    end
-  end
-
-  current_session = nil
-  if opts.reset then
-    tab_sessions = {}
-  end
-  remove_tabpage_session(name)
-  if opts.attach then
-    if data.tab_scoped then
-      tab_sessions[vim.api.nvim_get_current_tabpage()] = name
-    else
-      current_session = name
-    end
-    session_configs[name] = {
-      dir = opts.dir or config.dir,
+    local scale = {
+      vim.o.columns / data.global.width,
+      (vim.o.lines - vim.o.cmdheight) / data.global.height,
     }
-  end
-  vim.o.eventignore = eventignore
-  vim.o.shortmess = shortmess
-  _is_loading = false
+    -- Special case for folke/lazy.nvim - we want to wait with :edit-ing a buffer
+    -- until all plugins are done loading, otherwise some configs might not work as expected.
+    if vim.g.lazy_did_setup and not vim.g._resession_verylazy_done then
+      vim.g._resession_verylazy_done = false
+      vim.api.nvim_create_autocmd("User", {
+        pattern = "VeryLazy",
+        callback = function()
+          vim.g._resession_verylazy_done = true
+        end,
+        once = true,
+      })
+    else
+      vim.g._resession_verylazy_done = true
+    end
+
+    ---@type integer?
+    local last_bufnr
+    for _, buf in ipairs(data.buffers) do
+      if buf.in_win == false then
+        table.insert(buffers_later, buf)
+      else
+        last_bufnr = load_buf(buf, data)
+      end
+      -- Cannot restore m" here because unsaved restoration can increase
+      -- the number of lines/rows, on which the mark could rely. This is currently
+      -- worked around when saving buffers, but could be refactored once
+      -- restoration of unsaved changes is included here.
+    end
+
+    -- TODO: Need to refactor unsaved buffer loading into here for simplicity.
+    -- Without this, the buffer preview cursor might be off
+    dispatch_post_bufinit(data, true)
+
+    -- Ensure the cwd is set correctly for each loaded buffer
+    if not data.tab_scoped then
+      vim.api.nvim_set_current_dir(data.global.cwd)
+    end
+
+    ---@type integer?
+    local curwin
+    for i, tab in ipairs(data.tabs) do
+      if i > 1 then
+        vim.cmd.tabnew()
+        -- Tabnew creates a new empty buffer. Dispose of it when hidden.
+        vim.bo.buflisted = false
+        vim.bo.bufhidden = "wipe"
+      end
+      if tab.cwd then
+        vim.cmd.tcd({ args = { tab.cwd } })
+      end
+      local win = layout.set_winlayout(tab.wins, scale)
+      if win then
+        curwin = win
+      end
+      if tab.options then
+        util.restore_tab_options(tab.options)
+      end
+    end
+
+    -- curwin can be nil if we saved a session in a window with an unsupported buffer. If this was the only window in the active tabpage,
+    -- the user is confronted with an empty, unlisted buffer after loading the session. To avoid that situation,
+    -- we will switch to the last restored buffer. If the last restored tabpage has at least a single defined window,
+    -- we shouldn't do that though, it can result in unexpected behavior.
+    -- TODO: Remember and at least switch to active tabpage if there are multiple.
+    if curwin then
+      vim.api.nvim_set_current_win(curwin)
+    elseif data.tabs[#data.tabs].wins == false and last_bufnr then
+      vim.cmd("buffer " .. last_bufnr)
+    end
+
+    for ext_name in pairs(config.extensions) do
+      if data[ext_name] then
+        local ext = util.get_extension(ext_name)
+        if ext and ext.on_post_load then
+          local ok, err = pcall(ext.on_post_load, data[ext_name])
+          if not ok then
+            vim.notify(
+              string.format('[resession] Extension "%s" on_post_load error: %s', ext_name, err),
+              vim.log.levels.ERROR
+            )
+          end
+        end
+      end
+    end
+
+    current_session = nil
+    if opts.reset then
+      tab_sessions = {}
+    end
+    remove_tabpage_session(name)
+    if opts.attach then
+      if data.tab_scoped then
+        tab_sessions[vim.api.nvim_get_current_tabpage()] = name
+      else
+        current_session = name
+      end
+      session_configs[name] = {
+        dir = opts.dir or config.dir,
+      }
+    end
+  end)
   dispatch("post_load", name, opts)
   -- Trigger the BufEnter event defined above manually for the current buffer.
   -- It will take care of reloading the buffer to check for swap files,
   -- enable syntax highlighting and load plugins.
   vim.api.nvim_exec_autocmds("BufEnter", { buffer = vim.api.nvim_get_current_buf() })
+  vim.api.nvim_create_autocmd({ "CursorHold", "CursorHoldI" }, {
+    once = true,
+    desc = "Resession: Restore buffers not shown in windows",
+    group = restore_group,
+    callback = function()
+      -- Don't trigger autocmds during buffer load (shouldn't be necessary since this autocmd is not nested)
+      -- Ignore all messages (including swapfile messages) during session load
+      util.suppress("all", "aAF", function()
+        for _, buf in ipairs(buffers_later) do
+          load_buf(buf, data)
+        end
+        dispatch_post_bufinit(data, false)
+      end)
+      _is_loading = false
+    end,
+  })
 end
 
 ---Add a callback that runs at a specific time

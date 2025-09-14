@@ -339,10 +339,12 @@ function M.list_modified_buffers()
       vim.b[buf].resession_uuid -- Only list buffers that are known to resession. This funtion is called during save, a missing uuid means the buffer should not be saved at all
       and (vim.b[buf]._continuity_needs_restore or vim.bo[buf].modified)
     then
+      local in_win = vim.fn.bufwinid(buf)
       table.insert(res, {
         buf = buf,
         name = vim.api.nvim_buf_get_name(buf),
         uuid = vim.b[buf].resession_uuid,
+        in_win = in_win > 0 and in_win or false,
       })
     end
   end
