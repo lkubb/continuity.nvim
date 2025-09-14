@@ -103,6 +103,7 @@ M.write_file = function(filename, contents)
 end
 
 ---@param filename string
+---@return boolean?
 M.delete_file = function(filename)
   if M.exists(filename) then
     return (uv.fs_unlink(filename))
