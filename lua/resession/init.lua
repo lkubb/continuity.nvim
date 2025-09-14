@@ -922,7 +922,6 @@ M.load = function(name, opts)
       end
     end
 
-    current_session = nil
     if opts.reset then
       tab_sessions = {}
     end
@@ -930,8 +929,6 @@ M.load = function(name, opts)
     if opts.attach then
       if data.tab_scoped then
         tab_sessions[vim.api.nvim_get_current_tabpage()] = name
-      else
-        current_session = name
       end
       session_configs[name] = {
         dir = opts.dir or config.dir,

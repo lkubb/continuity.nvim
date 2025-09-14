@@ -193,7 +193,7 @@ function M.git_info(opts)
     -- No commits in this repo yet (or during rebase)
     branch = M.current_branch({ gitdir = gitdir_r, worktree = toplevel })
   end
-  local default_branch = stdout[5] and vim.trim(assert(stdout[5]):sub(8))
+  local default_branch = stdout[5] and vim.trim(stdout[5]:sub(8))
   if not default_branch or default_branch == "HEAD" then
     default_branch = M.default_branch({ gitdir = gitdir_r, worktree = toplevel })
   end

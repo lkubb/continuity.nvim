@@ -804,7 +804,7 @@ local function list_projects()
         return fname:match(".*%.json$")
       end, { limit = 1, path = files.join(continuity_dir, name) })
       if save_file[1] then
-        local save_contents = files.load_json_file(assert(save_file[1]))
+        local save_contents = files.load_json_file(save_file[1])
         local cwd = save_contents.global.cwd
         if files.exists(cwd) then
           local ctx = render_autosession_context(cwd)
@@ -884,7 +884,7 @@ local function migrate_projects()
         return fname:match(".*%.json$")
       end, { limit = 1, path = project_dir })
       if save_file[1] then
-        local save_contents = files.load_json_file(assert(save_file[1]))
+        local save_contents = files.load_json_file(save_file[1])
         local cwd = save_contents.global.cwd
         if not cwd or cwd == "" or vim.fn.isabsolutepath(cwd) == 0 then
           rm(project_dir, "broken", cwd)
