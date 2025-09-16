@@ -2,12 +2,13 @@ local config = require("resession.config")
 local util = require("resession.util")
 local M = {}
 
----Only exposed for testing purposes
+--- Check if a window should be saved. If so, return relevant information.
+--- Only exposed for testing purposes
 ---@private
----@param tabnr integer
----@param winid integer
----@param current_win integer
----@return table|false
+---@param tabnr integer The number of the tab that contains the window
+---@param winid resession.WinID The window id of the window to query
+---@param current_win integer The window id of the currently active window
+---@return resession.WinInfo|false
 M.get_win_info = function(tabnr, winid, current_win)
   local bufnr = vim.api.nvim_win_get_buf(winid)
   local win = {}
@@ -45,6 +46,7 @@ M.get_win_info = function(tabnr, winid, current_win)
     height = vim.api.nvim_win_get_height(winid),
     options = util.save_win_options(winid),
   })
+  ---@cast win resession.WinInfo
   local winnr = vim.api.nvim_win_get_number(winid)
   if vim.fn.haslocaldir(winnr, tabnr) == 1 then
     win.cwd = vim.fn.getcwd(winnr, tabnr)
@@ -52,47 +54,58 @@ M.get_win_info = function(tabnr, winid, current_win)
   return win
 end
 
+--- Process a tabpage's window layout as returned by `vim.fn.winlayout`.
+--- Filters unsupported buffers, collapses resulting empty branches and
+--- adds necessary information to leaf nodes (windows).
 ---@param tabnr integer
----@param layout table
+---@param layout vim.fn.winlayout.ret
 ---@param current_win integer
+---@return resession.WinLayout|false
 M.add_win_info_to_layout = function(tabnr, layout, current_win)
-  local type = layout[1]
-  if type == "leaf" then
-    layout[2] = M.get_win_info(tabnr, layout[2], current_win)
-    if not layout[2] then
-      return false
-    end
-  else
-    local last_slot = 1
-    local items = layout[2]
-    for _, v in ipairs(items) do
+  ---@diagnostic disable-next-line: undefined-field
+  ---@type 'leaf'|'col'|'row'|nil
+  local typ = layout[1]
+  if typ == "leaf" then
+    ---@cast layout vim.fn.winlayout.leaf
+    local res = M.get_win_info(tabnr, layout[2], current_win)
+    return res and { "leaf", res } or false
+  elseif typ then
+    ---@cast layout vim.fn.winlayout.branch
+    local items = {}
+    for _, v in ipairs(layout[2]) do
       local ret = M.add_win_info_to_layout(tabnr, v, current_win)
       if ret then
-        items[last_slot] = ret
-        last_slot = last_slot + 1
+        items[#items + 1] = ret
       end
-    end
-    while #items >= last_slot do
-      table.remove(items)
     end
     if #items == 1 then
       return items[1]
     elseif #items == 0 then
       return false
+    else
+      return { typ, items }
     end
   end
-  return layout
+  return false
 end
 
+--- Create all windows in the saved layout. Add created window ID information to leaves.
+---@param layout resession.WinLayoutLeaf|resession.WinLayoutBranch The window layout to apply, as returned by `add_win_info_to_layout`
+---@return resession.WinLayoutRestored
 local function set_winlayout(layout)
-  local type = layout[1]
-  if type == "leaf" then
+  local typ = layout[1]
+  if typ == "leaf" then
+    ---@cast layout resession.WinLayoutLeaf
+    ---@type resession.WinInfoRestored
     local win = layout[2]
-    win.winid = vim.api.nvim_get_current_win()
+    ---@type resession.WinID
+    local winid = vim.api.nvim_get_current_win()
+    win.winid = winid
     if win.cwd then
       vim.cmd(string.format("lcd %s", win.cwd))
     end
   else
+    ---@cast layout resession.WinLayoutBranch
     local winids = {}
     local splitright = vim.opt.splitright
     local splitbelow = vim.opt.splitbelow
@@ -100,7 +113,7 @@ local function set_winlayout(layout)
     vim.opt.splitbelow = true
     for i in ipairs(layout[2]) do
       if i > 1 then
-        if type == "row" then
+        if typ == "row" then
           vim.cmd("vsplit")
         else
           vim.cmd("split")
@@ -115,6 +128,7 @@ local function set_winlayout(layout)
       set_winlayout(v)
     end
   end
+  return layout
 end
 
 ---@param base integer
@@ -124,24 +138,29 @@ local function scale(base, factor)
   return math.floor(base * factor + 0.5)
 end
 
----@param layout table
----@param scale_factor number[] Scaling factor for [width, height]
+--- Apply saved data to restored windows. Calls extensions or loads files, then restores options and dimensions
+---@param layout resession.WinLayoutLeafRestored|resession.WinLayoutBranchRestored
+---@param scale_factor [number, number] Scaling factor for [width, height]
+---@return resession.WinLayoutRestored
+---@return {winid?: resession.WinID}
 local function set_winlayout_data(layout, scale_factor, visit_data)
   local log = require("resession.log")
-  local type = layout[1]
-  if type == "leaf" then
+  local typ = layout[1]
+  if typ == "leaf" then
+    ---@cast layout resession.WinLayoutLeafRestored
     local win = layout[2]
     vim.api.nvim_set_current_win(win.winid)
     if win.extension then
       local ext = util.get_extension(win.extension)
-      if ext then
+      if ext and ext.load_win then
         -- Re-enable autocmds so if the extensions rely on BufReadCmd it works
         vim.o.eventignore = ""
-        ---@diagnostic disable-next-line: param-type-not-match
         local ok, new_winid = pcall(ext.load_win, win.winid, win.extension_data)
         vim.o.eventignore = "all"
         if ok then
-          win.winid = new_winid or win.winid
+          ---@cast new_winid resession.WinID
+          new_winid = new_winid or win.winid
+          win.winid = new_winid
         else
           vim.notify(
             string.format('[resession] Extension "%s" load_win error: %s', win.extension, new_winid),
@@ -170,10 +189,10 @@ local function set_winlayout_data(layout, scale_factor, visit_data)
     util.restore_win_options(win.winid, win.options)
     local width_scale = vim.wo.winfixwidth and 1 or scale_factor[1]
     ---@cast width_scale number
-    vim.api.nvim_win_set_width(win.winid, scale(win.width, width_scale))
+    vim.api.nvim_win_set_width(win.winid --[[@as integer]], scale(win.width, width_scale))
     local height_scale = vim.wo.winfixheight and 1 or scale_factor[2]
     ---@cast height_scale number
-    vim.api.nvim_win_set_height(win.winid, scale(win.height, height_scale))
+    vim.api.nvim_win_set_height(win.winid --[[@as integer]], scale(win.height, height_scale))
     log.fmt_debug(
       "Restoring cursor for buf %s (uuid: %s) in win %s to %s",
       win.bufname,
@@ -181,7 +200,7 @@ local function set_winlayout_data(layout, scale_factor, visit_data)
       win.winid or "nil",
       win.cursor or "nil"
     )
-    local ok, err = pcall(vim.api.nvim_win_set_cursor, win.winid, win.cursor)
+    local ok, err = pcall(vim.api.nvim_win_set_cursor, win.winid --[[@as integer]], win.cursor)
     if not ok then
       log.fmt_error(
         "Failed restoring cursor for bufnr %s (uuid: %s) in win %s to %s: %s",
@@ -200,19 +219,21 @@ local function set_winlayout_data(layout, scale_factor, visit_data)
       set_winlayout_data(v, scale_factor, visit_data)
     end
   end
+  -- Make it somewhat explicit that we're modifying dicts in-place
+  return layout, visit_data
 end
 
----@param layout table
----@param scale_factor number[] Scaling factor for [width, height]
----@return integer? The window that should have focus after session load
+---@param layout resession.WinLayout|false|nil
+---@param scale_factor [number, number] Scaling factor for [width, height]
+---@return resession.WinID? The ID of the window that should have focus after session load
 M.set_winlayout = function(layout, scale_factor)
   if not layout then
     return
   end
-  set_winlayout(layout)
-  local ret = {}
-  set_winlayout_data(layout, scale_factor, ret)
-  return ret.winid
+  layout = set_winlayout(layout)
+  local visit_data = {}
+  layout, visit_data = set_winlayout_data(layout, scale_factor, visit_data)
+  return visit_data.winid
 end
 
 return M

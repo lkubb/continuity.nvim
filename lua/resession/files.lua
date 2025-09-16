@@ -12,7 +12,8 @@ M.is_mac = uv.os_uname().sysname == "Darwin"
 ---@type string
 M.sep = M.is_windows and "\\" or "/"
 
----@param ... string
+--- Check if any of a variable number of paths exists
+---@param ... string The paths to check
 ---@return boolean
 M.any_exists = function(...)
   for _, name in ipairs({ ... }) do
@@ -23,18 +24,21 @@ M.any_exists = function(...)
   return false
 end
 
----@param filepath string
+--- Check if a path exists
+---@param filepath string The path to check
 ---@return boolean
 M.exists = function(filepath)
   local stat = uv.fs_stat(filepath)
   return stat ~= nil and stat.type ~= nil
 end
 
+--- Join a variable number of path segments into a relative path specific to the OS
 ---@return string
 M.join = function(...)
   return table.concat({ ... }, M.sep)
 end
 
+--- Check whether a path is contained in a directory
 ---@param dir string
 ---@param path string
 ---@return boolean
@@ -42,6 +46,9 @@ M.is_subpath = function(dir, path)
   return string.sub(path, 0, string.len(dir)) == dir
 end
 
+--- Get a path relative to a standard path
+---@param stdpath 'cache'|'config'|'data'|'log'|'run'|'state'
+---@param ... string Variable number of path segments to append to the stdpath in OS-specific format
 M.get_stdpath_filename = function(stdpath, ...)
   local ok, dir = pcall(vim.fn.stdpath, stdpath)
   if not ok then
@@ -53,9 +60,11 @@ M.get_stdpath_filename = function(stdpath, ...)
       error(dir)
     end
   end
+  ---@cast dir string
   return M.join(dir, ...)
 end
 
+--- Try to read a file and return its contents on success
 ---@param filepath string
 ---@return string?
 M.read_file = function(filepath)
@@ -69,6 +78,7 @@ M.read_file = function(filepath)
   return content
 end
 
+--- Try to load a file and return its JSON-decoded contents on success
 ---@param filepath string
 ---@return any?
 M.load_json_file = function(filepath)
@@ -78,8 +88,9 @@ M.load_json_file = function(filepath)
   end
 end
 
----@param dirname string
----@param perms? integer
+--- Create a directory, including parents
+---@param dirname string The path of the directory to create
+---@param perms? integer The permissions to use for the final directory. Intermediate ones are created with the default permissions. Defaults to 493 (== 0o755)
 M.mkdir = function(dirname, perms)
   if not perms then
     perms = 493 -- 0755
@@ -93,8 +104,9 @@ M.mkdir = function(dirname, perms)
   end
 end
 
----@param filename string
----@param contents string
+--- Write a file (synchronously). Currently performs no error checking.
+---@param filename string The path of the file to write
+---@param contents string The contents to write
 M.write_file = function(filename, contents)
   M.mkdir(vim.fn.fnamemodify(filename, ":h"))
   local fd = assert(uv.fs_open(filename, "w", 420)) -- 0644
@@ -102,6 +114,7 @@ M.write_file = function(filename, contents)
   uv.fs_close(fd)
 end
 
+--- Ensure a file is absent
 ---@param filename string
 ---@return boolean?
 M.delete_file = function(filename)
@@ -110,7 +123,8 @@ M.delete_file = function(filename)
   end
 end
 
----@param dirname string
+--- Delete a directory, optionally recursively
+---@param dirname string The path of the directory to delete
 ---@param opts {recursive?: boolean}
 M.rmdir = function(dirname, opts)
   if M.exists(dirname) then
@@ -119,8 +133,9 @@ M.rmdir = function(dirname, opts)
   end
 end
 
----@param filename string
----@param obj any
+--- Dump a lua variable to a JSON-encoded file (synchronously)
+---@param filename string The path of the file to dump to
+---@param obj any The data to dump
 M.write_json_file = function(filename, obj)
   ---@diagnostic disable-next-line: param-type-mismatch
   M.write_file(filename, vim.json.encode(obj))

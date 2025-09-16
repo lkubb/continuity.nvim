@@ -1,11 +1,16 @@
 local config = require("resession.config")
 local M = {}
 
+---@type boolean?
 local seeded
 local uuid_v4_template = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx"
 
+---@type table<string, resession.Extension?>
+local ext_cache = {}
+
+--- Get the scope of an option. Note: Does not work for the only tabpage-scoped one (cmdheight).
 ---@param opt string
----@return string
+---@return 'buf'|'win'|'global'
 local function get_option_scope(opt)
   ---@diagnostic disable-next-line: unnecessary-if
   -- This only exists in nvim-0.9
@@ -17,8 +22,8 @@ local function get_option_scope(opt)
   end
 end
 
-local ext_cache = {}
----@param name string
+--- Attempt to load an extension.
+---@param name string The name of the extension to fetch.
 ---@return resession.Extension?
 M.get_extension = function(name)
   if ext_cache[name] then
@@ -50,6 +55,7 @@ M.get_extension = function(name)
   end
 end
 
+--- Return all global-scoped options.
 ---@return table<string, any>
 M.save_global_options = function()
   local ret = {}
@@ -61,7 +67,8 @@ M.save_global_options = function()
   return ret
 end
 
----@param winid integer
+--- Return all window-scoped options of a window buffer.
+---@param winid resession.WinID The window number to save options for.
 ---@return table<string, any>
 M.save_win_options = function(winid)
   local ret = {}
@@ -73,7 +80,8 @@ M.save_win_options = function(winid)
   return ret
 end
 
----@param bufnr integer
+--- Return all buffer-scoped options of a target buffer.
+---@param bufnr resession.BufNr The buffer number to save options for.
 ---@return table<string, any>
 M.save_buf_options = function(bufnr)
   local ret = {}
@@ -85,10 +93,11 @@ M.save_buf_options = function(bufnr)
   return ret
 end
 
+--- Return all tab-scoped options. Must be called with the target tabpage being the active one.
 ---@diagnostic disable-next-line: unused
----@param bufnr integer
+---@param tabnr resession.TabNr Unused.
 ---@return table<string, any>
-M.save_tab_options = function(bufnr)
+M.save_tab_options = function(tabnr)
   local ret = {}
   -- 'cmdheight' is the only tab-local option, but the scope from nvim_get_option_info is incorrect
   -- since there's no way to fetch a tabpage-local option, we rely on this being called from inside
@@ -99,7 +108,8 @@ M.save_tab_options = function(bufnr)
   return ret
 end
 
----@param opts table<string, any>
+--- Restore global-scoped options.
+---@param opts table<string, any> The options to apply.
 M.restore_global_options = function(opts)
   for opt, val in pairs(opts) do
     if get_option_scope(opt) == "global" then
@@ -108,8 +118,9 @@ M.restore_global_options = function(opts)
   end
 end
 
----@param winid integer
----@param opts table<string, any>
+--- Restore window-scoped options.
+---@param winid resession.WinID The window number to apply the option to.
+---@param opts table<string, any> The options to apply.
 M.restore_win_options = function(winid, opts)
   for opt, val in pairs(opts) do
     if get_option_scope(opt) == "win" then
@@ -118,8 +129,9 @@ M.restore_win_options = function(winid, opts)
   end
 end
 
----@param bufnr integer
----@param opts table<string, any>
+--- Restore buffer-scoped options.
+---@param bufnr integer The buffer number to apply the option to.
+---@param opts table<string, any> The options to apply.
 M.restore_buf_options = function(bufnr, opts)
   for opt, val in pairs(opts) do
     if get_option_scope(opt) == "buf" then
@@ -128,6 +140,7 @@ M.restore_buf_options = function(bufnr, opts)
   end
 end
 
+--- Restore tab-scoped options.
 ---@param opts table<string, any>
 M.restore_tab_options = function(opts)
   -- 'cmdheight' is the only tab-local option. See save_tab_options
@@ -137,6 +150,7 @@ M.restore_tab_options = function(opts)
   end
 end
 
+--- Get the path to the directory that stores session files.
 ---@param dirname? string
 ---@return string
 M.get_session_dir = function(dirname)
@@ -144,6 +158,7 @@ M.get_session_dir = function(dirname)
   return files.get_stdpath_filename("data", dirname or config.dir)
 end
 
+--- Get the path to the file that stores a saved session.
 ---@param name string The name of the session
 ---@param dirname? string
 ---@return string
@@ -153,6 +168,10 @@ M.get_session_file = function(name, dirname)
   return files.join(M.get_session_dir(dirname), filename)
 end
 
+--- Decide whether to include a buffer.
+---@param tabpage? resession.TabNr When saving a tab-scoped session, the tab number.
+---@param bufnr resession.BufNr The buffer to check for inclusion
+---@param tabpage_bufs table<resession.BufNr, true?> When saving a tab-scoped session, the list of buffers that are displayed in the tabpage.
 M.include_buf = function(tabpage, bufnr, tabpage_bufs)
   if not config.buf_filter(bufnr) then
     return false
@@ -163,6 +182,9 @@ M.include_buf = function(tabpage, bufnr, tabpage_bufs)
   return tabpage_bufs[bufnr] or config.tab_buf_filter(tabpage, bufnr)
 end
 
+--- Given a path, replace $HOME with ~ if present.
+---@param path string The path to shorten
+---@return string
 M.shorten_path = function(path)
   local home = os.getenv("HOME")
   if not home then
@@ -187,7 +209,7 @@ M.event = function(event)
 end
 
 --- Generate a UUID for a buffer.
----@return string
+---@return resession.BufUUID
 M.generate_uuid = function()
   if not seeded then
     math.randomseed(os.time())
@@ -202,7 +224,7 @@ M.generate_uuid = function()
 end
 
 --- List all untitled buffers using bufnr and uuid.
----@return {buf: integer, uuid: string?}[]
+---@return {buf: resession.BufNr, uuid: resession.BufUUID?}[]
 local function list_untitled_buffers()
   local res = {}
   for _, buf in ipairs(vim.api.nvim_list_bufs()) do
@@ -217,7 +239,7 @@ end
 --- File path: Ensure the file is loaded into a buffer and has any UUID. If it does not, assign it the specified one.
 --- Unnamed: Ensure an unnamed buffer with the specified UUID exists. If not, create a new unnamed buffer and assign the specified UUID.
 ---@param name string The path of the buffer or the empty string ("") for unnamed buffers.
----@param uuid? string The UUID the buffer should have.
+---@param uuid? resession.BufUUID The UUID the buffer should have.
 ---@return integer The buffer ID of the specified buffer.
 M.ensure_buf = function(name, uuid)
   local bufnr
@@ -238,6 +260,7 @@ M.ensure_buf = function(name, uuid)
   return bufnr
 end
 
+--- Ensure the active tabpage is a clean one.
 function M.open_clean_tab()
   -- Detect if we're already in a "clean" tab
   -- (one window, and one empty scratch buffer)
@@ -254,6 +277,7 @@ function M.open_clean_tab()
   vim.cmd.tabnew()
 end
 
+--- Force-close all tabs, windows and unload all buffers.
 function M.close_everything()
   local is_floating_win = vim.api.nvim_win_get_config(0).relative ~= ""
   if is_floating_win then
