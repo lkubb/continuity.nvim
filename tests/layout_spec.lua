@@ -1,5 +1,4 @@
-local layout = require("resession.layout")
-local util = require("resession.util")
+local layout = require("continuity.core.layout")
 
 describe("add_win_info_to_layout", function()
   local old_get_win_info = layout.get_win_info

@@ -38,15 +38,15 @@
 ---@field dir string Name of the directory that the current session is saved in
 
 ---@alias resession.Hook "pre_save"|"post_save"|"pre_load"|"post_load"
----@alias resession.BufUUID string
----@alias resession.WinID integer
----@alias resession.WinNr integer
----@alias resession.BufNr integer
----@alias resession.TabNr integer
+---@alias continuity.BufUUID string
+---@alias continuity.WinID integer
+---@alias continuity.WinNr integer
+---@alias continuity.BufNr integer
+---@alias continuity.TabNr integer
 
----@class resession.WinInfo
+---@class continuity.WinInfo
 ---@field bufname string The name of the buffer that's displayed in the window.
----@field bufuuid resession.BufUUID The buffer's UUID to track it over multiple sessions.
+---@field bufuuid continuity.BufUUID The buffer's UUID to track it over multiple sessions.
 ---@field current boolean Whether the window was the active one when saved.
 ---@field cursor [integer, integer] (row, col) tuple of the cursor position, mark-like => (1, 0)-indexed
 ---@field width integer Width of the window in number of columns.
@@ -56,38 +56,38 @@
 ---@field extension_data? any If the window is supported by an extension, the data it needs to remember.
 ---@field extension? string If the window is supported by an extension, the name of the extension.
 
----@class resession.WinInfoRestored: resession.WinInfo
----@field winid resession.WinID The window ID of the restored window in the current session
+---@class continuity.WinInfoRestored: continuity.WinInfo
+---@field winid continuity.WinID The window ID of the restored window in the current session
 
----@class resession.WinLayoutLeaf
+---@class continuity.WinLayoutLeaf
 ---@field [1] "leaf" Node type
----@field [2] resession.WinInfo Saved window info
+---@field [2] continuity.WinInfo Saved window info
 
----@class resession.WinLayoutLeafRestored: resession.WinLayoutLeaf
----@field [2] resession.WinInfoRestored Saved/restored window info
+---@class continuity.WinLayoutLeafRestored: continuity.WinLayoutLeaf
+---@field [2] continuity.WinInfoRestored Saved/restored window info
 
----@class resession.WinLayoutBranch
+---@class continuity.WinLayoutBranch
 ---@field [1] "row" | "col" Node type
----@field [2] (resession.WinLayoutLeaf|resession.WinLayoutBranch)[] children
+---@field [2] (continuity.WinLayoutLeaf|continuity.WinLayoutBranch)[] children
 
----@class resession.WinLayoutBranchRestored: resession.WinLayoutBranch
----@field [2] (resession.WinLayoutLeafRestored|resession.WinLayoutBranchRestored)[] children
+---@class continuity.WinLayoutBranchRestored: continuity.WinLayoutBranch
+---@field [2] (continuity.WinLayoutLeafRestored|continuity.WinLayoutBranchRestored)[] children
 
----@alias resession.WinLayout
----| resession.WinLayoutLeaf
----| resession.WinLayoutBranch
+---@alias continuity.WinLayout
+---| continuity.WinLayoutLeaf
+---| continuity.WinLayoutBranch
 
----@alias resession.WinLayoutRestored
----| resession.WinLayoutLeafRestored
----| resession.WinLayoutBranchRestored
+---@alias continuity.WinLayoutRestored
+---| continuity.WinLayoutLeafRestored
+---| continuity.WinLayoutBranchRestored
 
----@class resession.GlobalData
+---@class continuity.GlobalData
 ---@field cwd string
 ---@field height integer
 ---@field width integer
 ---@field options table<string, any>
 
----@class resession.BufData
+---@class continuity.BufData
 ---@field name string
 ---@field loaded boolean
 ---@field options table<string, any>
@@ -95,13 +95,13 @@
 ---@field uuid string
 ---@field in_win boolean
 
----@class resession.TabData
+---@class continuity.TabData
 ---@field options table<string, any>
----@field wins resession.WinLayout
+---@field wins continuity.WinLayout
 ---@field cwd string?
 
----@class resession.SessionData
----@field buffers resession.BufData[]
----@field tabs resession.TabData[]
+---@class continuity.SessionData
+---@field buffers continuity.BufData[]
+---@field tabs continuity.TabData[]
 ---@field tab_scoped boolean
----@field global resession.GlobalData
+---@field global continuity.GlobalData

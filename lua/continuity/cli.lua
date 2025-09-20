@@ -1,33 +1,33 @@
 ---@class continuity.Cli
 local M = {}
 
-local continuity = require("continuity")
+local Continuity = require("continuity")
 
 ---@type {[keyof continuity]: {func: function, args?: {complete: string[]|function}[], kwargs?: table<string, string[]|function>}}
 local funcs = {
   detach = {
-    func = continuity.detach,
+    func = Continuity.detach,
     kwargs = {
       notify = { "true", "false" },
     },
   },
   info = {
-    func = continuity.info,
+    func = Continuity.info,
   },
   list = {
-    func = continuity.list,
+    func = Continuity.list,
     kwargs = {
-      cwd = continuity.list_projects,
+      cwd = Continuity.list_projects,
     },
   },
   list_projects = {
-    func = continuity.list_projects,
+    func = Continuity.list_projects,
   },
   migrate_projects = {
-    func = continuity.migrate_projects,
+    func = Continuity.migrate_projects,
   },
   load = {
-    func = continuity.load,
+    func = Continuity.load,
     args = {
       -- This would need to complete directory paths
       { complete = {}, required = true },
@@ -38,24 +38,24 @@ local funcs = {
     },
   },
   reload = {
-    func = continuity.reload,
+    func = Continuity.reload,
   },
   reset = {
     -- should require bang with unsaved changes?
-    func = continuity.reset,
+    func = Continuity.reset,
     kwargs = {
       notify = { "true", "false" },
       reload = { "true", "false" },
     },
   },
   reset_project = {
-    func = continuity.reset_project,
+    func = Continuity.reset_project,
     kwargs = {
-      name = continuity.list_projects,
+      name = Continuity.list_projects,
     },
   },
   start = {
-    func = continuity.start,
+    func = Continuity.start,
     args = {
       {}, -- This would need path completion, not sure if it's possible to instruct nvim to do this
     },
@@ -64,7 +64,7 @@ local funcs = {
     },
   },
   stop = {
-    func = continuity.stop,
+    func = Continuity.stop,
   },
 }
 

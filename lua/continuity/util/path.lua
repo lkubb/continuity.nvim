@@ -1,3 +1,4 @@
+---@class continuity.util.Path
 local M = {}
 
 ---@diagnostic disable-next-line: deprecated
@@ -11,6 +12,15 @@ M.is_mac = uv.os_uname().sysname == "Darwin"
 
 ---@type string
 M.sep = M.is_windows and "\\" or "/"
+
+---Normalize a path by making it absolute and ensuring a trailing /
+---@param path string The path to normalize
+---@return string
+function M.norm(path)
+  path = vim.fn.fnamemodify(path, ":p")
+  path = path:sub(-1) ~= "/" and path .. "/" or path
+  return path
+end
 
 --- Check if any of a variable number of paths exists
 ---@param ... string The paths to check
@@ -46,6 +56,23 @@ M.is_subpath = function(dir, path)
   return string.sub(path, 0, string.len(dir)) == dir
 end
 
+--- Given a path, replace $HOME with ~ if present.
+---@param path string The path to shorten
+---@return string
+M.shorten_path = function(path)
+  local home = os.getenv("HOME")
+  if not home then
+    return path
+  end
+  local idx, chars = string.find(path, home)
+  if idx == 1 then
+    ---@cast chars integer
+    return "~" .. string.sub(path, idx + chars)
+  else
+    return path
+  end
+end
+
 --- Get a path relative to a standard path
 ---@param stdpath 'cache'|'config'|'data'|'log'|'run'|'state'
 ---@param ... string Variable number of path segments to append to the stdpath in OS-specific format
@@ -76,6 +103,17 @@ M.read_file = function(filepath)
   local content = uv.fs_read(fd, stat.size)
   uv.fs_close(fd)
   return content
+end
+
+---Read a file and return a list of its lines.
+---@param file string The path to read. Must exist, otherwise an error is raised.
+---@return string[]
+function M.read_lines(file)
+  local lines = {}
+  for line in io.lines(file) do
+    lines[#lines + 1] = line
+  end
+  return lines
 end
 
 --- Try to load a file and return its JSON-decoded contents on success
@@ -139,6 +177,22 @@ end
 M.write_json_file = function(filename, obj)
   ---@diagnostic disable-next-line: param-type-mismatch
   M.write_file(filename, vim.json.encode(obj))
+end
+
+--- Get the path to the directory that stores session files.
+---@param dirname string The name of the session directory
+---@return string
+M.get_session_dir = function(dirname)
+  return M.get_stdpath_filename("data", dirname)
+end
+
+--- Get the path to the file that stores a saved session.
+---@param name string The name of the session
+---@param dirname string The name of the session directory
+---@return string
+M.get_session_file = function(name, dirname)
+  local filename = string.format("%s.json", name:gsub(M.sep, "_"):gsub(":", "_"))
+  return M.join(M.get_session_dir(dirname), filename)
 end
 
 return M

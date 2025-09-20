@@ -1,23 +1,29 @@
-local config = require("resession.config")
-local util = require("resession.util")
+local Buf = require("continuity.core.buf")
+local Config = require("continuity.config")
+local Ext = require("continuity.core.ext")
+local util = require("continuity.util")
+
+local lazy_require = util.lazy_require
+local log = lazy_require("continuity.log")
+
 local M = {}
 
 --- Check if a window should be saved. If so, return relevant information.
 --- Only exposed for testing purposes
 ---@private
 ---@param tabnr integer The number of the tab that contains the window
----@param winid resession.WinID The window id of the window to query
+---@param winid continuity.WinID The window id of the window to query
 ---@param current_win integer The window id of the currently active window
----@return resession.WinInfo|false
+---@return continuity.WinInfo|false
 M.get_win_info = function(tabnr, winid, current_win)
   local bufnr = vim.api.nvim_win_get_buf(winid)
   local win = {}
   local supported_by_ext = false
-  for ext_name in pairs(config.extensions) do
-    local ext = util.get_extension(ext_name)
-    if ext and ext.is_win_supported and ext.is_win_supported(winid, bufnr) then
+  for ext_name in pairs(Config.extensions) do
+    local extmod = Ext.get(ext_name)
+    if extmod and extmod.is_win_supported and extmod.is_win_supported(winid, bufnr) then
       ---@diagnostic disable-next-line: param-type-not-match
-      local ok, extension_data = pcall(ext.save_win, winid)
+      local ok, extension_data = pcall(extmod.save_win, winid)
       if ok then
         ---@cast extension_data -string
         win.extension_data = extension_data
@@ -25,28 +31,28 @@ M.get_win_info = function(tabnr, winid, current_win)
         supported_by_ext = true
       else
         vim.notify(
-          string.format('[resession] Extension "%s" save_win error: %s', ext_name, extension_data),
+          string.format('[continuity] Extension "%s" save_win error: %s', ext_name, extension_data),
           vim.log.levels.ERROR
         )
       end
       break
     end
   end
-  if not supported_by_ext and not config.buf_filter(bufnr) then
+  if not supported_by_ext and not Config.session.buf_filter(bufnr) then
     return false
   end
   win = vim.tbl_extend("error", win, {
     bufname = vim.api.nvim_buf_get_name(bufnr),
     bufuuid = vim.b[
       bufnr --[[@as integer]]
-    ].resession_uuid,
+    ].continuity_uuid,
     current = winid == current_win,
     cursor = vim.api.nvim_win_get_cursor(winid),
     width = vim.api.nvim_win_get_width(winid),
     height = vim.api.nvim_win_get_height(winid),
-    options = util.save_win_options(winid),
+    options = util.opts.get_win(winid, Config.session.options),
   })
-  ---@cast win resession.WinInfo
+  ---@cast win continuity.WinInfo
   local winnr = vim.api.nvim_win_get_number(winid)
   if vim.fn.haslocaldir(winnr, tabnr) == 1 then
     win.cwd = vim.fn.getcwd(winnr, tabnr)
@@ -60,7 +66,7 @@ end
 ---@param tabnr integer
 ---@param layout vim.fn.winlayout.ret
 ---@param current_win integer
----@return resession.WinLayout|false
+---@return continuity.WinLayout|false
 M.add_win_info_to_layout = function(tabnr, layout, current_win)
   ---@diagnostic disable-next-line: undefined-field
   ---@type 'leaf'|'col'|'row'|nil
@@ -90,22 +96,22 @@ M.add_win_info_to_layout = function(tabnr, layout, current_win)
 end
 
 --- Create all windows in the saved layout. Add created window ID information to leaves.
----@param layout resession.WinLayoutLeaf|resession.WinLayoutBranch The window layout to apply, as returned by `add_win_info_to_layout`
----@return resession.WinLayoutRestored
+---@param layout continuity.WinLayoutLeaf|continuity.WinLayoutBranch The window layout to apply, as returned by `add_win_info_to_layout`
+---@return continuity.WinLayoutRestored
 local function set_winlayout(layout)
   local typ = layout[1]
   if typ == "leaf" then
-    ---@cast layout resession.WinLayoutLeaf
-    ---@type resession.WinInfoRestored
+    ---@cast layout continuity.WinLayoutLeaf
+    ---@type continuity.WinInfoRestored
     local win = layout[2]
-    ---@type resession.WinID
+    ---@type continuity.WinID
     local winid = vim.api.nvim_get_current_win()
     win.winid = winid
     if win.cwd then
       vim.cmd(string.format("lcd %s", win.cwd))
     end
   else
-    ---@cast layout resession.WinLayoutBranch
+    ---@cast layout continuity.WinLayoutBranch
     local winids = {}
     local splitright = vim.opt.splitright
     local splitbelow = vim.opt.splitbelow
@@ -139,54 +145,59 @@ local function scale(base, factor)
 end
 
 --- Apply saved data to restored windows. Calls extensions or loads files, then restores options and dimensions
----@param layout resession.WinLayoutLeafRestored|resession.WinLayoutBranchRestored
+---@param layout continuity.WinLayoutLeafRestored|continuity.WinLayoutBranchRestored
 ---@param scale_factor [number, number] Scaling factor for [width, height]
----@return resession.WinLayoutRestored
----@return {winid?: resession.WinID}
+---@return continuity.WinLayoutRestored
+---@return {winid?: continuity.WinID}
 local function set_winlayout_data(layout, scale_factor, visit_data)
-  local log = require("resession.log")
   local typ = layout[1]
   if typ == "leaf" then
-    ---@cast layout resession.WinLayoutLeafRestored
+    ---@cast layout continuity.WinLayoutLeafRestored
     local win = layout[2]
     vim.api.nvim_set_current_win(win.winid)
     if win.extension then
-      local ext = util.get_extension(win.extension)
-      if ext and ext.load_win then
+      local extmod = Ext.get(win.extension)
+      if extmod and extmod.load_win then
         -- Re-enable autocmds so if the extensions rely on BufReadCmd it works
-        vim.o.eventignore = ""
-        local ok, new_winid = pcall(ext.load_win, win.winid, win.extension_data)
-        vim.o.eventignore = "all"
+        ---@type boolean, (continuity.WinID|string)?
+        local ok, new_winid
+        util.opts.with({ eventignore = "" }, function()
+          ok, new_winid = pcall(extmod.load_win, win.winid, win.extension_data)
+        end)
         if ok then
-          ---@cast new_winid resession.WinID
+          ---@cast new_winid continuity.WinID?
           new_winid = new_winid or win.winid
           win.winid = new_winid
         else
           vim.notify(
-            string.format('[resession] Extension "%s" load_win error: %s', win.extension, new_winid),
+            string.format(
+              '[continuity] Extension "%s" load_win error: %s',
+              win.extension,
+              new_winid
+            ),
             vim.log.levels.ERROR
           )
         end
       end
     else
-      local bufnr = util.ensure_buf(win.bufname, win.bufuuid)
+      local bufnr = Buf.managed(win.bufname, win.bufuuid)
       log.fmt_debug("Loading buffer %s (uuid: %s) in win %s", win.bufname, win.bufuuid, win.winid)
       vim.api.nvim_win_set_buf(win.winid, bufnr)
       -- After setting the buffer into the window, manually set the filetype to trigger syntax highlighting
       log.fmt_trace("Triggering filetype from winlayout for buf %s", bufnr)
-      vim.o.eventignore = ""
-      vim.bo[bufnr].filetype = vim.bo[bufnr].filetype
-      vim.o.eventignore = "all"
+      util.opts.with({ eventignore = "" }, function()
+        vim.bo[bufnr].filetype = vim.bo[bufnr].filetype
+      end)
       -- Save the last position of the cursor in case buf_load plugins
       -- change the buffer text and request restoration
-      local temp_pos_table = vim.b[bufnr].resession_last_win_pos or {}
+      local temp_pos_table = vim.b[bufnr].continuity_last_win_pos or {}
       temp_pos_table[tostring(win.winid)] = win.cursor
-      vim.b[bufnr].resession_last_win_pos = temp_pos_table
+      vim.b[bufnr].continuity_last_win_pos = temp_pos_table
       -- We don't need to restore last cursor position on buffer load
       -- because the triggered :edit command keeps it
-      vim.b[bufnr].resession_restore_last_pos = nil
+      vim.b[bufnr].continuity_restore_last_pos = nil
     end
-    util.restore_win_options(win.winid, win.options)
+    util.opts.restore_win(win.winid, win.options)
     local width_scale = vim.wo.winfixwidth and 1 or scale_factor[1]
     ---@cast width_scale number
     vim.api.nvim_win_set_width(win.winid --[[@as integer]], scale(win.width, width_scale))
@@ -202,6 +213,7 @@ local function set_winlayout_data(layout, scale_factor, visit_data)
     )
     local ok, err = pcall(vim.api.nvim_win_set_cursor, win.winid --[[@as integer]], win.cursor)
     if not ok then
+      -- This can e.g. happen when an extension has restored the buffer asynchronously
       log.fmt_error(
         "Failed restoring cursor for bufnr %s (uuid: %s) in win %s to %s: %s",
         win.bufname,
@@ -223,9 +235,9 @@ local function set_winlayout_data(layout, scale_factor, visit_data)
   return layout, visit_data
 end
 
----@param layout resession.WinLayout|false|nil
+---@param layout continuity.WinLayout|false|nil
 ---@param scale_factor [number, number] Scaling factor for [width, height]
----@return resession.WinID? The ID of the window that should have focus after session load
+---@return continuity.WinID? The ID of the window that should have focus after session load
 M.set_winlayout = function(layout, scale_factor)
   if not layout then
     return
@@ -234,6 +246,44 @@ M.set_winlayout = function(layout, scale_factor)
   local visit_data = {}
   layout, visit_data = set_winlayout_data(layout, scale_factor, visit_data)
   return visit_data.winid
+end
+
+--- Ensure the active tabpage is a clean one.
+function M.open_clean_tab()
+  -- Detect if we're already in a "clean" tab
+  -- (one window, and one empty scratch buffer)
+  if #vim.api.nvim_tabpage_list_wins(0) == 1 then
+    if vim.api.nvim_buf_get_name(0) == "" then
+      local lines = vim.api.nvim_buf_get_lines(0, -1, 2, false)
+      if vim.tbl_isempty(lines) then
+        vim.bo.buflisted = false
+        vim.bo.bufhidden = "wipe"
+        return
+      end
+    end
+  end
+  vim.cmd.tabnew()
+end
+
+--- Force-close all tabs, windows and unload all buffers.
+function M.close_everything()
+  local is_floating_win = vim.api.nvim_win_get_config(0).relative ~= ""
+  if is_floating_win then
+    -- Go to the first window, which will not be floating
+    vim.cmd.wincmd({ args = { "w" }, count = 1 })
+  end
+
+  local scratch = vim.api.nvim_create_buf(false, true)
+  vim.bo[scratch].bufhidden = "wipe"
+  vim.api.nvim_win_set_buf(0, scratch)
+  vim.bo[scratch].buftype = ""
+  for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.bo[bufnr].buflisted then
+      vim.api.nvim_buf_delete(bufnr, { force = true })
+    end
+  end
+  vim.cmd.tabonly({ mods = { emsg_silent = true } })
+  vim.cmd.only({ mods = { emsg_silent = true } })
 end
 
 return M

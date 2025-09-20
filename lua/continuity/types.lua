@@ -19,3 +19,15 @@
 
 ---@class continuity.Autosession: continuity.AutosessionSpec
 ---@field cwd string The effective working directory that was determined when loading this auto-session
+
+--- Represents identification information of an existing buffer.
+--- It might or might not have been tagged with an internal UUID.
+---@class continuity.BufID
+---@field buf continuity.BufNr The buffer number
+---@field name string The name of the buffer. Empty string for unnamed buffers.
+---@field uuid string? The UUID assigned to the buffer.
+
+--- Represents identification information of an existing buffer
+--- that must have already been tagged with an internal UUID.
+---@class continuity.ManagedBufID: continuity.BufID
+---@field uuid string The UUID assigned to the buffer.

@@ -1,89 +1,44 @@
-local M = {}
+local Config = require("continuity.config")
+local util = require("continuity.util")
+
+local lazy_require = util.lazy_require
+local Buf = lazy_require("continuity.core.buf")
+local Ext = lazy_require("continuity.core.ext")
+local log = lazy_require("continuity.log")
 
 ---@diagnostic disable-next-line: deprecated
 local uv = vim.uv or vim.loop
 
-local has_setup = false
----@type resession.UserConfig?
-local pending_config
+local M = {}
+
 ---@type string?
 local current_session
 ---@type boolean
 local _is_loading = false
----@type table<resession.TabNr, string?>
+---@type table<continuity.TabNr, string?>
 local tab_sessions = {}
 ---@type table<string, {dir: string}?>
 local session_configs = {}
-local hooks = setmetatable({
-  pre_load = {},
-  post_load = {},
-  pre_save = {},
-  post_save = {},
-}, {
-  __index = function(_, key)
-    error(string.format('Unrecognized hook "%s"', key))
-  end,
-})
----@type table<resession.Hook, string>
-local hook_to_event = {
-  pre_load = "ResessionLoadPre",
-  post_load = "ResessionLoadPost",
-  pre_save = "ResessionSavePre",
-  post_save = "ResessionSavePost",
-}
 
 --- Called before all public functions in this module.
 --- Checks whether setup has been called and applies config.
 --- If it's the first invocation, also initializes hooks that publish native events.
 local function do_setup()
-  if pending_config then
-    local conf = pending_config
-    pending_config = nil
-    require("resession.config").setup(conf)
-
-    if not has_setup then
-      for hook, _ in pairs(hooks) do
-        M.add_hook(hook, function()
-          require("resession.util").event(hook_to_event[hook])
-        end)
-      end
-      has_setup = true
-    end
+  if Config._pending then
+    Config.setup()
   end
 end
 
---- Call registered hooks for `name`.
----@param name resession.Hook The specific hook to dispatch
----@param ... any Arguments to pass to registered callbacks
-local function dispatch(name, ...)
-  for _, cb in ipairs(hooks[name]) do
-    cb(...)
-  end
-end
-
---- Initialize resession with configuration options
----@param config resession.UserConfig
-M.setup = function(config)
-  pending_config = config or {}
-  if has_setup then
+--- Initialize continuity with configuration options.
+--- This is separate from the one in the root init.lua
+--- since it allows to load configuration which is only applied when needed.
+---@param conf continuity.UserConfig
+M.setup = function(conf)
+  Config._pending = conf or {}
+  ---@diagnostic disable-next-line: unnecessary-if
+  if Config.log then
+    -- config.log being defined means we were initialized already
     do_setup()
-  end
-end
-
---- Load an extension some time after calling setup()
----@param name string Name of the extension
----@param opts table Configuration options for extension
-M.load_extension = function(name, opts)
-  if has_setup then
-    local config = require("resession.config")
-    local util = require("resession.util")
-    config.extensions[name] = opts
-    util.get_extension(name)
-  elseif pending_config then
-    pending_config.extensions = pending_config.extensions or {}
-    pending_config.extensions[name] = opts
-  else
-    error("Cannot call resession.load_extension() before resession.setup()")
   end
 end
 
@@ -121,11 +76,8 @@ end
 ---@return string[]
 M.list = function(opts)
   opts = opts or {}
-  local config = require("resession.config")
-  local files = require("resession.files")
-  local util = require("resession.util")
-  local session_dir = util.get_session_dir(opts.dir)
-  if not files.exists(session_dir) then
+  local session_dir = util.path.get_session_dir(opts.dir or Config.session.dir)
+  if not util.path.exists(session_dir) then
     return {}
   end
   ---@diagnostic disable-next-line: param-type-mismatch, param-type-not-match, unnecessary-assert
@@ -147,10 +99,10 @@ M.list = function(opts)
   end
   uv.fs_closedir(fd)
   -- Order options
-  if config.load_order == "filename" then
+  if Config.load.order == "filename" then
     -- Sort by filename
     table.sort(ret)
-  elseif config.load_order == "modification_time" then
+  elseif Config.load.order == "modification_time" then
     -- Sort by modification_time
     local default = { mtime = { sec = 0 } }
     table.sort(ret, function(a, b)
@@ -158,7 +110,7 @@ M.list = function(opts)
       local file_b = uv.fs_stat(session_dir .. "/" .. b .. ".json") or default
       return file_a.mtime.sec > file_b.mtime.sec
     end)
-  elseif config.load_order == "creation_time" then
+  elseif Config.load.order == "creation_time" then
     -- Sort by creation_time in descending order (most recent first)
     local default = { birthtime = { sec = 0 } }
     table.sort(ret, function(a, b)
@@ -186,8 +138,6 @@ M.delete = function(name, opts)
   opts = vim.tbl_extend("keep", opts or {}, {
     notify = true,
   })
-  local files = require("resession.files")
-  local util = require("resession.util")
   if not name then
     local sessions = M.list({ dir = opts.dir })
     if vim.tbl_isempty(sessions) then
@@ -205,8 +155,8 @@ M.delete = function(name, opts)
     )
     return
   end
-  local filename = util.get_session_file(name, opts.dir)
-  if files.delete_file(filename) then
+  local filename = util.path.get_session_file(name, opts.dir or Config.session.dir)
+  if util.path.delete_file(filename) then
     if opts.notify then
       vim.notify(string.format('Deleted session "%s"', name))
     end
@@ -219,135 +169,145 @@ M.delete = function(name, opts)
   remove_tabpage_session(name)
 end
 
+--- Decide whether to include a buffer.
+---@param tabpage? continuity.TabNr When saving a tab-scoped session, the tab number.
+---@param bufnr continuity.BufNr The buffer to check for inclusion
+---@param tabpage_bufs table<continuity.BufNr, true?> When saving a tab-scoped session, the list of buffers that are displayed in the tabpage.
+local function include_buf(tabpage, bufnr, tabpage_bufs)
+  if not Config.session.buf_filter(bufnr) then
+    return false
+  end
+  if not tabpage then
+    return true
+  end
+  return tabpage_bufs[bufnr] or Config.session.tab_buf_filter(tabpage, bufnr)
+end
+
 --- Save the current global or tabpage state to a named session.
 ---@param name string The name of the session
 ---@param opts resession.SaveOpts
----@param target_tabpage? resession.TabNr Instead of saving everything, only save the current tabpage
+---@param target_tabpage? continuity.TabNr Instead of saving everything, only save the current tabpage
 local function save(name, opts, target_tabpage)
-  local config = require("resession.config")
   if _is_loading then
-    require("resession.log").warn("Save triggered while still loading session. Skipping save.")
+    log.warn("Save triggered while still loading session. Skipping save.")
     return
   end
-  local files = require("resession.files")
-  local layout = require("resession.layout")
-  local util = require("resession.util")
-  local filename = util.get_session_file(name, opts.dir)
-  dispatch("pre_save", name, opts, target_tabpage)
-  local eventignore = vim.o.eventignore
-  vim.o.eventignore = "all"
-
-  ---@type resession.SessionData
-  local data = {
-    buffers = {},
-    tabs = {},
-    tab_scoped = target_tabpage ~= nil,
-    global = {
-      cwd = vim.fn.getcwd(-1, -1),
-      height = vim.o.lines - vim.o.cmdheight,
-      width = vim.o.columns,
-      -- Don't save global options for tab-scoped session
-      options = target_tabpage and {} or util.save_global_options(),
-    },
-  }
-  ---@type resession.WinID
-  local current_win = vim.api.nvim_get_current_win()
-  ---@type table<resession.BufNr,true?>
-  local tabpage_bufs = {}
-  if target_tabpage then
-    for _, winid in ipairs(vim.api.nvim_tabpage_list_wins(target_tabpage)) do
-      local bufnr = vim.api.nvim_win_get_buf(winid)
-      tabpage_bufs[bufnr] = true
-    end
-  end
-  local is_unexpected_exit = vim.v.exiting ~= vim.NIL and vim.v.exiting > 0
-  for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
-    if util.include_buf(target_tabpage, bufnr, tabpage_bufs) then
-      if not vim.b[bufnr].resession_uuid then
-        vim.b[bufnr].resession_uuid = util.generate_uuid()
+  local layout = require("continuity.core.layout")
+  local filename = util.path.get_session_file(name, opts.dir or Config.session.dir)
+  Ext.dispatch("pre_save", name, opts, target_tabpage)
+  util.opts.with({ eventignore = "all" }, function()
+    ---@type continuity.SessionData
+    local data = {
+      buffers = {},
+      tabs = {},
+      tab_scoped = target_tabpage ~= nil,
+      global = {
+        cwd = vim.fn.getcwd(-1, -1),
+        height = vim.o.lines - vim.o.cmdheight,
+        width = vim.o.columns,
+        -- Don't save global options for tab-scoped session
+        options = target_tabpage and {} or util.opts.get_global(Config.session.options),
+      },
+    }
+    ---@type continuity.WinID
+    local current_win = vim.api.nvim_get_current_win()
+    ---@type table<continuity.BufNr,true?>
+    local tabpage_bufs = {}
+    if target_tabpage then
+      for _, winid in ipairs(vim.api.nvim_tabpage_list_wins(target_tabpage)) do
+        local bufnr = vim.api.nvim_win_get_buf(winid)
+        tabpage_bufs[bufnr] = true
       end
-      local buf = {
-        name = vim.api.nvim_buf_get_name(bufnr),
-        -- if neovim quit unexpectedly, all buffers will appear as unloaded.
-        -- As a hack, we just assume that all of them were loaded, to avoid all of them being
-        -- *unloaded* when the session is restored.
-        loaded = is_unexpected_exit or vim.api.nvim_buf_is_loaded(bufnr),
-        options = util.save_buf_options(bufnr),
-        last_pos = (
-          vim.b[bufnr].resession_restore_last_pos
-          and vim.b[bufnr].resession_last_buffer_pos
-        ) or vim.api.nvim_buf_get_mark(bufnr, '"'),
-        uuid = vim.b[bufnr].resession_uuid,
-      }
-      local in_win = vim.fn.bufwinid(bufnr)
-      buf.in_win = in_win > 0 and in_win or false
-      table.insert(data.buffers, buf)
     end
-  end
-  local current_tabpage = vim.api.nvim_get_current_tabpage()
-  local tabpages = target_tabpage and { target_tabpage } or vim.api.nvim_list_tabpages()
-  -- When the cmd window (e.g. q:) is active, calling nvim_set_current_tabpage causes an error:
-  -- E11: Invalid in command-line window. Try to avoid that error, otherwise abort.
-  local skip_set_current = false
-  ---@diagnostic disable-next-line: unnecessary-if
-  if vim.fn.getcmdwintype() ~= "" then
-    if #tabpages > 1 or tabpages[1] ~= current_tabpage then
-      -- Setting the current tabpage fails when a cmd window is active.
-      -- Since we really only need to do it to save the single tab-scoped option (cmdheight),
-      -- warn about it, but resume anyways. This means we cannot assume the current tabpage anywhere,
-      -- including in extensions! Also, all tab pages will use cmdheight of the current one.
-      require("resession.log").warn(
-        "Command-line window is active. Cannot properly save sessions that contain more tab pages than the active one. At least the cmdheight option will be affected."
-      )
+    local is_unexpected_exit = vim.v.exiting ~= vim.NIL and vim.v.exiting > 0
+    for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
+      if include_buf(target_tabpage, bufnr, tabpage_bufs) then
+        if not vim.b[bufnr].continuity_uuid then
+          vim.b[bufnr].continuity_uuid = Buf.generate_uuid()
+        end
+        local in_win = vim.fn.bufwinid(bufnr)
+        ---@type continuity.BufData
+        local buf = {
+          name = vim.api.nvim_buf_get_name(bufnr),
+          -- if neovim quit unexpectedly, all buffers will appear as unloaded.
+          -- As a hack, we just assume that all of them were loaded, to avoid all of them being
+          -- *unloaded* when the session is restored.
+          loaded = is_unexpected_exit or vim.api.nvim_buf_is_loaded(bufnr),
+          options = util.opts.get_buf(bufnr, Config.session.options),
+          last_pos = (
+            vim.b[bufnr].continuity_restore_last_pos
+            and vim.b[bufnr].continuity_last_buffer_pos
+          ) or vim.api.nvim_buf_get_mark(bufnr, '"'),
+          in_win = in_win > 0,
+          uuid = vim.b[bufnr].continuity_uuid,
+        }
+        table.insert(data.buffers, buf)
+      end
     end
-    skip_set_current = true
-  end
-  for _, tabpage in ipairs(tabpages) do
-    if not skip_set_current then
-      vim.api.nvim_set_current_tabpage(tabpage)
-    end
-    local tab = {}
-    local tabnr = vim.api.nvim_tabpage_get_number(tabpage)
-    if target_tabpage or vim.fn.haslocaldir(-1, tabnr) == 1 then
-      tab.cwd = vim.fn.getcwd(-1, tabnr)
-    end
-    tab.options = util.save_tab_options(tabpage)
-    table.insert(data.tabs, tab)
-    local winlayout = vim.fn.winlayout(tabnr)
-    tab.wins = layout.add_win_info_to_layout(tabnr, winlayout, current_win)
-  end
-  if not skip_set_current then
-    vim.api.nvim_set_current_tabpage(current_tabpage)
-  end
-
-  for ext_name, ext_config in pairs(config.extensions) do
-    local ext = util.get_extension(ext_name)
-    if ext and ext.on_save and (ext_config.enable_in_tab or not target_tabpage) then
-      local ok, ext_data = pcall(ext.on_save, {
-        tabpage = target_tabpage,
-      })
-      if ok then
-        data[ext_name] = ext_data
-      else
-        vim.notify(
-          string.format('[resession] Extension "%s" save error: %s', ext_name, ext_data),
-          vim.log.levels.ERROR
+    local current_tabpage = vim.api.nvim_get_current_tabpage()
+    local tabpages = target_tabpage and { target_tabpage } or vim.api.nvim_list_tabpages()
+    -- When the cmd window (e.g. q:) is active, calling nvim_set_current_tabpage causes an error:
+    -- E11: Invalid in command-line window. Try to avoid that error, otherwise abort.
+    local skip_set_current = false
+    ---@diagnostic disable-next-line: unnecessary-if
+    if vim.fn.getcmdwintype() ~= "" then
+      if #tabpages > 1 or tabpages[1] ~= current_tabpage then
+        -- Setting the current tabpage fails when a cmd window is active.
+        -- Since we really only need to do it to save the single tab-scoped option (cmdheight),
+        -- warn about it, but resume anyways. This means we cannot assume the current tabpage anywhere,
+        -- including in extensions! Also, all tab pages will use cmdheight of the current one.
+        log.warn(
+          "Command-line window is active. Cannot properly save sessions that contain more tab pages than the active one. At least the cmdheight option will be affected."
         )
       end
+      skip_set_current = true
     end
-  end
+    for _, tabpage in ipairs(tabpages) do
+      if not skip_set_current then
+        vim.api.nvim_set_current_tabpage(tabpage)
+      end
+      local tab = {}
+      local tabnr = vim.api.nvim_tabpage_get_number(tabpage)
+      if target_tabpage or vim.fn.haslocaldir(-1, tabnr) == 1 then
+        tab.cwd = vim.fn.getcwd(-1, tabnr)
+      end
+      tab.options = util.opts.get_tab(tabpage, Config.session.options)
+      table.insert(data.tabs, tab)
+      local winlayout = vim.fn.winlayout(tabnr)
+      tab.wins = layout.add_win_info_to_layout(tabnr, winlayout, current_win)
+    end
+    if not skip_set_current then
+      vim.api.nvim_set_current_tabpage(current_tabpage)
+    end
 
-  files.write_json_file(filename, data)
-  if opts.notify then
-    vim.notify(string.format('Saved session "%s"', name))
-  end
-  if opts.attach then
-    session_configs[name] = {
-      dir = opts.dir or config.dir,
-    }
-  end
-  vim.o.eventignore = eventignore
-  dispatch("post_save", name, opts, target_tabpage)
+    for ext_name, ext_config in pairs(Config.extensions) do
+      local extmod = Ext.get(ext_name)
+      if extmod and extmod.on_save and (ext_config.enable_in_tab or not target_tabpage) then
+        local ok, ext_data = pcall(extmod.on_save, {
+          tabpage = target_tabpage,
+        })
+        if ok then
+          data[ext_name] = ext_data
+        else
+          vim.notify(
+            string.format('[continuity] Extension "%s" save error: %s', ext_name, ext_data),
+            vim.log.levels.ERROR
+          )
+        end
+      end
+    end
+
+    util.path.write_json_file(filename, data)
+    if opts.notify then
+      vim.notify(string.format('Saved session "%s"', name))
+    end
+    if opts.attach then
+      session_configs[name] = {
+        dir = opts.dir or Config.session.dir,
+      }
+    end
+  end)
+  Ext.dispatch("post_save", name, opts, target_tabpage)
 end
 
 --- Save the current global state to disk
@@ -435,25 +395,24 @@ M.save_all = function(opts)
   end
 end
 
-local restore_group = vim.api.nvim_create_augroup("ResessionBufferRestore", { clear = true })
+local restore_group = vim.api.nvim_create_augroup("ContinuityBufferRestore", { clear = true })
 
 --- Restore cursor positions in buffers/windows if necessary. This is necessary
 --- either when a buffer that was hidden when the session was saved is loaded into a window for the first time
 --- or when on_buf_load plugins have changed the buffer contents dramatically
 --- after the reload triggered by :edit, otherwise the cursor is already restored
---- in util.set_winlayout_data.
----@param bufnr resession.BufNr The number of the buffer in the currently active window.
+--- in core.layout.set_winlayout_data.
+---@param bufnr continuity.BufNr The number of the buffer in the currently active window.
 ---@param win_only? boolean Only restore window-specific cursor positions of the buffer (multiple windows, first one is already recovered)
 local function restore_buf_cursor(bufnr, win_only)
   local last_pos
   local current_win
-  local log = require("resession.log")
-  if win_only and not vim.b[bufnr].resession_last_win_pos then
+  if win_only and not vim.b[bufnr].continuity_last_win_pos then
     -- Sanity check, this should not be triggered
     return
-  elseif not win_only and not vim.b[bufnr].resession_last_win_pos then
+  elseif not win_only and not vim.b[bufnr].continuity_last_win_pos then
     -- The buffer is restored for the first time and was hidden when session was saved
-    last_pos = vim.b[bufnr].resession_last_buffer_pos
+    last_pos = vim.b[bufnr].continuity_last_buffer_pos
     log.fmt_debug(
       "Buffer %s was not remembered in a window, restoring cursor from buf mark: %s",
       bufnr,
@@ -463,7 +422,7 @@ local function restore_buf_cursor(bufnr, win_only)
     -- The buffer was at least in one window when saved. If it's this one, restore
     -- its window-specific cursor position (there can be multiple).
     current_win = vim.api.nvim_get_current_win()
-    last_pos = vim.b[bufnr].resession_last_win_pos[tostring(current_win)]
+    last_pos = vim.b[bufnr].continuity_last_win_pos[tostring(current_win)]
     log.fmt_debug(
       "Trying to restore cursor for buf %s in win %s from saved win cursor pos: %s",
       bufnr,
@@ -471,9 +430,9 @@ local function restore_buf_cursor(bufnr, win_only)
       last_pos or "nil"
     )
     -- Cannot change individual fields, need to re-assign the whole table
-    local temp_pos_table = vim.b[bufnr].resession_last_win_pos
+    local temp_pos_table = vim.b[bufnr].continuity_last_win_pos
     temp_pos_table[tostring(current_win)] = nil
-    vim.b[bufnr].resession_last_win_pos = temp_pos_table
+    vim.b[bufnr].continuity_last_win_pos = temp_pos_table
     if not last_pos or not vim.tbl_isempty(temp_pos_table) then
       -- Either 1) the buffer is loaded into a new window before all its other saved ones
       -- have been restored or 2) this is one of several windows to this buffer that need to be restored.
@@ -486,7 +445,7 @@ local function restore_buf_cursor(bufnr, win_only)
       -- Need to use WinEnter since switching between multiple windows to the same buffer
       -- does not trigger a BufEnter event.
       vim.api.nvim_create_autocmd("WinEnter", {
-        desc = "Resession: restore cursor position of buffer in saved window",
+        desc = "Continuity: restore cursor position of buffer in saved window",
         callback = function(args)
           log.fmt_trace("WinEnter triggered for buf: %s", args)
           restore_buf_cursor(args.buf, true)
@@ -538,48 +497,45 @@ local function restore_buf_cursor(bufnr, win_only)
   -- Ensure we break the chain of window-specific cursor recoveries once all windows
   -- have been visited
   if
-    vim.b[bufnr].resession_last_win_pos and vim.tbl_isempty(vim.b[bufnr].resession_last_win_pos)
+    vim.b[bufnr].continuity_last_win_pos and vim.tbl_isempty(vim.b[bufnr].continuity_last_win_pos)
   then
     -- Clear the window-specific positions of this buffer since all have been applied
-    vim.b[bufnr].resession_last_win_pos = nil
+    vim.b[bufnr].continuity_last_win_pos = nil
   end
   -- The buffer pos is only relevant for buffers that were not in a window when saving,
   -- and from here on only window-specific cursor positions need to be recovered.
-  vim.b[bufnr].resession_last_buffer_pos = nil
+  vim.b[bufnr].continuity_last_buffer_pos = nil
 end
 
 --- Last step of buffer restoration, should be triggered by the final BufEnter event (:edit)
 --- for regular buffers or be called directly for non-:editable buffers (unnamed ones).
 --- Allows extensions to modify the final buffer contents and restores the cursor position (again).
----@param bufnr resession.BufNr The buffer number to restore
----@param buf resession.BufData The saved buffer information
----@param data resession.SessionData The complete session data
+---@param bufnr continuity.BufNr The buffer number to restore
+---@param buf continuity.BufData The saved buffer information
+---@param data continuity.SessionData The complete session data
 local function finish_restore_buf(bufnr, buf, data)
-  local log = require("resession.log")
   -- Save the last position of the cursor for buf_load plugins
   -- that change the buffer text, which can reset cursor position.
-  -- set_winlayout_data also sets resession_last_win_pos with window ids
+  -- set_winlayout_data also sets continuity_last_win_pos with window ids
   -- if the buffer was displayed when saving the session.
-  -- Extensions can request default restoration by setting resession_restore_last_pos on the buffer
-  vim.b[bufnr].resession_last_buffer_pos = buf.last_pos
+  -- Extensions can request default restoration by setting continuity_restore_last_pos on the buffer
+  vim.b[bufnr].continuity_last_buffer_pos = buf.last_pos
 
   log.fmt_debug("Calling on_buf_load extensions")
-  local util = require("resession.util")
-  local config = require("resession.config")
-  for ext_name in pairs(config.extensions) do
+  for ext_name in pairs(Config.extensions) do
     if data[ext_name] then
-      local ext = util.get_extension(ext_name)
-      if ext and ext.on_buf_load then
+      local extmod = Ext.get(ext_name)
+      if extmod and extmod.on_buf_load then
         log.fmt_trace(
           "Calling extension %s with bufnr %s and data %s",
           ext_name,
           bufnr,
           data[ext_name]
         )
-        local ok, err = pcall(ext.on_buf_load, bufnr, data[ext_name])
+        local ok, err = pcall(extmod.on_buf_load, bufnr, data[ext_name])
         if not ok then
           vim.notify(
-            string.format("[resession] Extension %s on_buf_load error: %s", ext_name, err),
+            string.format("[continuity] Extension %s on_buf_load error: %s", ext_name, err),
             vim.log.levels.ERROR
           )
         end
@@ -587,9 +543,9 @@ local function finish_restore_buf(bufnr, buf, data)
     end
   end
 
-  if vim.b[bufnr].resession_restore_last_pos then
+  if vim.b[bufnr].continuity_restore_last_pos then
     log.fmt_debug("Need to restore last cursor pos for buf %s", bufnr)
-    vim.b[bufnr].resession_restore_last_pos = nil
+    vim.b[bufnr].continuity_restore_last_pos = nil
     -- Need to schedule this, otherwise it does not work for previously hidden buffers
     -- to restore from mark.
     vim.schedule(function()
@@ -607,15 +563,14 @@ local plan_restore
 --- of the last cursor position when a) the buffer was not inside a window when saving or
 --- b) on_buf_load plugins reenabled recovery after altering the contents.
 ---@param bufnr integer The number of the buffer to restore
----@param buf resession.BufData The saved buffer metadata of the buffer to restore
----@param data resession.SessionData The complete session data
+---@param buf continuity.BufData The saved buffer metadata of the buffer to restore
+---@param data continuity.SessionData The complete session data
 local function restore_buf(bufnr, buf, data)
-  if not vim.b[bufnr]._resession_need_edit then
+  if not vim.b[bufnr]._continuity_need_edit then
     -- prevent recursion in nvim <0.11: https://github.com/neovim/neovim/pull/29544
     return
   end
-  vim.b[bufnr]._resession_need_edit = nil
-  local log = require("resession.log")
+  vim.b[bufnr]._continuity_need_edit = nil
   -- This function reloads the buffer in order to trigger the proper AutoCmds
   -- by calling :edit. It doesn't work for unnamed buffers though.
   if vim.api.nvim_buf_get_name(bufnr) == "" then
@@ -637,14 +592,14 @@ local function restore_buf(bufnr, buf, data)
   local swapcheck = vim.api.nvim_create_autocmd("SwapExists", {
     callback = function()
       log.fmt_debug("Existing swapfile for buf %s at %s", bufnr, vim.v.swapname)
-      vim.b[bufnr]._resession_swapfile = vim.v.swapname
+      vim.b[bufnr]._continuity_swapfile = vim.v.swapname
       -- TODO: better swap handling via swapinfo() and taking continuity into account
     end,
     once = true,
     group = restore_group,
   })
   local finish_restore = vim.api.nvim_create_autocmd("BufEnter", {
-    desc = "Resession: complete setup of restored buffer (2)",
+    desc = "Continuity: complete setup of restored buffer (2)",
     callback = function(args)
       log.fmt_trace("BufEnter triggered again for: %s", args)
       -- Might have already been deleted, in which case this call fails
@@ -685,22 +640,21 @@ end
 --- Create the autocommand that re-:edits a buffer when it's first entered.
 --- Required since events were suppressed when loading it initially, which breaks many extensions.
 ---@param bufnr integer The number of the buffer to schedule restoration for
----@param buf resession.BufData The saved buffer metadata of the buffer to schedule restoration for
----@param data resession.SessionData The complete session data
+---@param buf continuity.BufData The saved buffer metadata of the buffer to schedule restoration for
+---@param data continuity.SessionData The complete session data
 function plan_restore(bufnr, buf, data)
-  local log = require("resession.log")
-  vim.b[bufnr]._resession_need_edit = true
+  vim.b[bufnr]._continuity_need_edit = true
   vim.api.nvim_create_autocmd("BufEnter", {
-    desc = "Resession: complete setup of restored buffer (1a)",
+    desc = "Continuity: complete setup of restored buffer (1a)",
     callback = function(args)
-      if vim.g._resession_verylazy_done then
+      if vim.g._continuity_verylazy_done then
         log.fmt_trace("BufEnter triggered for buf %s, VeryLazy done for: %s", bufnr, args)
         restore_buf(bufnr, buf, data)
       else
         log.fmt_trace("BufEnter triggered for buf %s, waiting for VeryLazy for: %s", bufnr, args)
         vim.api.nvim_create_autocmd("User", {
           pattern = "VeryLazy",
-          desc = "Resession: complete setup of restored buffer (1b)",
+          desc = "Continuity: complete setup of restored buffer (1b)",
           callback = function()
             log.fmt_trace("BufEnter triggered, VeryLazy done for: %s", args)
             restore_buf(bufnr, buf, data)
@@ -721,20 +675,19 @@ end
 --- Ensure a saved buffer exists in the same state as it was saved.
 --- Extracted from the loading logic to keep DRY.
 --- This should be called when events are suppressed.
----@param buf resession.BufData The saved buffer metadata for the buffer
----@param data resession.SessionData The complete session data
----@return resession.BufNr
+---@param buf continuity.BufData The saved buffer metadata for the buffer
+---@param data continuity.SessionData The complete session data
+---@return continuity.BufNr
 local function load_buf(buf, data)
-  local util = require("resession.util")
-  local bufnr = util.ensure_buf(buf.name, buf.uuid)
+  local bufnr = Buf.managed(buf.name, buf.uuid)
 
   if buf.loaded then
     vim.fn.bufload(bufnr)
-    vim.b[bufnr].resession_restore_last_pos = true
+    vim.b[bufnr].continuity_restore_last_pos = true
     plan_restore(bufnr, buf, data)
   end
-  vim.b[bufnr].resession_last_buffer_pos = buf.last_pos
-  util.restore_buf_options(bufnr, buf.options)
+  vim.b[bufnr].continuity_last_buffer_pos = buf.last_pos
+  util.opts.restore_buf(bufnr, buf.options)
   return bufnr
 end
 
@@ -744,17 +697,14 @@ end
 ---@param data table
 ---@param visible_only bool
 local function dispatch_post_bufinit(data, visible_only)
-  local config = require("resession.config")
-  local util = require("resession.util")
-
-  for ext_name in pairs(config.extensions) do
+  for ext_name in pairs(Config.extensions) do
     if data[ext_name] then
-      local ext = util.get_extension(ext_name)
-      if ext and ext.on_post_bufinit then
-        local ok, err = pcall(ext.on_post_bufinit, data[ext_name], visible_only)
+      local extmod = Ext.get(ext_name)
+      if extmod and extmod.on_post_bufinit then
+        local ok, err = pcall(extmod.on_post_bufinit, data[ext_name], visible_only)
         if not ok then
           vim.notify(
-            string.format("[resession] Extension %s on_post_bufinit error: %s", ext_name, err),
+            string.format("[continuity] Extension %s on_post_bufinit error: %s", ext_name, err),
             vim.log.levels.ERROR
           )
         end
@@ -779,11 +729,7 @@ M.load = function(name, opts)
     attach = true,
   })
   ---@cast opts resession.LoadOpts
-  local config = require("resession.config")
-  local files = require("resession.files")
-  local layout = require("resession.layout")
-  local util = require("resession.util")
-  local log = require("resession.log")
+  local layout = require("continuity.core.layout")
   if not name then
     local sessions = M.list({ dir = opts.dir })
     if vim.tbl_isempty(sessions) then
@@ -791,11 +737,11 @@ M.load = function(name, opts)
       return
     end
     local select_opts = { kind = "resession_load", prompt = "Load session" }
-    if config.load_detail then
+    if Config.load.detail then
       local session_data = {}
       for _, session_name in ipairs(sessions) do
-        local filename = util.get_session_file(session_name, opts.dir)
-        local data = files.load_json_file(filename)
+        local filename = util.path.get_session_file(session_name, opts.dir or Config.session.dir)
+        local data = util.path.load_json_file(filename)
         session_data[session_name] = data
       end
       select_opts.format_item = function(session_name)
@@ -804,9 +750,9 @@ M.load = function(name, opts)
         if data then
           if data.tab_scoped then
             local tab_cwd = data.tabs[1].cwd
-            formatted = formatted .. string.format(" (tab) [%s]", util.shorten_path(tab_cwd))
+            formatted = formatted .. string.format(" (tab) [%s]", util.path.shorten_path(tab_cwd))
           else
-            formatted = formatted .. string.format(" [%s]", util.shorten_path(data.global.cwd))
+            formatted = formatted .. string.format(" [%s]", util.path.shorten_path(data.global.cwd))
           end
         end
         return formatted
@@ -819,47 +765,47 @@ M.load = function(name, opts)
     end)
     return
   end
-  local filename = util.get_session_file(name, opts.dir)
-  local data = files.load_json_file(filename)
+  local filename = util.path.get_session_file(name, opts.dir or Config.session.dir)
+  local data = util.path.load_json_file(filename)
   log.fmt_trace("Loading session %s. Data: %s", name, data or "nil")
   if not data then
     if not opts.silence_errors then
-      error(string.format('Could not find session "%s"', name))
+      error(string.format('Could not find session "%s"', filename))
     end
     return
   end
-  dispatch("pre_load", name, opts)
+  Ext.dispatch("pre_load", name, opts)
   _is_loading = true
   if opts.reset == "auto" then
     opts.reset = not data.tab_scoped
   end
   if opts.reset then
-    util.close_everything()
+    layout.close_everything()
   else
-    util.open_clean_tab()
+    layout.open_clean_tab()
   end
 
   -- Keep track of buffers that are not displayed for later restoration
   -- to speed up startup
-  ---@type resession.BufData[]
+  ---@type continuity.BufData[]
   local buffers_later = {}
 
   -- Don't trigger autocmds during session load
   -- Ignore all messages (including swapfile messages) during session load
-  util.suppress("all", "aAF", function()
+  util.opts.with({ eventignore = "all", shortmess = "aAF" }, function()
     if not data.tab_scoped then
       -- Set the options immediately
-      util.restore_global_options(data.global.options)
+      util.opts.restore_global(data.global.options)
     end
 
-    for ext_name in pairs(config.extensions) do
+    for ext_name in pairs(Config.extensions) do
       if data[ext_name] then
-        local ext = util.get_extension(ext_name)
-        if ext and ext.on_pre_load then
-          local ok, err = pcall(ext.on_pre_load, data[ext_name])
+        local extmod = Ext.get(ext_name)
+        if extmod and extmod.on_pre_load then
+          local ok, err = pcall(extmod.on_pre_load, data[ext_name])
           if not ok then
             vim.notify(
-              string.format("[resession] Extension %s on_pre_load error: %s", ext_name, err),
+              string.format("[continuity] Extension %s on_pre_load error: %s", ext_name, err),
               vim.log.levels.ERROR
             )
           end
@@ -873,17 +819,17 @@ M.load = function(name, opts)
     }
     -- Special case for folke/lazy.nvim - we want to wait with :edit-ing a buffer
     -- until all plugins are done loading, otherwise some configs might not work as expected.
-    if vim.g.lazy_did_setup and not vim.g._resession_verylazy_done then
-      vim.g._resession_verylazy_done = false
+    if vim.g.lazy_did_setup and not vim.g._continuity_verylazy_done then
+      vim.g._continuity_verylazy_done = false
       vim.api.nvim_create_autocmd("User", {
         pattern = "VeryLazy",
         callback = function()
-          vim.g._resession_verylazy_done = true
+          vim.g._continuity_verylazy_done = true
         end,
         once = true,
       })
     else
-      vim.g._resession_verylazy_done = true
+      vim.g._continuity_verylazy_done = true
     end
 
     ---@type integer?
@@ -926,7 +872,7 @@ M.load = function(name, opts)
         curwin = win
       end
       if tab.options then
-        util.restore_tab_options(tab.options)
+        util.opts.restore_tab(tab.options)
       end
     end
 
@@ -941,14 +887,14 @@ M.load = function(name, opts)
       vim.cmd("buffer " .. last_bufnr)
     end
 
-    for ext_name in pairs(config.extensions) do
+    for ext_name in pairs(Config.extensions) do
       if data[ext_name] then
-        local ext = util.get_extension(ext_name)
-        if ext and ext.on_post_load then
-          local ok, err = pcall(ext.on_post_load, data[ext_name])
+        local extmod = Ext.get(ext_name)
+        if extmod and extmod.on_post_load then
+          local ok, err = pcall(extmod.on_post_load, data[ext_name])
           if not ok then
             vim.notify(
-              string.format('[resession] Extension "%s" on_post_load error: %s', ext_name, err),
+              string.format('[continuity] Extension "%s" on_post_load error: %s', ext_name, err),
               vim.log.levels.ERROR
             )
           end
@@ -965,26 +911,27 @@ M.load = function(name, opts)
       if data.tab_scoped then
         tab_sessions[vim.api.nvim_get_current_tabpage()] = name
       else
+        ---@diagnostic disable-next-line: unused
         current_session = name
       end
       session_configs[name] = {
-        dir = opts.dir or config.dir,
+        dir = opts.dir or Config.session.dir,
       }
     end
   end)
-  dispatch("post_load", name, opts)
+  Ext.dispatch("post_load", name, opts)
   -- Trigger the BufEnter event defined above manually for the current buffer.
   -- It will take care of reloading the buffer to check for swap files,
   -- enable syntax highlighting and load plugins.
   vim.api.nvim_exec_autocmds("BufEnter", { buffer = vim.api.nvim_get_current_buf() })
   vim.api.nvim_create_autocmd({ "CursorHold", "CursorHoldI" }, {
     once = true,
-    desc = "Resession: Restore buffers not shown in windows",
+    desc = "Continuity: Restore buffers not shown in windows",
     group = restore_group,
     callback = function()
       -- Don't trigger autocmds during buffer load (shouldn't be necessary since this autocmd is not nested)
       -- Ignore all messages (including swapfile messages) during session load
-      util.suppress("all", "aAF", function()
+      util.opts.with({ eventignore = "all", shortmess = "aAF" }, function()
         for _, buf in ipairs(buffers_later) do
           load_buf(buf, data)
         end
@@ -993,43 +940,6 @@ M.load = function(name, opts)
       _is_loading = false
     end,
   })
-end
-
---- Add a callback that runs at a specific time
----@param name resession.Hook
----@param callback fun(...: any)
-M.add_hook = function(name, callback)
-  table.insert(hooks[name], callback)
-end
-
---- Remove a hook callback
----@param name resession.Hook
----@param callback fun(...: any)
-M.remove_hook = function(name, callback)
-  local cbs = hooks[name]
-  for i, cb in ipairs(cbs) do
-    if cb == callback then
-      table.remove(cbs, i)
-      break
-    end
-  end
-end
-
---- The default config.buf_filter (takes all buflisted files with "", "acwrite", or "help" buftype)
----@param bufnr integer
----@return boolean
-M.default_buf_filter = function(bufnr)
-  local buftype = vim.bo[bufnr].buftype
-  if buftype == "help" then
-    return true
-  end
-  if buftype ~= "" and buftype ~= "acwrite" then
-    return false
-  end
-  if vim.api.nvim_buf_get_name(bufnr) == "" then
-    return false
-  end
-  return vim.bo[bufnr].buflisted
 end
 
 --- Returns true if a session is currently being loaded
