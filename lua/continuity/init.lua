@@ -44,14 +44,10 @@ local _loading_session_data
 -- Monitor the currently active branch and check if we need to reload when it changes
 ---@type string?
 local last_head
--- Save the effective cwd determined during startup. If we concluded we shouldn't initialize,
--- this will stay nil and continuity will not become active during this nvim session.
----@type string|false
-local startup_cwd
 -- When an autosession is active, the augroup that monitors for changes (git branch, global cwd)
 -- to automatically save and reload when necessary
 ---@type integer?
-local autosave_group
+local monitor_group
 
 ---Renders autosession metadata for a specific directory.
 ---Returns nil when autosessions are disabled for this directory.
@@ -487,21 +483,12 @@ local function reload()
   load(autosession)
 end
 
----Called by resession before loading a new session. Ensures we save and detach a currently active one.
-local function pre_load_hook()
-  if _current_session then
-    log.fmt_trace("Continuity: Detaching on pre_load")
-    detach()
-  end
-end
-
 ---Remove all monitoring hooks.
 local function stop_monitoring()
-  if autosave_group then
-    vim.api.nvim_clear_autocmds({ group = autosave_group })
-    autosave_group = nil
+  if monitor_group then
+    vim.api.nvim_clear_autocmds({ group = monitor_group })
+    monitor_group = nil
   end
-  Ext.remove_hook("pre_load", pre_load_hook)
   last_head = nil
   -- TODO: Should we remove buffer-local variables like _continuity_needs_restore?
 end
@@ -513,26 +500,10 @@ end
 ---4. When the global CWD changes, save/detach/reload active autosession.
 ---@param autosession continuity.Autosession? The active autosession that should be monitored
 function monitor(autosession)
-  stop_monitoring() -- Ensures the resession hook is not added twice, augroup would be cleared anyways
-  autosave_group = vim.api.nvim_create_augroup("ContinuityHooks", { clear = true })
-
-  -- Cannot rely on autocmds since they are executed
-  -- only after the new session has begun loading. Hooks are called procedurally.
-  -- TODO: Make this call idempotent
-  Ext.add_hook("pre_load", pre_load_hook)
+  monitor_group = vim.api.nvim_create_augroup("ContinuityHooks", { clear = true })
 
   -- Add extension for save/restore of unsaved buffers. Note: This is idempotent
   Ext.load_extension("continuity", {})
-
-  -- Ensure we save the current autosession before leaving neovim
-  -- FIXME: This duplicates resession autosave functionality!
-  vim.api.nvim_create_autocmd("VimLeavePre", {
-    callback = function()
-      log.fmt_trace("Continuity: Saving on VimLeavePre")
-      save()
-    end,
-    group = autosave_group,
-  })
 
   ---@type boolean?
   local gitsigns_in_sync = false
@@ -597,7 +568,7 @@ function monitor(autosession)
         ---@diagnostic disable-next-line: unused
         last_head = vim.g.gitsigns_head
       end,
-      group = autosave_group,
+      group = monitor_group,
     })
   end, 500)
 
@@ -630,7 +601,7 @@ function monitor(autosession)
         detach()
       end
     end,
-    group = autosave_group,
+    group = monitor_group,
   })
   vim.api.nvim_create_autocmd("DirChanged", {
     pattern = "global",
@@ -640,61 +611,7 @@ function monitor(autosession)
         reload()
       end
     end,
-    group = autosave_group,
-  })
-end
-
----@type boolean?
-local initialized
-
----Needs to be called very early. Determines if Continuity should start automatically during startup.
-local function initial_load()
-  if initialized then
-    return
-  end
-  ---@diagnostic disable-next-line: unused
-  initialized = true
-
-  -- First, check if we should setup at all.
-  -- We don't want to do that if we're running headless or were invoked
-  -- with path arguments that were not a single directory.
-  -- We also don't want to run if we're running as a pager, but that
-  -- detection relies on an event that hasn't been fired yet.
-  if util.auto.is_headless() then
-    startup_cwd = false
-    return
-  end
-
-  startup_cwd = util.auto.cwd_init()
-  if startup_cwd == false then
-    return
-  end
-
-  local init_group = vim.api.nvim_create_augroup("ContinuityInit", { clear = true })
-
-  -- This event is triggered before VimEnter and indicates we're running as a pager
-  -- Disable continuity in that case.
-  vim.api.nvim_create_autocmd("StdinReadPre", {
-    callback = function()
-      startup_cwd = false
-    end,
-    group = init_group,
-  })
-
-  -- The actual loading happens on VimEnter.
-  -- This loads a session for effective_cwd and creates other
-  -- session management hooks.
-  vim.api.nvim_create_autocmd("VimEnter", {
-    callback = function()
-      -- Don't load if we're in pager mode
-      if startup_cwd == false then
-        return
-      end
-      ---@cast startup_cwd -false
-      load(startup_cwd)
-    end,
-    group = init_group,
-    nested = true, -- otherwise the focused buffer is not initialized correctly
+    group = monitor_group,
   })
 end
 
@@ -916,18 +833,6 @@ end
 ---@param opts continuity.UserConfig?
 local function setup(opts)
   Config.setup(opts)
-
-  vim.api.nvim_create_user_command("Continuity", function(params)
-    require("continuity.cli").run(params)
-  end, {
-    force = true,
-    nargs = "*",
-    complete = function(arglead, line)
-      return require("continuity.cli").complete(arglead, line)
-    end,
-  })
-
-  initial_load()
 end
 
 ---@class continuity

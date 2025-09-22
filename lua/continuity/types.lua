@@ -1,5 +1,32 @@
 ---@meta
 
+--- A function that is called during Neovim startup. It receives information
+--- about the current process initialization context and decides whether to
+--- enable autosession monitoring and if we should load an autosession during startup.
+--- Needs to be set in `vim.g.continuity_autosession` before plugins are initialized.
+---
+--- Possible return values:
+---
+--- * `false` to disable monitoring.
+---    Autosessions need to be enabled manually if desired.
+--- * `nil` to enable automatic monitoring.
+---    Don't load an autosession during startup, but still
+---    monitor for directory/branch changes.
+--- * the path to a directory.
+---   The corresponding autosession is loaded afterwards.
+---
+--- The default function behaves as follows:
+---
+--- It disables monitoring in the following cases:
+--- * If we're in headless or pager mode.
+--- * If Neovim was told to open a specific file.
+--- * If `argv` contains more than one argument or contains `-c` (commands to be run).
+---
+--- If Neovim was launched without arguments, loads the autosession for the process' CWD.
+--- If the single argument passed to Neovim is a directory, loads the autosession for that directory.
+--- There's no case where it enables monitoring without immediately loading an autosession.
+---@alias continuity.InitHandler fun(ctx: {is_headless: boolean, is_pager: boolean}): (string|false)?
+
 ---@class continuity.GitInfo
 ---@field commongitdir string The common git dir, usually equal to gitdir, unless the worktree is not the default workdir (e.g. in worktree checkuots of bare repos). Then it's the actual repo root and gitdir is <git_common_dir>/worktrees/<worktree_name>
 ---@field gitdir string The repository (or worktree) data path

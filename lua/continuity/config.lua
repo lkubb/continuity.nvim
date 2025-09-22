@@ -78,9 +78,6 @@ local util = require("continuity.util")
 ---@field _pending continuity.UserConfig?
 local M = {}
 
----@diagnostic disable-next-line: deprecated
-local uv = vim.uv or vim.loop
-
 --- The default config.session.buf_filter (takes all buflisted files with "", "acwrite", or "help" buftype)
 ---@param bufnr integer
 ---@return boolean
@@ -150,8 +147,6 @@ local defaults = {
   },
 }
 
----@type uv.uv_timer_t?
-local autosave_timer
 ---@param config continuity.UserConfig?
 function M.setup(config)
   ---@diagnostic disable-next-line: param-type-not-match
@@ -163,28 +158,8 @@ function M.setup(config)
 
   M._pending = nil
 
-  local Core = require("continuity.core")
-  if autosave_timer then
-    autosave_timer:close()
-    autosave_timer = nil
-  end
-  local autosave_group = vim.api.nvim_create_augroup("ContinuityAutosave", { clear = true })
-  if M.autosave.enabled then
-    vim.api.nvim_create_autocmd("VimLeavePre", {
-      group = autosave_group,
-      callback = function()
-        Core.save_all({ notify = false })
-      end,
-    })
-    autosave_timer = assert(uv.new_timer())
-    autosave_timer:start(
-      M.autosave.interval * 1000,
-      M.autosave.interval * 1000,
-      vim.schedule_wrap(function()
-        Core.save_all({ notify = M.autosave.notify })
-      end)
-    )
-  end
+  -- TODO: This should be session-specific config
+  require("continuity.core").autosave(M.autosave.enabled, M.autosave.interval, M.autosave.notify)
   require("continuity.core.ext").setup()
 end
 

@@ -34,8 +34,9 @@
 ---@field load_win? fun(winid: integer, data: any): nil|integer
 
 ---@class (exact) resession.SessionInfo
----@field name string Name of the current session
----@field dir string Name of the directory that the current session is saved in
+---@field name string Name of the session in the currently active tab
+---@field dir string Name of the directory that the session is saved in
+---@field tab_scoped boolean Whether the session in the currently active tab is limited to the tab
 
 ---@alias resession.Hook "pre_save"|"post_save"|"pre_load"|"post_load"
 ---@alias continuity.BufUUID string
@@ -105,3 +106,8 @@
 ---@field tabs continuity.TabData[]
 ---@field tab_scoped boolean
 ---@field global continuity.GlobalData
+
+---@alias continuity.SessionType
+---| "global"
+---| "tab"
+---| "global_auto"
