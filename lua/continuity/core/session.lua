@@ -20,19 +20,23 @@ end
 ---@param tabpage? continuity.TabNr When saving a tab-scoped session, the tab number.
 ---@param bufnr continuity.BufNr The buffer to check for inclusion
 ---@param tabpage_bufs table<continuity.BufNr, true?> When saving a tab-scoped session, the list of buffers that are displayed in the tabpage.
-local function include_buf(tabpage, bufnr, tabpage_bufs)
-  if not Config.session.buf_filter(bufnr) then
+---@param opts continuity.SnapshotOpts
+local function include_buf(tabpage, bufnr, tabpage_bufs, opts)
+  if not (opts.buf_filter or Config.session.buf_filter)(bufnr) then
     return false
   end
   if not tabpage then
     return true
   end
-  return tabpage_bufs[bufnr] or Config.session.tab_buf_filter(tabpage, bufnr)
+  return tabpage_bufs[bufnr]
+    or (opts.tab_buf_filter or Config.session.tab_buf_filter)(tabpage, bufnr)
 end
 
 ---@param target_tabpage? continuity.TabNr Limit the session to this tab. If unspecified, saves global state.
+---@param opts? continuity.SnapshotOpts Influence which buffers and options are persisted (overrides global default config).
 ---@return continuity.SessionData
-function M.snapshot(target_tabpage)
+function M.snapshot(target_tabpage, opts)
+  opts = opts or {}
   ---@type continuity.SessionData
   local data = {
     buffers = {},
@@ -43,7 +47,8 @@ function M.snapshot(target_tabpage)
       height = vim.o.lines - vim.o.cmdheight,
       width = vim.o.columns,
       -- Don't save global options for tab-scoped session
-      options = target_tabpage and {} or util.opts.get_global(Config.session.options),
+      options = target_tabpage and {}
+        or util.opts.get_global(opts.options or Config.session.options),
     },
   }
   util.opts.with({ eventignore = "all" }, function()
@@ -59,7 +64,7 @@ function M.snapshot(target_tabpage)
     end
     local is_unexpected_exit = vim.v.exiting ~= vim.NIL and vim.v.exiting > 0
     for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
-      if include_buf(target_tabpage, bufnr, tabpage_bufs) then
+      if include_buf(target_tabpage, bufnr, tabpage_bufs, opts) then
         if not vim.b[bufnr].continuity_uuid then
           vim.b[bufnr].continuity_uuid = Buf.generate_uuid()
         end
@@ -71,7 +76,7 @@ function M.snapshot(target_tabpage)
           -- As a hack, we just assume that all of them were loaded, to avoid all of them being
           -- *unloaded* when the session is restored.
           loaded = is_unexpected_exit or vim.api.nvim_buf_is_loaded(bufnr),
-          options = util.opts.get_buf(bufnr, Config.session.options),
+          options = util.opts.get_buf(bufnr, opts.options or Config.session.options),
           last_pos = (
             vim.b[bufnr].continuity_restore_last_pos
             and vim.b[bufnr].continuity_last_buffer_pos
@@ -110,12 +115,13 @@ function M.snapshot(target_tabpage)
       if target_tabpage or vim.fn.haslocaldir(-1, tabnr) == 1 then
         tab.cwd = vim.fn.getcwd(-1, tabnr)
       end
-      tab.options = util.opts.get_tab(tabpage, Config.session.options)
+      tab.options = util.opts.get_tab(tabpage, opts.options or Config.session.options)
       local winlayout = vim.fn.winlayout(tabnr)
       tab.wins = require("continuity.core.layout").add_win_info_to_layout(
         tabnr,
         winlayout,
-        current_win
+        current_win,
+        opts
       ) or {}
       data.tabs[#data.tabs + 1] = tab
     end

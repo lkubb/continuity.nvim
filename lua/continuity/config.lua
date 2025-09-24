@@ -13,15 +13,12 @@
 ---@field notify? boolean Trigger a notification when autosaving. Defaults to true.
 
 ---@class continuity.UserConfig.autosession
----@field config continuity.UserConfig.autosession.config Save/load configuration for autosessions
----@field dir string? The name of the directory to store autosessions in
+---@field config? continuity.SessionConfig Save/load configuration for autosessions
+---@field dir? string The name of the directory to store autosessions in
 ---@field workspace? fun(cwd: string): [string, boolean] A function that receives the effective nvim cwd and returns the workspace root dir and whether it's a git-tracked dir
 ---@field project_name? fun(workspace: string, git_info: continuity.GitInfo?): string A function that receives the workspace root dir and whether it's git-tracked and returns the project-specific session directory name.
 ---@field session_name? fun(meta: {cwd: string, workspace: string, project_name: string, git_info: continuity.GitInfo?}): string A function that receives the effective nvim cwd, the workspace root, the project name and cwd git info and generates a session name.
 ---@field enabled? fun(meta: {cwd: string, workspace: string, project_name: string, session_name: string}): boolean A function that receives the effective nvim cwd, the workspace root and project name and decides whether a session should be started automatically.
-
----@class continuity.UserConfig.autosession.config
----@field modified? boolean Save/restore modified buffers. Defaults to false.
 
 ---@class continuity.UserConfig.load
 ---@field detail? boolean Show more detail about the sessions when selecting one to load. Disable if it causes lag.
@@ -37,6 +34,7 @@
 ---@field options? string[] Save and restore these options
 ---@field buf_filter? fun(integer): boolean Custom logic for determining if the buffer should be included
 ---@field tab_buf_filter? fun(tabpage: integer, bufnr: integer): boolean Custom logic for determining if a buffer should be included in a tab-scoped session
+---@field modified? boolean|"auto" Save/load modified buffers and their undo history. If set to `auto` (default), does not save, but still loads modified buffers by default.
 
 -- Until https://github.com/EmmyLuaLs/emmylua-analyzer-rust/issues/328 is resolved:
 -- NOTE: Keep in sync with above
@@ -55,15 +53,12 @@
 ---@field notify boolean
 
 ---@class continuity.Config.autosession
----@field config continuity.Config.autosession.config
+---@field config continuity.SessionConfig
 ---@field dir string
 ---@field workspace fun(cwd: string): string, boolean
 ---@field project_name fun(workspace: string, git_info: continuity.GitInfo?): string
 ---@field session_name fun(meta: {cwd: string, workspace: string, project_name: string, git_info: continuity.GitInfo?}): string
 ---@field enabled fun(meta: {cwd: string, workspace: string, project_name: string, session_name: string}): boolean
-
----@class continuity.Config.autosession.config
----@field modified boolean
 
 ---@class continuity.Config.load
 ---@field detail boolean
@@ -79,6 +74,7 @@
 ---@field options string[]
 ---@field buf_filter fun(integer): boolean
 ---@field tab_buf_filter fun(tabpage: integer, bufnr: integer): boolean
+---@field modified boolean|"auto"
 
 local util = require("continuity.util")
 
@@ -97,6 +93,7 @@ local function default_buf_filter(bufnr)
   if buftype ~= "" and buftype ~= "acwrite" then
     return false
   end
+  -- FIXME: Modified buffer handling allows this to work, make better defaults
   if vim.api.nvim_buf_get_name(bufnr) == "" then
     return false
   end
@@ -155,6 +152,7 @@ local defaults = {
     tab_buf_filter = function(tabpage, bufnr)
       return true
     end,
+    modified = "auto",
   },
 }
 

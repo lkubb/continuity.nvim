@@ -88,14 +88,15 @@ local function render_autosession_context(cwd)
 end
 
 ---Save the currently active autosession.
----@param opts? resession.SaveOpts Parameters for resession.save
+---@param opts? continuity.SaveOpts Parameters for continuity.core.save
 local function save(opts)
   if not _current_session then
     return
   end
   opts = vim.tbl_extend(
     "force",
-    { attach = true, notify = false, modified = Config.autosession.config.modified },
+    Config.autosession.config,
+    { attach = true, notify = false },
     opts or {}
   )
   opts.dir = _current_session.project.data_dir
@@ -104,12 +105,12 @@ end
 
 ---Save the currently active autosession and stop autosaving it after.
 ---Does not close anything after detaching.
----@param opts? resession.SaveOpts Parameters for resession.save
+---@param opts? continuity.SaveOpts Parameters for continuity.core.save
 local function detach(opts)
   if not _current_session then
     return
   end
-  opts = vim.tbl_extend("force", opts or {}, { attach = false })
+  opts = vim.tbl_extend("force", Config.autosession.config, opts or {}, { attach = false })
   save(opts)
   _current_session = nil
 end
@@ -119,7 +120,7 @@ local monitor
 
 ---Load an autosession.
 ---@param autosession (continuity.Autosession|string)? The autosession table as rendered by render_autosession_context
----@param opts resession.LoadOpts? Parameters for resession.load. silence_errors is forced to true.
+---@param opts continuity.LoadOpts? Parameters for continuity.core.load. silence_errors is forced to true.
 local function load(autosession, opts)
   if type(autosession) == "string" then
     autosession = render_autosession_context(autosession)
@@ -131,11 +132,11 @@ local function load(autosession, opts)
   -- No need to detach, it's handled by the pre-load hook.
   opts = vim.tbl_extend(
     "force",
-    { attach = true, reset = true, modified = Config.autosession.config.modified },
+    Config.autosession.config,
+    { attach = true, reset = true },
     opts or {},
-    { silence_errors = false }
+    { silence_errors = false, dir = autosession.project.data_dir }
   )
-  opts.dir = autosession.project.data_dir
 
   log.fmt_debug(
     "Loading autosession %s with opts %s.\nData: %s",
@@ -348,7 +349,7 @@ end
 ---1. If the current working directory has an associated project and session, closes everything and loads that session.
 ---2. In any case, start monitoring for directory or branch changes.
 ---@param cwd string? The working directory to switch to before starting autosession. Defaults to nvim's process' cwd.
----@param opts resession.LoadOpts? Parameters for resession.load. silence_errors is forced to true.
+---@param opts continuity.LoadOpts? Parameters for continuity.core.load. silence_errors is forced to true.
 local function start(cwd, opts)
   load(cwd or util.auto.cwd(), opts)
 end

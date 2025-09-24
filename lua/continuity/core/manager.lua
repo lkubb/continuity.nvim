@@ -14,7 +14,7 @@ local M = {}
 
 local current_session ---@type string?
 local tab_sessions = {} ---@type table<continuity.TabNr, string?>
-local session_configs = {} ---@type table<string, {dir: string, modified?: boolean}?>
+local session_configs = {} ---@type table<string, continuity.AttachedSessionData?>
 
 local function remove_tabpage_session(name)
   for k, v in pairs(tab_sessions) do
@@ -27,7 +27,7 @@ end
 
 --- Save the current global or tabpage state to a named session.
 ---@param name string The name of the session
----@param opts resession.SaveOpts
+---@param opts continuity.SaveOpts
 ---@param target_tabpage? continuity.TabNr Instead of saving everything, only save the current tabpage
 local function save(name, opts, target_tabpage)
   if Session.is_loading() then
@@ -40,9 +40,15 @@ local function save(name, opts, target_tabpage)
     name,
     opts
   )
+  if opts.modified == "auto" then
+    opts.modified = false
+  end
   local filename = util.path.get_session_file(name, opts.dir or Config.session.dir)
   Ext.dispatch("pre_save", name, opts, target_tabpage)
-  local session = Session.snapshot(target_tabpage)
+  local session = Session.snapshot(
+    target_tabpage,
+    { buf_filter = opts.buf_filter, tab_buf_filter = opts.tab_buf_filter, options = opts.options }
+  )
   local state_dir = util.path.get_session_state_dir(name, opts.dir or Config.session.dir)
   if opts.modified then
     session.modified = Buf.save_modified(state_dir)
@@ -59,7 +65,11 @@ local function save(name, opts, target_tabpage)
   if opts.attach then
     session_configs[name] = {
       dir = opts.dir or Config.session.dir,
+      meta = opts.meta,
       modified = opts.modified,
+      options = opts.options,
+      buf_filter = opts.buf_filter,
+      tab_buf_filter = opts.tab_buf_filter,
     }
   end
   Ext.dispatch("post_save", name, opts, target_tabpage)
@@ -92,34 +102,36 @@ end
 
 --- Save the current global state to disk
 ---@param name string Name of the session
----@param opts? resession.SaveOpts
+---@param opts? continuity.SaveOpts
 function M.save(name, opts)
   opts = vim.tbl_extend("keep", opts or {}, {
     notify = true,
     attach = true,
+    modified = Config.session.modified,
   })
   save(name, opts)
 end
 
 --- Save the state of the current tabpage to disk
 ---@param name string Name of the tabpage session.
----@param opts? resession.SaveOpts
+---@param opts? continuity.SaveOpts
 function M.save_tab(name, opts)
   opts = vim.tbl_extend("keep", opts or {}, {
     notify = true,
     attach = true,
+    modified = Config.session.modified,
   })
   save(name, opts, vim.api.nvim_get_current_tabpage())
 end
 
 --- Save all current sessions to disk
----@param opts? resession.SaveAllOpts
+---@param opts? continuity.SaveAllOpts
 function M.save_all(opts)
-  ---@type resession.SaveOpts
   opts = vim.tbl_extend("keep", opts or {}, {
     notify = true,
   })
-  opts.attach = true
+  ---@type continuity.SaveOpts
+  opts = { attach = true, notify = opts.notify } -- enforce SaveAllOpts
   if current_session then
     save(
       current_session,
@@ -141,21 +153,17 @@ function M.save_all(opts)
 end
 
 --- Load a session
----@param name string
----@param opts? resession.LoadOpts
----    attach? boolean Stay attached to session after loading (default true)
----    reset? boolean|"auto" Close everything before loading the session (default "auto")
----    silence_errors? boolean Don't error when trying to load a missing session
----    dir? string Name of directory to load from (overrides config.dir)
----@note
---- The default value of `reset = "auto"` will reset when loading a normal session, but _not_ when
---- loading a tab-scoped session.
+---@param name string The name of the session to load
+---@param opts? continuity.LoadOpts Options influencing session load and autosave behavior
+---@note The default value of `reset = "auto"` will reset when loading
+---      a normal session, but _not_ when loading a tab-scoped session.
 function M.load(name, opts)
   opts = vim.tbl_extend("keep", opts or {}, {
     reset = "auto",
     attach = true,
+    modified = Config.session.modified,
   })
-  ---@cast opts resession.LoadOpts
+  ---@cast opts continuity.LoadOpts
   local filename = util.path.get_session_file(name, opts.dir or Config.session.dir)
   local session = util.path.load_json_file(filename)
   if not session then
@@ -168,7 +176,7 @@ function M.load(name, opts)
   if opts.reset == "auto" then
     opts.reset = not session.tab_scoped
   end
-  if opts.modified == nil then
+  if opts.modified == "auto" then
     opts.modified = not not session.modified
   end
   Ext.dispatch("pre_load", name, opts)
@@ -188,7 +196,12 @@ function M.load(name, opts)
     end
     session_configs[name] = {
       dir = opts.dir or Config.session.dir,
+      meta = opts.meta,
       modified = opts.modified,
+      -- These can be defined even when loading to be able to configure autosave settings.
+      options = opts.options,
+      buf_filter = opts.buf_filter,
+      tab_buf_filter = opts.tab_buf_filter,
     }
   end
   Ext.dispatch("post_load", name, opts)
@@ -199,6 +212,19 @@ end
 function M.get_current()
   local tabpage = vim.api.nvim_get_current_tabpage()
   return tab_sessions[tabpage] or current_session
+end
+
+--- Get data/config remembered from attaching the currently active session
+---@return continuity.AttachedSessionInfo?
+function M.get_current_data()
+  local current = M.get_current()
+  if not current then
+    return
+  end
+  ---@type continuity.AttachedSessionInfo
+  local current_data = vim.deepcopy(assert(session_configs[current]))
+  current_data.name = current
+  return current_data
 end
 
 --- Get information about the current session

@@ -1,6 +1,5 @@
 local Config = require("continuity.config")
 local Manager = require("continuity.core.manager")
-local Session = require("continuity.core.session")
 local util = require("continuity.util")
 
 local lazy_require = util.lazy_require
@@ -37,7 +36,7 @@ end
 
 --- Save the current global state to disk
 ---@param name? string Name of the session
----@param opts? resession.SaveOpts
+---@param opts? continuity.SaveOpts
 function M.save(name, opts)
   name = name or get_save_name(false)
   if not name then
@@ -48,7 +47,7 @@ end
 
 --- Save the state of the current tabpage to disk
 ---@param name? string Name of the tabpage session. If not provided, will prompt user for session name
----@param opts? resession.SaveOpts
+---@param opts? continuity.SaveOpts
 function M.save_tab(name, opts)
   name = name or get_save_name(true)
   if not name then
@@ -59,7 +58,7 @@ end
 
 M.save_all = Manager.save_all
 
----@param opts? resession.LoadOpts
+---@param opts? continuity.LoadOpts
 local function get_load_name(opts)
   local sessions = Manager.list({ dir = opts and opts.dir })
   if vim.tbl_isempty(sessions) then
@@ -98,7 +97,7 @@ end
 
 --- Load a session
 ---@param name? string
----@param opts? resession.LoadOpts
+---@param opts? continuity.LoadOpts
 ---    attach? boolean Stay attached to session after loading (default true)
 ---    reset? boolean|"auto" Close everything before loading the session (default "auto")
 ---    silence_errors? boolean Don't error when trying to load a missing session
@@ -107,7 +106,7 @@ end
 --- The default value of `reset = "auto"` will reset when loading a normal session, but _not_ when
 --- loading a tab-scoped session.
 function M.load(name, opts)
-  ---@cast opts resession.LoadOpts
+  ---@cast opts continuity.LoadOpts
   name = name or get_load_name(opts)
   if not name then
     return

@@ -14,8 +14,9 @@ local M = {}
 ---@param tabnr integer The number of the tab that contains the window
 ---@param winid continuity.WinID The window id of the window to query
 ---@param current_win integer The window id of the currently active window
+---@param opts continuity.SaveOpts
 ---@return continuity.WinInfo|false
-M.get_win_info = function(tabnr, winid, current_win)
+M.get_win_info = function(tabnr, winid, current_win, opts)
   local bufnr = vim.api.nvim_win_get_buf(winid)
   local win = {}
   local supported_by_ext = false
@@ -38,7 +39,8 @@ M.get_win_info = function(tabnr, winid, current_win)
       break
     end
   end
-  if not supported_by_ext and not Config.session.buf_filter(bufnr) then
+  if not supported_by_ext and not (opts.buf_filter or Config.session.buf_filter)(bufnr) then
+    -- Don't need to check tab_buf_filter, only called for buffers that are visible in a tab
     return false
   end
   win = vim.tbl_extend("error", win, {
@@ -50,7 +52,7 @@ M.get_win_info = function(tabnr, winid, current_win)
     cursor = vim.api.nvim_win_get_cursor(winid),
     width = vim.api.nvim_win_get_width(winid),
     height = vim.api.nvim_win_get_height(winid),
-    options = util.opts.get_win(winid, Config.session.options),
+    options = util.opts.get_win(winid, opts.options or Config.session.options),
   })
   ---@cast win continuity.WinInfo
   local winnr = vim.api.nvim_win_get_number(winid)
@@ -66,20 +68,21 @@ end
 ---@param tabnr integer
 ---@param layout vim.fn.winlayout.ret
 ---@param current_win integer
+---@param opts continuity.SaveOpts
 ---@return continuity.WinLayout|false
-M.add_win_info_to_layout = function(tabnr, layout, current_win)
+M.add_win_info_to_layout = function(tabnr, layout, current_win, opts)
   ---@diagnostic disable-next-line: undefined-field
   ---@type 'leaf'|'col'|'row'|nil
   local typ = layout[1]
   if typ == "leaf" then
     ---@cast layout vim.fn.winlayout.leaf
-    local res = M.get_win_info(tabnr, layout[2], current_win)
+    local res = M.get_win_info(tabnr, layout[2], current_win, opts)
     return res and { "leaf", res } or false
   elseif typ then
     ---@cast layout vim.fn.winlayout.branch
     local items = {}
     for _, v in ipairs(layout[2]) do
-      local ret = M.add_win_info_to_layout(tabnr, v, current_win)
+      local ret = M.add_win_info_to_layout(tabnr, v, current_win, opts)
       if ret then
         items[#items + 1] = ret
       end

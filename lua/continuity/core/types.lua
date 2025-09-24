@@ -5,22 +5,21 @@
 ---@field dir? string Name of directory to delete from (overrides config.dir)
 ---@field notify? boolean Notify on success (default true)
 
----@class (exact) resession.SaveOpts
+---@class continuity.SaveOpts: continuity.SessionConfig
 ---@field attach? boolean Stay attached to session after saving (default true)
----@field notify? boolean Notify on success (default true)
 ---@field dir? string Name of directory to save to (overrides config.dir)
----@field modified? boolean Save modified buffers and their undo history
+---@field meta? table External data remembered in association with this session. Useful to build on top of the core API.
+---@field notify? boolean Notify on success (default true)
 
----@class (exact) resession.SaveAllOpts
+---@class continuity.SaveAllOpts
 ---@field notify? boolean Notify on success
----@field modified? boolean Save modified buffers and their undo history
 
----@class (exact) resession.LoadOpts
+---@class continuity.LoadOpts: continuity.SessionConfig
 ---@field attach? boolean Attach to session after loading
+---@field dir? string Name of directory to load from (overrides config.dir)
+---@field meta? table External data remembered in association with this session. Useful to build on top of the core API.
 ---@field reset? boolean|"auto" Close everything before loading the session (default "auto")
 ---@field silence_errors? boolean Don't error when trying to load a missing session
----@field dir? string Name of directory to load from (overrides config.dir)
----@field modified? boolean Load modified buffers from saved session. If unset, loads if available.
 
 ---@class (exact) resession.Extension.OnSaveOpts
 ---@field tabpage integer? The tabpage being saved, if in a tab-scoped session
@@ -111,7 +110,23 @@
 ---@field global continuity.GlobalData
 ---@field modified table<continuity.BufUUID, true?>?
 
+---@class continuity.SnapshotOpts
+---@field options? string[] Save and restore these options
+---@field buf_filter? fun(integer): boolean Custom logic for determining if the buffer should be included
+---@field tab_buf_filter? fun(tabpage: integer, bufnr: integer): boolean Custom logic for determining if a buffer should be included in a tab-scoped session
+
+---@class continuity.SessionConfig: continuity.SnapshotOpts
+---@field modified? boolean|"auto" Save/load modified buffers and their undo history.
+
 ---@alias continuity.SessionType
 ---| "global"
 ---| "tab"
 ---| "global_auto"
+
+--- Data to remember when a session is attached.
+---@class continuity.AttachedSessionData: continuity.SessionConfig
+---@field dir string The directory the session is located in
+---@field meta? table External data remembered in association with this session. Useful to build on top of the core API.
+
+---@class continuity.AttachedSessionInfo: continuity.AttachedSessionData
+---@field name string The name of the session
