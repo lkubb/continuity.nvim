@@ -305,21 +305,35 @@ function M.restore(session, opts)
   -- It will take care of reloading the buffer to check for swap files,
   -- enable syntax highlighting and load plugins.
   vim.api.nvim_exec_autocmds("BufEnter", { buffer = vim.api.nvim_get_current_buf() })
+  -- Schedule the restoration of invisible buffers to speed up startup.
+  local restore_triggered = false
+  local restore_invisible = function()
+    if restore_triggered then
+      return
+    end
+    ---@diagnostic disable-next-line: unused
+    restore_triggered = true
+    log.debug("Restoring invisible buffers")
+    -- Don't trigger autocmds during buffer load (shouldn't be necessary since this autocmd is not nested)
+    -- Ignore all messages (including swapfile messages) during session load
+    util.opts.with({ eventignore = "all", shortmess = "aAF" }, function()
+      for _, buf in ipairs(buffers_later) do
+        Buf.restore(buf, session, opts.state_dir)
+      end
+      dispatch_post_bufinit(session, false)
+    end)
+    log.debug("Finished loading session")
+    _is_loading = false
+  end
   vim.api.nvim_create_autocmd({ "CursorHold", "CursorHoldI" }, {
     once = true,
     desc = "Continuity: Restore buffers not shown in windows",
-    callback = function()
-      -- Don't trigger autocmds during buffer load (shouldn't be necessary since this autocmd is not nested)
-      -- Ignore all messages (including swapfile messages) during session load
-      util.opts.with({ eventignore = "all", shortmess = "aAF" }, function()
-        for _, buf in ipairs(buffers_later) do
-          Buf.restore(buf, session, opts.state_dir)
-        end
-        dispatch_post_bufinit(session, false)
-      end)
-      _is_loading = false
-    end,
+    callback = restore_invisible,
   })
+  -- I previously used CursorHold[I] events only, but they are not triggered e.g. when neovim
+  -- is not focused. This caused the autosave hook to print warnings since the session
+  -- was still loading. Make the final restoration happen in 1s at the latest.
+  vim.defer_fn(restore_invisible, 1000)
 end
 
 return M

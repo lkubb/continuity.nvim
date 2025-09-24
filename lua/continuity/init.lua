@@ -252,25 +252,41 @@ function monitor(autosession)
     gitsigns_in_sync = true
   end
 
+  local check_sync = function()
+    if not gitsigns_in_sync then
+      if gitsigns_in_sync == nil then
+        -- We don't have an active session, just follow gitsigns' lead
+        autosession_head = vim.g.gitsigns_head
+      elseif autosession_head ~= vim.g.gitsigns_head then
+        -- gitsigns does not assign this in 'detached' state (e.g. bare repo with worktree)
+        -- and assigns an empty string when it's an empty repo.
+        -- In either case, we don't want to react here. This means worktrees are not watched for branch changes.
+        return
+      end
+      ---@diagnostic disable-next-line: unused
+      gitsigns_in_sync = true
+      last_head = autosession_head
+      log.debug("Gitsigns branch monitoring now active")
+    end
+    return true
+  end
+
+  -- Integrate with GitSigns to watch current branch, but not immediately after start
+  -- to avoid race conditions
   vim.defer_fn(function()
-    -- Integrate with GitSigns to watch current branch, but not immediately after start
-    -- to avoid race conditions
+    -- If we were not in sync when starting monitoring, try again. We're skipping
+    -- the events GitSigns dispatches during startup, but it doesn't send any updates
+    -- until something changes, which means if the first change is a branch change,
+    -- we would miss it and stay out of sync.
+    if not gitsigns_in_sync and not check_sync() then
+      -- If we're here, we still couldn't sync. Try one last time later.
+      vim.defer_fn(check_sync, 1000)
+    end
     vim.api.nvim_create_autocmd("User", {
       pattern = "GitSignsUpdate",
       callback = function()
-        if not gitsigns_in_sync then
-          if gitsigns_in_sync == nil then
-            -- We don't have an active session, just follow gitsigns' lead
-            autosession_head = vim.g.gitsigns_head
-          elseif autosession_head ~= vim.g.gitsigns_head then
-            -- gitsigns does not assign this in 'detached' state (e.g. bare repo with worktree)
-            -- and assigns an empty string when it's an empty repo.
-            -- In either case, we don't want to react here. This means worktrees are not watched for branch changes.
-            return
-          end
-          ---@diagnostic disable-next-line: unused
-          gitsigns_in_sync = true
-          last_head = autosession_head
+        if not gitsigns_in_sync and not check_sync() then
+          return
         end
         if last_head ~= vim.g.gitsigns_head then
           log.fmt_trace(
