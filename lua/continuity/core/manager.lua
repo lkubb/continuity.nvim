@@ -2,6 +2,7 @@ local Config = require("continuity.config")
 local util = require("continuity.util")
 
 local lazy_require = util.lazy_require
+local Buf = lazy_require("continuity.core.buf")
 local Ext = lazy_require("continuity.core.ext")
 local Session = lazy_require("continuity.core.session")
 local log = lazy_require("continuity.log")
@@ -13,7 +14,7 @@ local M = {}
 
 local current_session ---@type string?
 local tab_sessions = {} ---@type table<continuity.TabNr, string?>
-local session_configs = {} ---@type table<string, {dir: string}?>
+local session_configs = {} ---@type table<string, {dir: string, modified?: boolean}?>
 
 local function remove_tabpage_session(name)
   for k, v in pairs(tab_sessions) do
@@ -33,9 +34,24 @@ local function save(name, opts, target_tabpage)
     log.warn("Save triggered while still loading session. Skipping save.")
     return
   end
+  log.fmt_debug(
+    "Saving %s session %s with opts %s",
+    target_tabpage and "tab" or "global",
+    name,
+    opts
+  )
   local filename = util.path.get_session_file(name, opts.dir or Config.session.dir)
   Ext.dispatch("pre_save", name, opts, target_tabpage)
   local session = Session.snapshot(target_tabpage)
+  local state_dir = vim.fs.joinpath(util.path.get_session_dir(opts.dir or Config.session.dir), name)
+  if opts.modified then
+    session.modified = Buf.save_modified(state_dir)
+  else
+    -- Forget all saved changes later
+    vim.schedule(function()
+      Buf.clean_modified(state_dir, {})
+    end)
+  end
   util.path.write_json_file(filename, session)
   if opts.notify then
     vim.notify(string.format('Saved session "%s"', name))
@@ -43,6 +59,7 @@ local function save(name, opts, target_tabpage)
   if opts.attach then
     session_configs[name] = {
       dir = opts.dir or Config.session.dir,
+      modified = opts.modified,
     }
   end
   Ext.dispatch("post_save", name, opts, target_tabpage)
@@ -151,8 +168,12 @@ function M.load(name, opts)
   if opts.reset == "auto" then
     opts.reset = not session.tab_scoped
   end
+  if opts.modified == nil then
+    opts.modified = not not session.modified
+  end
   Ext.dispatch("pre_load", name, opts)
-  Session.restore(session, opts.reset)
+  local state_dir = vim.fs.joinpath(util.path.get_session_dir(opts.dir or Config.session.dir), name)
+  Session.restore(session, { reset = opts.reset, state_dir = state_dir, modified = opts.modified })
   current_session = nil
   if opts.reset then
     tab_sessions = {}
@@ -167,6 +188,7 @@ function M.load(name, opts)
     end
     session_configs[name] = {
       dir = opts.dir or Config.session.dir,
+      modified = opts.modified,
     }
   end
   Ext.dispatch("post_load", name, opts)

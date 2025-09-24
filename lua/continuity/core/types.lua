@@ -9,15 +9,18 @@
 ---@field attach? boolean Stay attached to session after saving (default true)
 ---@field notify? boolean Notify on success (default true)
 ---@field dir? string Name of directory to save to (overrides config.dir)
+---@field modified? boolean Save modified buffers and their undo history
 
 ---@class (exact) resession.SaveAllOpts
 ---@field notify? boolean Notify on success
+---@field modified? boolean Save modified buffers and their undo history
 
 ---@class (exact) resession.LoadOpts
 ---@field attach? boolean Attach to session after loading
 ---@field reset? boolean|"auto" Close everything before loading the session (default "auto")
 ---@field silence_errors? boolean Don't error when trying to load a missing session
 ---@field dir? string Name of directory to load from (overrides config.dir)
+---@field modified? boolean Load modified buffers from saved session. If unset, loads if available.
 
 ---@class (exact) resession.Extension.OnSaveOpts
 ---@field tabpage integer? The tabpage being saved, if in a tab-scoped session
@@ -106,6 +109,7 @@
 ---@field tabs continuity.TabData[]
 ---@field tab_scoped boolean
 ---@field global continuity.GlobalData
+---@field modified table<continuity.BufUUID, true?>?
 
 ---@alias continuity.SessionType
 ---| "global"

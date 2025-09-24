@@ -13,11 +13,15 @@
 ---@field notify? boolean Trigger a notification when autosaving. Defaults to true.
 
 ---@class continuity.UserConfig.autosession
+---@field config continuity.UserConfig.autosession.config Save/load configuration for autosessions
 ---@field dir string? The name of the directory to store autosessions in
 ---@field workspace? fun(cwd: string): [string, boolean] A function that receives the effective nvim cwd and returns the workspace root dir and whether it's a git-tracked dir
 ---@field project_name? fun(workspace: string, git_info: continuity.GitInfo?): string A function that receives the workspace root dir and whether it's git-tracked and returns the project-specific session directory name.
 ---@field session_name? fun(meta: {cwd: string, workspace: string, project_name: string, git_info: continuity.GitInfo?}): string A function that receives the effective nvim cwd, the workspace root, the project name and cwd git info and generates a session name.
 ---@field enabled? fun(meta: {cwd: string, workspace: string, project_name: string, session_name: string}): boolean A function that receives the effective nvim cwd, the workspace root and project name and decides whether a session should be started automatically.
+
+---@class continuity.UserConfig.autosession.config
+---@field modified? boolean Save/restore modified buffers. Defaults to false.
 
 ---@class continuity.UserConfig.load
 ---@field detail? boolean Show more detail about the sessions when selecting one to load. Disable if it causes lag.
@@ -51,11 +55,15 @@
 ---@field notify boolean
 
 ---@class continuity.Config.autosession
+---@field config continuity.Config.autosession.config
 ---@field dir string
 ---@field workspace fun(cwd: string): string, boolean
 ---@field project_name fun(workspace: string, git_info: continuity.GitInfo?): string
 ---@field session_name fun(meta: {cwd: string, workspace: string, project_name: string, git_info: continuity.GitInfo?}): string
 ---@field enabled fun(meta: {cwd: string, workspace: string, project_name: string, session_name: string}): boolean
+
+---@class continuity.Config.autosession.config
+---@field modified boolean
 
 ---@class continuity.Config.load
 ---@field detail boolean
@@ -98,6 +106,9 @@ end
 ---@type continuity.Config
 local defaults = {
   autosession = {
+    config = {
+      modified = false,
+    },
     dir = "continuity",
     workspace = util.git.find_workspace_root,
     project_name = util.auto.workspace_project_map,

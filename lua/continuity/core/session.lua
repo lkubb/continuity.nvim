@@ -166,13 +166,32 @@ local function dispatch_post_bufinit(data, visible_only)
 end
 
 ---@param session continuity.SessionData
-function M.restore(session, reset)
+---@param opts {reset?: boolean, modified?: boolean, state_dir?: string}
+function M.restore(session, opts)
   _is_loading = true
   layout = require("continuity.core.layout")
-  if reset then
+  if opts.reset then
     layout.close_everything()
   else
     layout.open_clean_tab()
+  end
+  if opts.modified and not opts.state_dir then
+    log.warn(
+      "Requested to restore modified buffers, but state_dir was not passed. Skipping restoration of buffer modifications."
+    )
+    opts.modified = false
+  end
+
+  if not opts.modified and session.modified then
+    ---@type continuity.SessionData
+    local shallow_session_copy = {}
+    for key, val in pairs(session) do
+      if key ~= "modified" then
+        ---@diagnostic disable-next-line: assign-type-mismatch
+        shallow_session_copy[key] = val
+      end
+    end
+    session = shallow_session_copy
   end
 
   -- Keep track of buffers that are not displayed for later restoration
@@ -214,16 +233,15 @@ function M.restore(session, reset)
       if buf.in_win == false then
         buffers_later[#buffers_later + 1] = buf
       else
-        last_bufnr = Buf.restore(buf, session)
+        last_bufnr = Buf.restore(buf, session, opts.state_dir)
       end
+      -- TODO: Restore buffer preview cursor
       -- Cannot restore m" here because unsaved restoration can increase
       -- the number of lines/rows, on which the mark could rely. This is currently
-      -- worked around when saving buffers, but could be refactored once
-      -- restoration of unsaved changes is included here.
+      -- worked around when saving buffers, but can be refactored since
+      -- restoration of unsaved changes is now included here.
     end
 
-    -- TODO: Need to refactor unsaved buffer loading into here for simplicity.
-    -- Without this, the buffer preview cursor might be off
     dispatch_post_bufinit(session, true)
 
     -- Ensure the cwd is set correctly for each loaded buffer
@@ -295,7 +313,7 @@ function M.restore(session, reset)
       -- Ignore all messages (including swapfile messages) during session load
       util.opts.with({ eventignore = "all", shortmess = "aAF" }, function()
         for _, buf in ipairs(buffers_later) do
-          Buf.restore(buf, session)
+          Buf.restore(buf, session, opts.state_dir)
         end
         dispatch_post_bufinit(session, false)
       end)

@@ -30,17 +30,12 @@ local Config = require("continuity.config")
 local util = require("continuity.util")
 
 local lazy_require = util.lazy_require
-local Buf = lazy_require("continuity.core.buf")
 local Core = lazy_require("continuity.core")
-local Ext = lazy_require("continuity.core.ext")
+local Session = lazy_require("continuity.core.session")
 local log = lazy_require("continuity.log")
 
 ---@type continuity.Autosession?
 local _current_session
----@type continuity.Autosession?
-local _loading_session
----@type table?
-local _loading_session_data
 -- Monitor the currently active branch and check if we need to reload when it changes
 ---@type string?
 local last_head
@@ -98,291 +93,13 @@ local function save(opts)
   if not _current_session then
     return
   end
-  opts = vim.tbl_extend("force", { attach = true, notify = false }, opts or {})
+  opts = vim.tbl_extend(
+    "force",
+    { attach = true, notify = false, modified = Config.autosession.config.modified },
+    opts or {}
+  )
   opts.dir = _current_session.project.data_dir
   Core.save(_current_session.name, opts)
-end
-
----Remove previously saved buffers and their undo history when they are
----no longer part of Continuity's state (most likely have been written).
----@param state_dir string The path to the modified_buffers directory of the session represented by `data`.
----@param data table Most recently saved session metadata.
-local function clean_remembered_buffers(state_dir, data)
-  local remembered_buffers = vim.fn.glob(vim.fs.joinpath(state_dir, "*.buffer"), true, true)
-  for _, sav in ipairs(remembered_buffers) do
-    local uuid = vim.fn.fnamemodify(sav, ":t:r")
-    if not data[uuid] then
-      pcall(vim.fn.delete, sav)
-      pcall(vim.fn.delete, vim.fn.fnamemodify(sav, ":r") .. ".undo")
-    end
-  end
-end
-
----Iterate over modified buffers, save them and their undo history
----and return data to resession.
----@return table<string, continuity.ManagedBufID>?
-local function save_modified_buffers()
-  log.fmt_trace("save_modified_buffers called")
-  if _loading_session and _loading_session_data then
-    log.fmt_warn("save_modified_buffers called before full session restoration")
-    return _loading_session_data
-  end
-  if not _current_session then
-    log.fmt_trace("save_modified_buffers skipped: no current session")
-    return
-  end
-  local state_dir = util.path.get_stdpath_filename(
-    "data",
-    _current_session.project.data_dir,
-    _current_session.name,
-    "modified_buffers"
-  )
-  local modified_buffers = Buf.list_modified()
-  log.fmt_debug(
-    "Saving modified buffers in state dir (%s)\nModified buffers: %s",
-    state_dir,
-    modified_buffers
-  )
-
-  -- We don't need to mkdir the state dir since write_file does that automatically
-  local res = {}
-  -- Can't call :wundo when the cmd window (e.g. q:) is active, otherwise we receive
-  -- E11: Invalid in command-line window
-  -- TODO: Should we save modified buffers at all if we can't guarantee undo history?
-  ---@type boolean
-  local skip_wundo = vim.fn.getcmdwintype() ~= ""
-  for _, buf in ipairs(modified_buffers) do
-    -- Unrestored buffers should not overwrite the save file, but still be remembered
-    -- _continuity_unrestored are buffers that were not restored at all due to swapfile and being opened read-only
-    -- _continuity_needs_restore are buffers that were restored initially, but have never been entered since loading.
-    -- If we saved the latter, we would lose the undo history since it hasn't been loaded for them.
-    -- This at least affects unnamed buffers since we solely manage the history for them.
-    if not (vim.b[buf.buf]._continuity_unrestored or vim.b[buf.buf]._continuity_needs_restore) then
-      local save_file = vim.fs.joinpath(state_dir, buf.uuid .. ".buffer")
-      local undo_file = vim.fs.joinpath(state_dir, buf.uuid .. ".undo")
-      log.fmt_debug(
-        "Saving modified buffer %s (%s) named '%s' to %s",
-        buf.buf,
-        buf.uuid,
-        buf.name,
-        save_file
-      )
-
-      local ok, msg = pcall(function()
-        -- Backup the current buffer contents. Avoid vim.cmd.w because that can have side effects, even with keepalt/noautocmd.
-        local lines = vim.api.nvim_buf_get_text(buf.buf, 0, 0, -1, -1, {})
-        util.path.write_file(save_file, table.concat(lines, "\n") .. "\n")
-
-        if not skip_wundo then
-          vim.api.nvim_buf_call(buf.buf, function()
-            vim.cmd.wundo({ undo_file, bang = true, mods = { noautocmd = true, silent = true } })
-          end)
-        else
-          log.fmt_warn(
-            "Need to skip backing up undo history for modified buffer %s (%s) named '%s' to %s because cmd window is active",
-            buf.buf,
-            buf.uuid,
-            buf.name,
-            undo_file
-          )
-        end
-      end)
-      if not ok then
-        log.fmt_error(
-          "Error saving modified buffer %s (%s) named '%s': %s",
-          buf.buf,
-          buf.uuid,
-          buf.name,
-          msg
-        )
-      end
-    else
-      log.fmt_debug(
-        "Modified buf %s (%s) named '%s' has not been restored yet, skipping save",
-        buf.buf,
-        buf.uuid,
-        buf.name
-      )
-    end
-    res[buf.uuid] = buf
-  end
-  -- Clean up any remembered buffers that have been removed from the session
-  -- or have been saved in the meantime. We can do that after completing the save.
-  vim.schedule(function()
-    clean_remembered_buffers(state_dir, res)
-  end)
-  return res
-end
-
----Restore a single modified buffer when it is first focused in a window.
----@param buf integer The buffer ID of the buffer to restore.
----@param data table Continuity save data
-local function restore_modified_buffer(buf, data)
-  log.fmt_trace("Restoring modified buffer %s with data %s", buf, data)
-  local _effective_session = _loading_session or _current_session
-  if not _effective_session or not data then
-    if not _effective_session then
-      log.fmt_debug("No active session to load for buffer %s", buf)
-    end
-    if not data then
-      log.fmt_debug("No data to load for buffer %s", buf)
-    end
-    return
-  end
-  if not vim.b[buf].continuity_uuid then
-    log.fmt_error(
-      "Not restoring '%s' because it does not have an internal uuid set."
-        .. " This is likely an internal error.",
-      vim.api.nvim_buf_get_name(buf) or "unnamed buffer"
-    )
-    return
-  end
-  if not data[vim.b[buf].continuity_uuid] then
-    log.fmt_debug("No data to load for unmodified buffer %s", vim.b[buf].continuity_uuid)
-    -- Buffer was not modified
-    return
-  end
-  if vim.b[buf]._continuity_swapfile then
-    if vim.bo[buf].readonly then
-      vim.b[buf]._continuity_unrestored = true
-      -- Unnamed buffers should not have a swap file, but account for it anyways
-      log.fmt_warn(
-        "Not restoring %s because it is read-only, likely because it has an "
-          .. "existing swap file and you chose to open it read-only.",
-        vim.api.nvim_buf_get_name(buf)
-          or ("unnamed buffer with uuid " .. vim.b[buf].continuity_uuid)
-      )
-      return
-    end
-    -- TODO: When integrating into resession, add some autodecide logic
-    --
-    -- if require("continuity.core.files").exists(vim.b[buf]._continuity_swapfile) then
-    --   local swapinfo = vim.fn.swapinfo(vim.b[buf]._continuity_swapfile)
-    -- end
-  end
-  local state_dir = util.path.get_stdpath_filename(
-    "data",
-    _effective_session.project.data_dir,
-    _effective_session.name,
-    "modified_buffers"
-  )
-  local save_file = vim.fs.joinpath(state_dir, vim.b[buf].continuity_uuid .. ".buffer")
-  if not util.path.exists(save_file) then
-    vim.b[buf]._continuity_needs_restore = nil
-    log.fmt_warn(
-      "Not restoring %s because its save file is missing.",
-      vim.api.nvim_buf_get_name(buf) or ("unnamed buffer with uuid " .. vim.b[buf].continuity_uuid)
-    )
-    return
-  end
-  log.fmt_debug("Loading buffer changes for buffer %s", vim.b[buf].continuity_uuid, buf)
-  local ok, file_lines = pcall(util.path.read_lines, save_file)
-  if ok then
-    ---@cast file_lines -string
-    log.fmt_debug(
-      "Loaded buffer changes for buffer %s, loading into %s",
-      vim.b[buf].continuity_uuid,
-      buf
-    )
-    vim.api.nvim_buf_set_lines(buf, 0, -1, true, file_lines)
-    -- Don't read the undo file if we're inside a recovered buffer, which should ensure the
-    -- user can undo the recovery overwrite. This should be handled better.
-    if not vim.b[buf]._continuity_swapfile then
-      local undo_file = vim.fs.joinpath(state_dir, vim.b.continuity_uuid .. ".undo")
-      log.fmt_debug("Loading undo history for buffer %s", vim.b[buf].continuity_uuid)
-      local err
-      ok, err = pcall(
-        vim.api.nvim_cmd,
-        { cmd = "rundo", args = { undo_file }, mods = { silent = true } },
-        {}
-      )
-      if not ok then
-        log.fmt_error(
-          "Failed loading undo history for buffer %s: %s",
-          vim.b[buf].continuity_uuid,
-          err
-        )
-      end
-    else
-      log.warn(
-        "Skipped loading undo history for buffer %s because it had a swapfile: %s",
-        vim.b[buf].continuity_uuid,
-        vim.b[buf]._continuity_swapfile
-      )
-    end
-    vim.b[buf]._continuity_needs_restore = nil
-    vim.b[buf].continuity_restore_last_pos = true
-  end
-  log.fmt_trace("Finished restoring modified buffer %s into %s", vim.b[buf].continuity_uuid, buf)
-end
-
----Restore modified buffers during session load, i.e. before they are re-:edit-ed.
----For presentation purposes only (e.g. ensures unfocused windows show the correct data).
----@param data table Continuity extension save data
----@param visible_only boolean Whether to only restore buffers that are in a window (true) or those that are not (false)
-local function restore_modified_buffers(data, visible_only)
-  if not _loading_session or not data then
-    return
-  end
-  -- Remember this until we have finished loading in case an autosave
-  -- is triggered before full restoration
-  _loading_session_data = data
-  local state_dir = util.path.get_stdpath_filename(
-    "data",
-    _loading_session.project.data_dir,
-    _loading_session.name,
-    "modified_buffers"
-  )
-  local bufs = Buf.list()
-  log.fmt_debug("Restoring modified buffers before reload: %s", data)
-  for _, modified in pairs(data) do
-    if (modified.in_win == false) ~= visible_only then
-      local save_file = vim.fs.joinpath(state_dir, tostring(modified.uuid) .. ".buffer")
-      local ok, file_lines = pcall(util.path.read_lines, save_file)
-      if not ok then
-        log.fmt_warn(
-          "Not restoring %s because its save file could not be read: %s",
-          modified.uuid,
-          file_lines
-        )
-      else
-        ---@cast file_lines -string
-        local new_buf
-        for _, buf in ipairs(bufs) do
-          if buf.uuid == modified.uuid then
-            new_buf = buf.buf
-            break
-          end
-        end
-        -- NOTE: This should not be needed during regular operation. Can be avoided by integrating this into resession
-        if not new_buf and modified.name ~= "" then
-          -- in case something has gone wrong, at least restore named buffers
-          for _, buf in ipairs(bufs) do
-            if buf.name == modified.name then
-              new_buf = buf.buf
-              break
-            end
-          end
-        end
-        log.fmt_debug("Restoring modified buf %s into bufnr %s", modified.uuid, new_buf)
-        ---@diagnostic disable-next-line: unnecessary-if
-        if new_buf then
-          vim.api.nvim_buf_set_lines(new_buf, 0, -1, true, file_lines)
-          -- Ensure autocmd :edit works. It will trigger the final restoration.
-          -- Don't do it for unnamed buffers since :edit cannot be called for them.
-          if modified.name ~= "" then
-            vim.bo[new_buf].modified = false
-          end
-          -- Ensure the buffer is remembered as modified if it is never loaded until the next save
-          vim.b[new_buf]._continuity_needs_restore = true
-        end
-      end
-    end
-  end
-  if not visible_only then
-    -- This means we have restored everything now, not just visible buffers.
-    _current_session, _loading_session, _loading_session_data = _loading_session, nil, nil
-  end
 end
 
 ---Save the currently active autosession and stop autosaving it after.
@@ -414,13 +131,19 @@ local function load(autosession, opts)
   -- No need to detach, it's handled by the pre-load hook.
   opts = vim.tbl_extend(
     "force",
-    { attach = true, reset = true },
+    { attach = true, reset = true, modified = Config.autosession.config.modified },
     opts or {},
     { silence_errors = false }
   )
   opts.dir = autosession.project.data_dir
 
-  _loading_session = autosession
+  log.fmt_debug(
+    "Loading autosession %s with opts %s.\nData: %s",
+    autosession.name,
+    opts,
+    autosession
+  )
+
   -- TODO: Use xpcall and error handler to show better stacktrace
   local ok, err = pcall(Core.load, autosession.name, opts)
   -- Only set current session after finishing buffer restoration (restore_modified_buffers)
@@ -432,18 +155,13 @@ local function load(autosession, opts)
       vim.notify("Error loading session: " .. err, vim.log.levels.ERROR)
       return
     end
-    -- TODO: Check if error message actually contains 'Could not find session',
-    -- meaning we didn't fail for some other reason.
-    --
     -- The session did not exist, need to save.
     -- First, change cwd to workspace root since resession saves/restores cwd.
     vim.api.nvim_set_current_dir(autosession.root)
-    -- This also means there is nothing to restore anymore.
-    -- If we had a session before, the above call only loads visible buffers
-    -- and waits for the first CursorHold event to load the rest.
-    _loading_session = nil
     _current_session = autosession
     save()
+  else
+    _current_session = autosession
   end
 end
 
@@ -501,9 +219,6 @@ end
 ---@param autosession continuity.Autosession? The active autosession that should be monitored
 function monitor(autosession)
   monitor_group = vim.api.nvim_create_augroup("ContinuityHooks", { clear = true })
-
-  -- Add extension for save/restore of unsaved buffers. Note: This is idempotent
-  Ext.load_extension("continuity", {})
 
   ---@type boolean?
   local gitsigns_in_sync = false
@@ -578,7 +293,7 @@ function monitor(autosession)
       log.fmt_trace(
         "DirChangedPre: Global directory is going to change, checking if we need to detach before"
       )
-      if not _current_session or _loading_session then
+      if not _current_session or Session.is_loading() then
         -- We don't need to detach if we don't have an active session or
         -- if we're in the process of loading one
         return
@@ -606,7 +321,7 @@ function monitor(autosession)
   vim.api.nvim_create_autocmd("DirChanged", {
     pattern = "global",
     callback = function()
-      if not _loading_session then
+      if not Session.is_loading() then
         log.fmt_trace("DirChanged: trying reload")
         reload()
       end
@@ -849,9 +564,6 @@ local M = {
   setup = setup,
   start = start,
   stop = stop,
-  save_modified_buffers = save_modified_buffers,
-  restore_modified_buffers = restore_modified_buffers,
-  restore_modified_buffer = restore_modified_buffer,
   info = info,
 }
 
