@@ -239,7 +239,7 @@ end
 ---@param scale_factor [number, number] Scaling factor for [width, height]
 ---@return continuity.WinID? The ID of the window that should have focus after session load
 M.set_winlayout = function(layout, scale_factor)
-  if not layout then
+  if not layout or not layout[1] then
     return
   end
   layout = set_winlayout(layout)
