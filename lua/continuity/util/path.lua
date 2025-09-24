@@ -167,7 +167,8 @@ end
 M.rmdir = function(dirname, opts)
   if M.exists(dirname) then
     opts = opts or {}
-    return vim.fs.rm(dirname, opts)
+    vim.fs.rm(dirname, opts)
+    return true
   end
 end
 
@@ -186,13 +187,29 @@ M.get_session_dir = function(dirname)
   return M.get_stdpath_filename("data", dirname)
 end
 
+--- Ensure the session name can be used as a file name.
+---@param name string The name of the session
+---@return string
+local function serialize_session_name(name)
+  local serialized = name:gsub(M.sep, "_"):gsub(":", "_")
+  return serialized
+end
 --- Get the path to the file that stores a saved session.
 ---@param name string The name of the session
 ---@param dirname string The name of the session directory
 ---@return string
 M.get_session_file = function(name, dirname)
-  local filename = string.format("%s.json", name:gsub(M.sep, "_"):gsub(":", "_"))
+  local filename = string.format("%s.json", serialize_session_name(name))
   return M.join(M.get_session_dir(dirname), filename)
+end
+
+--- Get the path to the directory that holds session-associated files
+--- like modified buffer contents and corresponding undo history.
+---@param name string The name of the session
+---@param dirname string The name of the session directory
+---@return string
+M.get_session_state_dir = function(name, dirname)
+  return M.join(M.get_session_dir(dirname), serialize_session_name(name))
 end
 
 return M

@@ -43,7 +43,7 @@ local function save(name, opts, target_tabpage)
   local filename = util.path.get_session_file(name, opts.dir or Config.session.dir)
   Ext.dispatch("pre_save", name, opts, target_tabpage)
   local session = Session.snapshot(target_tabpage)
-  local state_dir = vim.fs.joinpath(util.path.get_session_dir(opts.dir or Config.session.dir), name)
+  local state_dir = util.path.get_session_state_dir(name, opts.dir or Config.session.dir)
   if opts.modified then
     session.modified = Buf.save_modified(state_dir)
   else
@@ -172,7 +172,7 @@ function M.load(name, opts)
     opts.modified = not not session.modified
   end
   Ext.dispatch("pre_load", name, opts)
-  local state_dir = vim.fs.joinpath(util.path.get_session_dir(opts.dir or Config.session.dir), name)
+  local state_dir = util.path.get_session_state_dir(name, opts.dir or Config.session.dir)
   Session.restore(session, { reset = opts.reset, state_dir = state_dir, modified = opts.modified })
   current_session = nil
   if opts.reset then
@@ -283,6 +283,8 @@ function M.delete(name, opts)
   })
   local filename = util.path.get_session_file(name, opts.dir or Config.session.dir)
   if util.path.delete_file(filename) then
+    local state_dir = util.path.get_session_state_dir(name, opts.dir or Config.session.dir)
+    util.path.rmdir(state_dir, { recursive = true })
     if opts.notify then
       vim.notify(string.format('Deleted session "%s"', name))
     end

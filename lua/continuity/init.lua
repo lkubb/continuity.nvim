@@ -146,8 +146,6 @@ local function load(autosession, opts)
 
   -- TODO: Use xpcall and error handler to show better stacktrace
   local ok, err = pcall(Core.load, autosession.name, opts)
-  -- Only set current session after finishing buffer restoration (restore_modified_buffers)
-  -- to allow pre-load hook to function properly.
 
   if not ok then
     ---@cast err string
