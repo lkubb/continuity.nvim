@@ -32,8 +32,8 @@
 ---@class continuity.UserConfig.session
 ---@field dir? string The name of the directory to store regular sessions in
 ---@field options? string[] Save and restore these options
----@field buf_filter? fun(integer): boolean Custom logic for determining if the buffer should be included
----@field tab_buf_filter? fun(tabpage: integer, bufnr: integer): boolean Custom logic for determining if a buffer should be included in a tab-scoped session
+---@field buf_filter? fun(bufnr: integer, opts: continuity.SaveOpts): boolean Custom logic for determining if the buffer should be included
+---@field tab_buf_filter? fun(tabpage: integer, bufnr: integer, opts: continuity.SaveOpts): boolean Custom logic for determining if a buffer should be included in a tab-scoped session
 ---@field modified? boolean|"auto" Save/load modified buffers and their undo history. If set to `auto` (default), does not save, but still loads modified buffers by default.
 
 -- Until https://github.com/EmmyLuaLs/emmylua-analyzer-rust/issues/328 is resolved:
@@ -72,8 +72,8 @@
 ---@class continuity.Config.session
 ---@field dir string
 ---@field options string[]
----@field buf_filter fun(integer): boolean
----@field tab_buf_filter fun(tabpage: integer, bufnr: integer): boolean
+---@field buf_filter fun(bufnr: integer, opts: continuity.SaveOpts): boolean
+---@field tab_buf_filter fun(tabpage: integer, bufnr: integer, opts: continuity.SaveOpts): boolean
 ---@field modified boolean|"auto"
 
 local util = require("continuity.util")
@@ -82,10 +82,14 @@ local util = require("continuity.util")
 ---@field _pending continuity.UserConfig?
 local M = {}
 
---- The default config.session.buf_filter (takes all buflisted files with "", "acwrite", or "help" buftype)
+--- The default `config.session.buf_filter`. It allows the following buffers to be included in the session:
+--- * all `help` buffers
+--- * all **listed** buffers that correspond to a file (regular and `acwrite` type buffers with a name)
+--- * when saving buffer modifications with `modified`, also **listed** unnamed buffers
 ---@param bufnr integer
+---@param opts continuity.SaveOpts
 ---@return boolean
-local function default_buf_filter(bufnr)
+local function default_buf_filter(bufnr, opts)
   local buftype = vim.bo[bufnr].buftype
   if buftype == "help" then
     return true
@@ -93,8 +97,8 @@ local function default_buf_filter(bufnr)
   if buftype ~= "" and buftype ~= "acwrite" then
     return false
   end
-  -- FIXME: Modified buffer handling allows this to work, make better defaults
-  if vim.api.nvim_buf_get_name(bufnr) == "" then
+  -- By default, allow unnamed buffers to be persisted when buffer modifications are saved in the session.
+  if opts.modified ~= true and vim.api.nvim_buf_get_name(bufnr) == "" then
     return false
   end
   return vim.bo[bufnr].buflisted
@@ -149,7 +153,7 @@ local defaults = {
     },
     buf_filter = default_buf_filter,
     ---@diagnostic disable-next-line: unused
-    tab_buf_filter = function(tabpage, bufnr)
+    tab_buf_filter = function(tabpage, bufnr, opts)
       return true
     end,
     modified = "auto",

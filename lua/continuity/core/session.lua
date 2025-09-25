@@ -20,20 +20,20 @@ end
 ---@param tabpage? continuity.TabNr When saving a tab-scoped session, the tab number.
 ---@param bufnr continuity.BufNr The buffer to check for inclusion
 ---@param tabpage_bufs table<continuity.BufNr, true?> When saving a tab-scoped session, the list of buffers that are displayed in the tabpage.
----@param opts continuity.SnapshotOpts
+---@param opts continuity.SaveOpts
 local function include_buf(tabpage, bufnr, tabpage_bufs, opts)
-  if not (opts.buf_filter or Config.session.buf_filter)(bufnr) then
+  if not (opts.buf_filter or Config.session.buf_filter)(bufnr, opts) then
     return false
   end
   if not tabpage then
     return true
   end
   return tabpage_bufs[bufnr]
-    or (opts.tab_buf_filter or Config.session.tab_buf_filter)(tabpage, bufnr)
+    or (opts.tab_buf_filter or Config.session.tab_buf_filter)(tabpage, bufnr, opts)
 end
 
 ---@param target_tabpage? continuity.TabNr Limit the session to this tab. If unspecified, saves global state.
----@param opts? continuity.SnapshotOpts Influence which buffers and options are persisted (overrides global default config).
+---@param opts? continuity.SaveOpts Influence which buffers and options are persisted (overrides global default config). Note that only the filter functions and options configs are handled by this function, all other parameters of continuity's save API are only passed through for use in the filter functions.
 ---@return continuity.SessionData
 ---@return continuity.BufContext[] List of included buffers
 function M.snapshot(target_tabpage, opts)

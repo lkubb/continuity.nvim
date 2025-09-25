@@ -112,8 +112,8 @@
 
 ---@class continuity.SnapshotOpts
 ---@field options? string[] Save and restore these options
----@field buf_filter? fun(integer): boolean Custom logic for determining if the buffer should be included
----@field tab_buf_filter? fun(tabpage: integer, bufnr: integer): boolean Custom logic for determining if a buffer should be included in a tab-scoped session
+---@field buf_filter? fun(bufnr: integer, opts: continuity.SaveOpts): boolean Custom logic for determining if the buffer should be included
+---@field tab_buf_filter? fun(tabpage: integer, bufnr: integer, opts: continuity.SaveOpts): boolean Custom logic for determining if a buffer should be included in a tab-scoped session
 
 ---@class continuity.SessionConfig: continuity.SnapshotOpts
 ---@field modified? boolean|"auto" Save/load modified buffers and their undo history.

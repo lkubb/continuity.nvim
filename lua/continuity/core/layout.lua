@@ -39,7 +39,7 @@ M.get_win_info = function(tabnr, winid, current_win, opts)
       break
     end
   end
-  if not supported_by_ext and not (opts.buf_filter or Config.session.buf_filter)(bufnr) then
+  if not supported_by_ext and not (opts.buf_filter or Config.session.buf_filter)(bufnr, opts) then
     -- Don't need to check tab_buf_filter, only called for buffers that are visible in a tab
     return false
   end

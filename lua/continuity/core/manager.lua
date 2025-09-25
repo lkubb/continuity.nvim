@@ -45,10 +45,7 @@ local function save(name, opts, target_tabpage)
   end
   local filename = util.path.get_session_file(name, opts.dir or Config.session.dir)
   Ext.dispatch("pre_save", name, opts, target_tabpage)
-  local session, included_bufs = Session.snapshot(
-    target_tabpage,
-    { buf_filter = opts.buf_filter, tab_buf_filter = opts.tab_buf_filter, options = opts.options }
-  )
+  local session, included_bufs = Session.snapshot(target_tabpage, opts)
   local state_dir = util.path.get_session_state_dir(name, opts.dir or Config.session.dir)
   if opts.modified then
     session.modified = Buf.save_modified(state_dir, included_bufs)
