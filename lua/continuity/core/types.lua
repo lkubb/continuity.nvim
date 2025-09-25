@@ -134,7 +134,7 @@
 ---@class continuity.BufContext
 ---@field bufnr continuity.BufNr The buffer number of the buffer this context references
 ---@field name string The name of the buffer this context references. Usually the path of the loaded file or the empty string for untitled ones.
----@field uuid? continuity.BufUUID A UUID to track buffers across session restorations
+---@field uuid continuity.BufUUID A UUID to track buffers across session restorations
 ---@field last_buffer_pos? [integer, integer] cursor position when last exiting the buffer
 ---@field last_win_pos? table<string, [integer, integer]> Window (ID as string)-specific cursor positions
 ---@field need_edit? boolean Indicates the buffer needs :edit to be initialized correctly (autocmds are suppressed during session load)

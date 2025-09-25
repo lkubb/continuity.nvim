@@ -59,83 +59,62 @@ end
 
 --- Get continuity buffer context for a buffer (~ proxy to vim.b.continuity_ctx). Keys can be updated in-place.
 ---@param bufnr continuity.BufNr? The buffer to get the context for. Defaults to the current buffer
----@param init (boolean|continuity.BufUUID)? Optionally initialize the context by setting the UUID.
+---@param init continuity.BufUUID? Optionally enforce a specific buffer UUID. Errors if it's already set to something else.
 ---@return continuity.BufContext
 function M.ctx(bufnr, init)
   local ctx = BufContext.new(bufnr or vim.api.nvim_get_current_buf())
-  if not init then
+  local current_uuid = ctx.uuid
+  ---@diagnostic disable-next-line: unnecessary-if
+  if current_uuid then
+    if init and current_uuid ~= init then
+      --- FIXME: If a named buffer already exists with a different uuid, this fails.
+      ---        Shouldn't be a problem with global sessions, but might be with tab sessions.
+      ---        Those are not really accounted for in the modified handling atm.
+      log.fmt_error(
+        "UUID collision for buffer %s (%s)! Expected to be empty or %s, but it is already set to %s.",
+        ctx.bufnr,
+        ctx.name,
+        init,
+        current_uuid
+      )
+      error(
+        "Buffer UUID collision! Please restart neovim and reload the session. "
+          .. "This might be caused by the same file path being referenced in multiple sessions."
+      )
+    end
     return ctx
   end
-  if init == true then
-    ctx.uuid = ctx.uuid or generate_uuid()
-  else
-    ctx.uuid = ctx.uuid or init
-  end
+  ctx.uuid = init or generate_uuid()
   return ctx
 end
 
---- List all untitled buffers using bufnr and uuid.
----@return {buf: continuity.BufNr, uuid: continuity.BufUUID?}[]
-local function list_untitled_buffers()
-  local res = {}
-  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-    if vim.api.nvim_buf_get_name(buf) == "" then
-      table.insert(res, { buf = buf, uuid = M.ctx(buf).uuid })
-    end
-  end
-  return res
-end
-
---- Ensure a specific buffer exists (represented by file path or UUID) and has any UUID.
---- File path: Ensure the file is loaded into a buffer and has any UUID. If it does not, assign it the specified one.
---- Unnamed: Ensure an unnamed buffer with the specified UUID exists. If not, create a new unnamed buffer and assign the specified UUID.
+--- Ensure a specific buffer exists in this neovim instance.
+--- A buffer is represented by its name (usually file path), or a specific UUID for unnamed buffers.
+--- When `name` is not the empty string, adds the corresponding buffer.
+--- When `name` is the empty string and `uuid` is given, searches untitled buffers for this UUID. If not found, adds an empty one.
+--- Always ensures a buffer has a UUID. If `uuid` is given, the returned buffer is ensured to match it.
+--- If `name` is not empty and the buffer already has another UUID, errors.
 ---@param name string The path of the buffer or the empty string ("") for unnamed buffers.
 ---@param uuid? continuity.BufUUID The UUID the buffer should have.
 ---@return continuity.BufContext The buffer context of the specified buffer.
-function M.managed(name, uuid)
+function M.added(name, uuid)
   local bufnr
-  if name ~= "" then
-    bufnr = vim.fn.bufadd(name)
-  else
-    for _, buf in ipairs(list_untitled_buffers()) do
-      if buf.uuid == uuid then
-        bufnr = buf.buf
+  if name == "" and uuid then
+    for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+      if
+        vim.api.nvim_buf_get_name(buf) == ""
+        and vim.b[buf].continuity_ctx
+        and vim.b[buf].continuity_ctx.uuid == uuid
+      then
+        bufnr = buf
         break
       end
     end
-    if not bufnr then
-      bufnr = vim.fn.bufadd("")
-    end
   end
-  return M.ctx(bufnr, uuid or true) -- ensure the buffer has a UUID
-end
-
----List all continuity-managed buffers.
----@return continuity.BufContext[]
-function M.list()
-  local res = {}
-  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-    local ctx = M.ctx(buf)
-    if ctx.uuid then
-      res[#res + 1] = ctx
-    end
+  if not bufnr then
+    bufnr = vim.fn.bufadd(name)
   end
-  return res
-end
-
----List all continuity-managed buffers that were modified.
----@return continuity.BufContext[]
-function M.list_modified()
-  local res = {}
-  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-    local ctx = M.ctx(buf)
-    -- Only list buffers that are known to us. This funtion is called during save,
-    -- a missing uuid means the buffer should not be saved at all
-    if ctx.uuid and (ctx.needs_restore or vim.bo[buf].modified) then
-      res[#res + 1] = ctx
-    end
-  end
-  return res
+  return M.ctx(bufnr, uuid) -- ensure the buffer has a UUID
 end
 
 --- Restore cursor positions in buffers/windows if necessary. This is necessary
@@ -534,10 +513,7 @@ end
 ---@param state_dir string? The directory where unsaved buffers are persisted to
 ---@return continuity.BufNr
 function M.restore(buf, data, state_dir)
-  --- FIXME: If a named buffer already exists with a different uuid, this fails.
-  ---        Shouldn't be a problem with global sessions, but might be with tab sessions I think.
-  ---        Those are not really accounted for in the modified handling atm.
-  local ctx = M.managed(buf.name, buf.uuid)
+  local ctx = M.added(buf.name, buf.uuid)
 
   if buf.loaded then
     vim.fn.bufload(ctx.bufnr)
@@ -573,14 +549,14 @@ end
 ---Iterate over modified buffers, save them and their undo history
 ---and return data to resession.
 ---@param state_dir string
+---@param bufs continuity.BufContext[] List of buffers to check for modifications.
 ---@return table<continuity.ManagedBufID, true?>?
-function M.save_modified(state_dir)
-  log.fmt_trace("save_modified_buffers called")
-  -- FIXME: Only save modifications for buffers that are included in the session.
-  --        For global sessions, this is currently ensured indirectly by a missing UUID.
-  --        Since this is integrated into the core, we can easily filter the modified
-  --        buffers directly.
-  local modified_buffers = M.list_modified()
+function M.save_modified(state_dir, bufs)
+  local modified_buffers = vim.tbl_filter(function(buf)
+    -- Ensure buffers with pending modifications (never focused after a session was restored)
+    -- are included in the list of modified buffers. Saving them is skipped later.
+    return buf.needs_restore or vim.bo[buf.bufnr].modified
+  end, bufs)
   log.fmt_debug(
     "Saving modified buffers in state dir (%s)\nModified buffers: %s",
     state_dir,
@@ -596,8 +572,8 @@ function M.save_modified(state_dir)
   local skip_wundo = vim.fn.getcmdwintype() ~= ""
   for _, ctx in ipairs(modified_buffers) do
     -- Unrestored buffers should not overwrite the save file, but still be remembered
-    -- _continuity_unrestored are buffers that were not restored at all due to swapfile and being opened read-only
-    -- _continuity_needs_restore are buffers that were restored initially, but have never been entered since loading.
+    -- unrestored are buffers that were not restored at all due to swapfile and being opened read-only
+    -- needs_restore are buffers that were restored initially, but have never been entered since loading.
     -- If we saved the latter, we would lose the undo history since it hasn't been loaded for them.
     -- This at least affects unnamed buffers since we solely manage the history for them.
     if not (ctx.unrestored or ctx.needs_restore) then

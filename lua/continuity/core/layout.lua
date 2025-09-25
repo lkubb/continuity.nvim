@@ -182,14 +182,13 @@ local function set_winlayout_data(layout, scale_factor, visit_data)
         end
       end
     else
-      local ctx = Buf.managed(win.bufname, win.bufuuid)
-      local bufnr = ctx.bufnr
+      local ctx = Buf.added(win.bufname, win.bufuuid)
       log.fmt_debug("Loading buffer %s (uuid: %s) in win %s", win.bufname, win.bufuuid, win.winid)
-      vim.api.nvim_win_set_buf(win.winid, bufnr)
+      vim.api.nvim_win_set_buf(win.winid, ctx.bufnr)
       -- After setting the buffer into the window, manually set the filetype to trigger syntax highlighting
-      log.fmt_trace("Triggering filetype from winlayout for buf %s", bufnr)
+      log.fmt_trace("Triggering filetype from winlayout for buf %s", ctx.bufnr)
       util.opts.with({ eventignore = "" }, function()
-        vim.bo[bufnr].filetype = vim.bo[bufnr].filetype
+        vim.bo[ctx.bufnr].filetype = vim.bo[ctx.bufnr].filetype
       end)
       -- Save the last position of the cursor in case buf_load plugins
       -- change the buffer text and request restoration

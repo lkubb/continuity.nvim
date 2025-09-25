@@ -35,6 +35,7 @@ end
 ---@param target_tabpage? continuity.TabNr Limit the session to this tab. If unspecified, saves global state.
 ---@param opts? continuity.SnapshotOpts Influence which buffers and options are persisted (overrides global default config).
 ---@return continuity.SessionData
+---@return continuity.BufContext[] List of included buffers
 function M.snapshot(target_tabpage, opts)
   opts = opts or {}
   ---@type continuity.SessionData
@@ -51,6 +52,7 @@ function M.snapshot(target_tabpage, opts)
         or util.opts.get_global(opts.options or Config.session.options),
     },
   }
+  local included_bufs = {}
   util.opts.with({ eventignore = "all" }, function()
     ---@type continuity.WinID
     local current_win = vim.api.nvim_get_current_win()
@@ -65,7 +67,7 @@ function M.snapshot(target_tabpage, opts)
     local is_unexpected_exit = vim.v.exiting ~= vim.NIL and vim.v.exiting > 0
     for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
       if include_buf(target_tabpage, bufnr, tabpage_bufs, opts) then
-        local ctx = Buf.ctx(bufnr, true)
+        local ctx = Buf.ctx(bufnr)
         local in_win = vim.fn.bufwinid(bufnr)
         ---@type continuity.BufData
         local buf = {
@@ -78,9 +80,10 @@ function M.snapshot(target_tabpage, opts)
           last_pos = (ctx.restore_last_pos and ctx.last_buffer_pos)
             or vim.api.nvim_buf_get_mark(bufnr, '"'),
           in_win = in_win > 0,
-          uuid = assert(ctx.uuid),
+          uuid = ctx.uuid,
         }
-        table.insert(data.buffers, buf)
+        data.buffers[#data.buffers + 1] = buf
+        included_bufs[#included_bufs + 1] = ctx
       end
     end
     local current_tabpage = vim.api.nvim_get_current_tabpage()
@@ -142,7 +145,7 @@ function M.snapshot(target_tabpage, opts)
       end
     end
   end)
-  return data
+  return data, included_bufs
 end
 
 --- Call extensions that implement on_post_bufinit, which is triggered
