@@ -43,11 +43,10 @@ M.get_win_info = function(tabnr, winid, current_win, opts)
     -- Don't need to check tab_buf_filter, only called for buffers that are visible in a tab
     return false
   end
+  local ctx = Buf.ctx(bufnr)
   win = vim.tbl_extend("error", win, {
-    bufname = vim.api.nvim_buf_get_name(bufnr),
-    bufuuid = vim.b[
-      bufnr --[[@as integer]]
-    ].continuity_uuid,
+    bufname = ctx.name,
+    bufuuid = ctx.uuid,
     current = winid == current_win,
     cursor = vim.api.nvim_win_get_cursor(winid),
     width = vim.api.nvim_win_get_width(winid),
@@ -183,7 +182,8 @@ local function set_winlayout_data(layout, scale_factor, visit_data)
         end
       end
     else
-      local bufnr = Buf.managed(win.bufname, win.bufuuid)
+      local ctx = Buf.managed(win.bufname, win.bufuuid)
+      local bufnr = ctx.bufnr
       log.fmt_debug("Loading buffer %s (uuid: %s) in win %s", win.bufname, win.bufuuid, win.winid)
       vim.api.nvim_win_set_buf(win.winid, bufnr)
       -- After setting the buffer into the window, manually set the filetype to trigger syntax highlighting
@@ -193,12 +193,12 @@ local function set_winlayout_data(layout, scale_factor, visit_data)
       end)
       -- Save the last position of the cursor in case buf_load plugins
       -- change the buffer text and request restoration
-      local temp_pos_table = vim.b[bufnr].continuity_last_win_pos or {}
+      local temp_pos_table = ctx.last_win_pos or {}
       temp_pos_table[tostring(win.winid)] = win.cursor
-      vim.b[bufnr].continuity_last_win_pos = temp_pos_table
+      ctx.last_win_pos = temp_pos_table
       -- We don't need to restore last cursor position on buffer load
       -- because the triggered :edit command keeps it
-      vim.b[bufnr].continuity_restore_last_pos = nil
+      ctx.restore_last_pos = nil
     end
     util.opts.restore_win(win.winid, win.options)
     local width_scale = vim.wo.winfixwidth and 1 or scale_factor[1]

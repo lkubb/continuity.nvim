@@ -130,3 +130,16 @@
 
 ---@class continuity.AttachedSessionInfo: continuity.AttachedSessionData
 ---@field name string The name of the session
+
+---@class continuity.BufContext
+---@field bufnr continuity.BufNr The buffer number of the buffer this context references
+---@field name string The name of the buffer this context references. Usually the path of the loaded file or the empty string for untitled ones.
+---@field uuid? continuity.BufUUID A UUID to track buffers across session restorations
+---@field last_buffer_pos? [integer, integer] cursor position when last exiting the buffer
+---@field last_win_pos? table<string, [integer, integer]> Window (ID as string)-specific cursor positions
+---@field need_edit? boolean Indicates the buffer needs :edit to be initialized correctly (autocmds are suppressed during session load)
+---@field needs_restore? boolean Indicates the buffer has been loaded during session load, but has not been initialized completely because it never has been accessed
+---@field restore_last_pos? boolean Indicates the buffer cursor needs to be restored. Handled during initial session loading e.g. for previews and again in buffer initialization when loaded into a window.
+---@field state_dir? string The directory to save session-associated state in. Used for modification persisstence.
+---@field swapfile? string The path to the buffer's swapfile if it had one when loaded.
+---@field unrestored? boolean Indicates the buffer could not be restored properly because it had a swapfile and was opened read-only

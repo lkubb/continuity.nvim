@@ -65,24 +65,20 @@ function M.snapshot(target_tabpage, opts)
     local is_unexpected_exit = vim.v.exiting ~= vim.NIL and vim.v.exiting > 0
     for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
       if include_buf(target_tabpage, bufnr, tabpage_bufs, opts) then
-        if not vim.b[bufnr].continuity_uuid then
-          vim.b[bufnr].continuity_uuid = Buf.generate_uuid()
-        end
+        local ctx = Buf.ctx(bufnr, true)
         local in_win = vim.fn.bufwinid(bufnr)
         ---@type continuity.BufData
         local buf = {
-          name = vim.api.nvim_buf_get_name(bufnr),
+          name = ctx.name,
           -- if neovim quit unexpectedly, all buffers will appear as unloaded.
           -- As a hack, we just assume that all of them were loaded, to avoid all of them being
           -- *unloaded* when the session is restored.
           loaded = is_unexpected_exit or vim.api.nvim_buf_is_loaded(bufnr),
           options = util.opts.get_buf(bufnr, opts.options or Config.session.options),
-          last_pos = (
-            vim.b[bufnr].continuity_restore_last_pos
-            and vim.b[bufnr].continuity_last_buffer_pos
-          ) or vim.api.nvim_buf_get_mark(bufnr, '"'),
+          last_pos = (ctx.restore_last_pos and ctx.last_buffer_pos)
+            or vim.api.nvim_buf_get_mark(bufnr, '"'),
           in_win = in_win > 0,
-          uuid = vim.b[bufnr].continuity_uuid,
+          uuid = assert(ctx.uuid),
         }
         table.insert(data.buffers, buf)
       end
