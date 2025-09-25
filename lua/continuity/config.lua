@@ -19,6 +19,7 @@
 ---@field project_name? fun(workspace: string, git_info: continuity.GitInfo?): string A function that receives the workspace root dir and whether it's git-tracked and returns the project-specific session directory name.
 ---@field session_name? fun(meta: {cwd: string, workspace: string, project_name: string, git_info: continuity.GitInfo?}): string A function that receives the effective nvim cwd, the workspace root, the project name and cwd git info and generates a session name.
 ---@field enabled? fun(meta: {cwd: string, workspace: string, project_name: string, session_name: string}): boolean A function that receives the effective nvim cwd, the workspace root and project name and decides whether a session should be started automatically.
+---@field load_opts? fun(meta: {cwd: string, workspace: string, project_name: string, session_name: string}): continuity.LoadOpts? A function that can influence how an autosession is loaded/persisted, e.g. load the session without attaching it or disabling modified persistence.
 
 ---@class continuity.UserConfig.load
 ---@field detail? boolean Show more detail about the sessions when selecting one to load. Disable if it causes lag.
@@ -58,7 +59,8 @@
 ---@field workspace fun(cwd: string): string, boolean
 ---@field project_name fun(workspace: string, git_info: continuity.GitInfo?): string
 ---@field session_name fun(meta: {cwd: string, workspace: string, project_name: string, git_info: continuity.GitInfo?}): string
----@field enabled fun(meta: {cwd: string, workspace: string, project_name: string, session_name: string}): boolean
+---@field enabled fun(meta: {cwd: string, workspace: string, project_name: string, session_name: string, git_info: continuity.GitInfo?}): boolean
+---@field load_opts fun(meta: {cwd: string, workspace: string, project_name: string, session_name: string, git_info: continuity.GitInfo?}): continuity.LoadOpts?
 
 ---@class continuity.Config.load
 ---@field detail boolean
@@ -106,6 +108,11 @@ end
 
 ---@type continuity.Config
 local defaults = {
+  autosave = {
+    enabled = false,
+    interval = 60,
+    notify = true,
+  },
   autosession = {
     config = {
       modified = false,
@@ -114,14 +121,14 @@ local defaults = {
     workspace = util.git.find_workspace_root,
     project_name = util.auto.workspace_project_map,
     session_name = util.auto.generate_name,
-    enabled = function()
+    ---@diagnostic disable-next-line: unused
+    enabled = function(meta)
       return true
     end,
-  },
-  autosave = {
-    enabled = false,
-    interval = 60,
-    notify = true,
+    ---@diagnostic disable-next-line: unused
+    load_opts = function(meta)
+      return {}
+    end,
   },
   extensions = {
     quickfix = {},

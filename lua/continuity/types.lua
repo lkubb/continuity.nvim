@@ -43,6 +43,7 @@
 ---@field project continuity.ProjectInfo Information about the project the session belongs to
 ---@field root string The top level directory for this session. Usually equals the project root, but can be different when git worktrees are used.
 ---@field name string The name of the session
+---@field config continuity.LoadOpts Session-specific load/autosave options.
 
 ---@class continuity.Autosession: continuity.AutosessionSpec
 ---@field cwd string The effective working directory that was determined when loading this auto-session

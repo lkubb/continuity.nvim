@@ -65,6 +65,7 @@ local function core_opts(cur, defaults, opts, forced)
     "force",
     Config.autosession.config,
     defaults or {},
+    cur.config,
     opts or {},
     forced or {},
     { meta = { autosession = cur }, dir = cur.project.data_dir }
@@ -104,6 +105,13 @@ local function render_autosession_context(cwd)
   local project_dir = util.auto.hash(project_name)
   return {
     cwd = cwd,
+    config = Config.autosession.load_opts({
+      cwd = cwd,
+      git_info = git_info,
+      project_name = project_name,
+      session_name = session_name,
+      workspace = workspace,
+    }) or {},
     name = session_name,
     root = workspace,
     project = {
@@ -175,11 +183,21 @@ local function load(autosession, opts)
       vim.notify("Error loading session: " .. err, vim.log.levels.ERROR)
       return
     end
-    -- The session did not exist, need to save.
-    -- First, change cwd to workspace root since resession saves/restores cwd.
-    vim.api.nvim_set_current_dir(autosession.root)
     local save_opts =
       core_opts(autosession, { attach = true, notify = false }, opts --[[@as continuity.SaveOpts]])
+    if not save_opts.attach then
+      -- The autosession is used to setup a default view instead of session persistence,
+      -- but the referenced session does not exist.
+      vim.notify(
+        "Could not find autosession '{}' in project '{}', cannot start a new one because attach was set to false. "
+          .. "Make sure the session file exists if you configure autloading sessions without attaching after.",
+        vim.log.levels.ERROR
+      )
+      return
+    end
+    -- The session did not exist, need to save to initialize an empty one.
+    -- First, change cwd to workspace root since resession saves/restores cwd.
+    vim.api.nvim_set_current_dir(autosession.root)
     Core.save(autosession.name, save_opts)
   end
 end
@@ -369,7 +387,7 @@ local function start(cwd, opts)
 end
 
 ---Stop Continuity:
----1. If we're inside an active autosession, save it and detaches. Does not close everything by default.
+---1. If we're inside an active autosession, save it and detach. Does not close everything by default.
 ---2. In any case, stop monitoring for directory or branch changes.
 local function stop()
   stop_monitoring()
