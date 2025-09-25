@@ -73,9 +73,11 @@ function M.load_extension(name, opts)
   if Config.log then
     Config.extensions[name] = opts
     M.get(name)
-  elseif Config._pending then
-    Config._pending.extensions = Config._pending or {}
-    Config._pending.extensions[name] = opts
+  elseif vim.g.continuity_config then
+    local config = vim.g.continuity_config
+    config.extensions = config.extensions or {}
+    config.extensions[name] = opts
+    vim.g.continuity_config = config
   else
     error("Cannot load extension before setup was called")
   end

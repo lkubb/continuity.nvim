@@ -12,15 +12,6 @@ local uv = vim.uv or vim.loop
 ---@class continuity.core.API
 local M = {}
 
---- Called before all public functions in this module.
---- Checks whether setup has been called and applies config.
---- If it's the first invocation, also initializes hooks that publish native events.
-local function do_setup()
-  if Config._pending then
-    Config.setup()
-  end
-end
-
 local function get_save_name(tab_scoped)
   -- Try to default to the current session
   info = Manager.get_current_session_info()
@@ -189,14 +180,4 @@ function M.autosave(enabled, interval, notify)
   end
 end
 
--- Make sure all the API functions trigger the lazy load
-for k, v in pairs(M) do
-  if type(v) == "function" and k ~= "setup" then
-    M[k] = function(...)
-      do_setup()
-      return v(...)
-    end
-  end
-end
-
-return M
+return util.lazy_setup_wrapper(M)

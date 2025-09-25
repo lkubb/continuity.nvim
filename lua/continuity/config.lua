@@ -81,7 +81,6 @@
 local util = require("continuity.util")
 
 ---@class continuity.config: continuity.Config
----@field _pending continuity.UserConfig?
 local M = {}
 
 --- The default `config.session.buf_filter`. It allows the following buffers to be included in the session:
@@ -167,16 +166,18 @@ local defaults = {
   },
 }
 
----@param config continuity.UserConfig?
+--- Read configuration overrides from `vim.g.continuity_config` and
+--- (re)initialize all modules that need initialization.
+---@param config continuity.UserConfig? Default config overrides. This table is merged on top of `vim.g.continuity_config`, which is itself merged on top of the default config.
 function M.setup(config)
   ---@diagnostic disable-next-line: param-type-not-match
-  local new = vim.tbl_deep_extend("force", defaults, M._pending or {}, config or {})
+  local new = vim.tbl_deep_extend("force", defaults, vim.g.continuity_config or {}, config or {})
 
   for k, v in pairs(new) do
     M[k] = v
   end
 
-  M._pending = nil
+  vim.g.continuity_config = nil
 
   -- TODO: This should be session-specific config
   require("continuity.core").autosave(M.autosave.enabled, M.autosave.interval, M.autosave.notify)
