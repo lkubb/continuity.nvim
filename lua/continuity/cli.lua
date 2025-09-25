@@ -100,7 +100,7 @@ local function parse_args(args, skip)
 end
 
 ---@return string[]
-M.complete = function(_, line)
+function M.complete(_, line)
   local words = vim.split(line, "%s+", { trimempty = true })
   local current_arg_finished = line:sub(-1) == " "
   local n = #words
@@ -153,7 +153,7 @@ M.complete = function(_, line)
   return matches
 end
 
-M.run = function(params)
+function M.run(params)
   local parsed = parse_args(params.fargs)
   local func = funcs[params.fargs[1]]
   if not func then

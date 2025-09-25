@@ -47,14 +47,14 @@ end
 --- Add a callback that runs at a specific time
 ---@param name resession.Hook
 ---@param callback fun(...: any)
-M.add_hook = function(name, callback)
+function M.add_hook(name, callback)
   table.insert(hooks[name], callback)
 end
 
 --- Remove a hook callback
 ---@param name resession.Hook
 ---@param callback fun(...: any)
-M.remove_hook = function(name, callback)
+function M.remove_hook(name, callback)
   local cbs = hooks[name]
   for i, cb in ipairs(cbs) do
     if cb == callback then
@@ -67,7 +67,7 @@ end
 --- Load an extension some time after calling setup()
 ---@param name string Name of the extension
 ---@param opts table Configuration options for extension
-M.load_extension = function(name, opts)
+function M.load_extension(name, opts)
   ---@diagnostic disable-next-line: unnecessary-if
   -- config.log is only defined if setup has been run
   if Config.log then
@@ -87,7 +87,7 @@ local ext_cache = {}
 --- Attempt to load an extension.
 ---@param name string The name of the extension to fetch.
 ---@return resession.Extension?
-M.get = function(name)
+function M.get(name)
   if ext_cache[name] then
     return ext_cache[name]
   end

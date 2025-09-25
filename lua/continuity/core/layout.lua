@@ -16,7 +16,7 @@ local M = {}
 ---@param current_win integer The window id of the currently active window
 ---@param opts continuity.SaveOpts
 ---@return continuity.WinInfo|false
-M.get_win_info = function(tabnr, winid, current_win, opts)
+function M.get_win_info(tabnr, winid, current_win, opts)
   local bufnr = vim.api.nvim_win_get_buf(winid)
   local win = {}
   local supported_by_ext = false
@@ -69,7 +69,7 @@ end
 ---@param current_win integer
 ---@param opts continuity.SaveOpts
 ---@return continuity.WinLayout|false
-M.add_win_info_to_layout = function(tabnr, layout, current_win, opts)
+function M.add_win_info_to_layout(tabnr, layout, current_win, opts)
   ---@diagnostic disable-next-line: undefined-field
   ---@type 'leaf'|'col'|'row'|nil
   local typ = layout[1]
@@ -240,7 +240,7 @@ end
 ---@param layout continuity.WinLayout|false|nil
 ---@param scale_factor [number, number] Scaling factor for [width, height]
 ---@return continuity.WinID? The ID of the window that should have focus after session load
-M.set_winlayout = function(layout, scale_factor)
+function M.set_winlayout(layout, scale_factor)
   if not layout or not layout[1] then
     return
   end

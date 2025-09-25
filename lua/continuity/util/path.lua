@@ -25,7 +25,7 @@ end
 --- Check if any of a variable number of paths exists
 ---@param ... string The paths to check
 ---@return boolean
-M.any_exists = function(...)
+function M.any_exists(...)
   for _, name in ipairs({ ... }) do
     if M.exists(name) then
       return true
@@ -37,14 +37,14 @@ end
 --- Check if a path exists
 ---@param filepath string The path to check
 ---@return boolean
-M.exists = function(filepath)
+function M.exists(filepath)
   local stat = uv.fs_stat(filepath)
   return stat ~= nil and stat.type ~= nil
 end
 
 --- Join a variable number of path segments into a relative path specific to the OS
 ---@return string
-M.join = function(...)
+function M.join(...)
   return table.concat({ ... }, M.sep)
 end
 
@@ -52,14 +52,14 @@ end
 ---@param dir string
 ---@param path string
 ---@return boolean
-M.is_subpath = function(dir, path)
+function M.is_subpath(dir, path)
   return string.sub(path, 0, string.len(dir)) == dir
 end
 
 --- Given a path, replace $HOME with ~ if present.
 ---@param path string The path to shorten
 ---@return string
-M.shorten_path = function(path)
+function M.shorten_path(path)
   local home = os.getenv("HOME")
   if not home then
     return path
@@ -76,7 +76,7 @@ end
 --- Get a path relative to a standard path
 ---@param stdpath 'cache'|'config'|'data'|'log'|'run'|'state'
 ---@param ... string Variable number of path segments to append to the stdpath in OS-specific format
-M.get_stdpath_filename = function(stdpath, ...)
+function M.get_stdpath_filename(stdpath, ...)
   local ok, dir = pcall(vim.fn.stdpath, stdpath)
   if not ok then
     if stdpath == "log" then
@@ -94,7 +94,7 @@ end
 --- Try to read a file and return its contents on success
 ---@param filepath string
 ---@return string?
-M.read_file = function(filepath)
+function M.read_file(filepath)
   if not M.exists(filepath) then
     return nil
   end
@@ -119,7 +119,7 @@ end
 --- Try to load a file and return its JSON-decoded contents on success
 ---@param filepath string
 ---@return any?
-M.load_json_file = function(filepath)
+function M.load_json_file(filepath)
   local content = M.read_file(filepath)
   if content then
     return vim.json.decode(content, { luanil = { object = true } })
@@ -129,7 +129,7 @@ end
 --- Create a directory, including parents
 ---@param dirname string The path of the directory to create
 ---@param perms? integer The permissions to use for the final directory. Intermediate ones are created with the default permissions. Defaults to 493 (== 0o755)
-M.mkdir = function(dirname, perms)
+function M.mkdir(dirname, perms)
   if not perms then
     perms = 493 -- 0755
   end
@@ -145,7 +145,7 @@ end
 --- Write a file (synchronously). Currently performs no error checking.
 ---@param filename string The path of the file to write
 ---@param contents string The contents to write
-M.write_file = function(filename, contents)
+function M.write_file(filename, contents)
   M.mkdir(vim.fn.fnamemodify(filename, ":h"))
   local fd = assert(uv.fs_open(filename, "w", 420)) -- 0644
   uv.fs_write(fd, contents)
@@ -155,7 +155,7 @@ end
 --- Ensure a file is absent
 ---@param filename string
 ---@return boolean?
-M.delete_file = function(filename)
+function M.delete_file(filename)
   if M.exists(filename) then
     return (uv.fs_unlink(filename))
   end
@@ -164,7 +164,7 @@ end
 --- Delete a directory, optionally recursively
 ---@param dirname string The path of the directory to delete
 ---@param opts {recursive?: boolean}
-M.rmdir = function(dirname, opts)
+function M.rmdir(dirname, opts)
   if M.exists(dirname) then
     opts = opts or {}
     vim.fs.rm(dirname, opts)
@@ -175,7 +175,7 @@ end
 --- Dump a lua variable to a JSON-encoded file (synchronously)
 ---@param filename string The path of the file to dump to
 ---@param obj any The data to dump
-M.write_json_file = function(filename, obj)
+function M.write_json_file(filename, obj)
   ---@diagnostic disable-next-line: param-type-mismatch
   M.write_file(filename, vim.json.encode(obj))
 end
@@ -183,7 +183,7 @@ end
 --- Get the path to the directory that stores session files.
 ---@param dirname string The name of the session directory
 ---@return string
-M.get_session_dir = function(dirname)
+function M.get_session_dir(dirname)
   return M.get_stdpath_filename("data", dirname)
 end
 
@@ -198,7 +198,7 @@ end
 ---@param name string The name of the session
 ---@param dirname string The name of the session directory
 ---@return string
-M.get_session_file = function(name, dirname)
+function M.get_session_file(name, dirname)
   local filename = string.format("%s.json", serialize_session_name(name))
   return M.join(M.get_session_dir(dirname), filename)
 end
@@ -208,7 +208,7 @@ end
 ---@param name string The name of the session
 ---@param dirname string The name of the session directory
 ---@return string
-M.get_session_state_dir = function(name, dirname)
+function M.get_session_state_dir(name, dirname)
   return M.join(M.get_session_dir(dirname), serialize_session_name(name))
 end
 

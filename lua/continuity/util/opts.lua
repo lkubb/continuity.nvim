@@ -18,7 +18,7 @@ end
 --- Return all global-scoped options in a list of any options.
 ---@param opts string[] A list of options to fetch current values for if they are global-scoped
 ---@return table<string, any>
-M.get_global = function(opts)
+function M.get_global(opts)
   local ret = {}
   for _, opt in ipairs(opts) do
     if get_option_scope(opt) == "global" then
@@ -32,7 +32,7 @@ end
 ---@param winid continuity.WinID The window number to return options for.
 ---@param opts string[] A list of options to fetch current values for if they are window-scoped
 ---@return table<string, any>
-M.get_win = function(winid, opts)
+function M.get_win(winid, opts)
   local ret = {}
   for _, opt in ipairs(opts) do
     if get_option_scope(opt) == "win" then
@@ -46,7 +46,7 @@ end
 ---@param bufnr continuity.BufNr The buffer number to return options for.
 ---@param opts string[] A list of options to fetch current values for if they are buffer-scoped
 ---@return table<string, any>
-M.get_buf = function(bufnr, opts)
+function M.get_buf(bufnr, opts)
   local ret = {}
   for _, opt in ipairs(opts) do
     if get_option_scope(opt) == "buf" then
@@ -62,7 +62,7 @@ end
 ---@param tabnr continuity.TabNr Unused.
 ---@param opts string[] A list of options to fetch current values for if they are tab-scoped
 ---@return table<string, any>
-M.get_tab = function(tabnr, opts)
+function M.get_tab(tabnr, opts)
   local ret = {}
   -- 'cmdheight' is the only tab-local option, but the scope from nvim_get_option_info is incorrect
   -- since there's no way to fetch a tabpage-local option, we rely on this being called from inside
@@ -75,7 +75,7 @@ end
 
 --- Restore global-scoped options.
 ---@param opts table<string, any> The options to apply.
-M.restore_global = function(opts)
+function M.restore_global(opts)
   for opt, val in pairs(opts) do
     if get_option_scope(opt) == "global" then
       vim.go[opt] = val
@@ -86,7 +86,7 @@ end
 --- Restore window-scoped options.
 ---@param winid continuity.WinID The window number to apply the option to.
 ---@param opts table<string, any> The options to apply.
-M.restore_win = function(winid, opts)
+function M.restore_win(winid, opts)
   for opt, val in pairs(opts) do
     if get_option_scope(opt) == "win" then
       vim.api.nvim_set_option_value(opt, val, { scope = "local", win = winid })
@@ -97,7 +97,7 @@ end
 --- Restore buffer-scoped options.
 ---@param bufnr integer The buffer number to apply the option to.
 ---@param opts table<string, any> The options to apply.
-M.restore_buf = function(bufnr, opts)
+function M.restore_buf(bufnr, opts)
   for opt, val in pairs(opts) do
     if get_option_scope(opt) == "buf" then
       vim.bo[bufnr][opt] = val
@@ -107,7 +107,7 @@ end
 
 --- Restore tab-scoped options.
 ---@param opts table<string, any>
-M.restore_tab = function(opts)
+function M.restore_tab(opts)
   -- 'cmdheight' is the only tab-local option. See save_tab_options
   if opts.cmdheight then
     -- empirically, this seems to only set the local tab value

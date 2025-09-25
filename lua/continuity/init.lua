@@ -122,9 +122,15 @@ local function render_autosession_context(cwd)
   }
 end
 
+---@type fun(autosession: continuity.Autosession?)
+local monitor
+
+---@class continuity
+local M = {}
+
 ---Save the currently active autosession.
 ---@param opts? continuity.SaveOpts Parameters for continuity.core.save
-local function save(opts)
+function M.save(opts)
   local cur = current_autosession()
   if not cur then
     return
@@ -136,22 +142,19 @@ end
 ---Save the currently active autosession and stop autosaving it after.
 ---Does not close anything after detaching.
 ---@param opts? continuity.SaveOpts Parameters for continuity.core.save
-local function detach(opts)
+function M.detach(opts)
   local cur = current_autosession()
   if not cur then
     return
   end
   opts = vim.tbl_extend("force", opts or {}, { attach = false })
-  save(opts)
+  M.save(opts)
 end
-
----@type fun(autosession: continuity.Autosession?)
-local monitor
 
 ---Load an autosession.
 ---@param autosession (continuity.Autosession|string)? The autosession table as rendered by render_autosession_context
 ---@param opts continuity.LoadOpts? Parameters for continuity.core.load. silence_errors is forced to true.
-local function load(autosession, opts)
+function M.load(autosession, opts)
   if type(autosession) == "string" then
     autosession = render_autosession_context(autosession)
   end
@@ -203,7 +206,7 @@ local function load(autosession, opts)
 end
 
 ---If an autosession is active, save it and detach. Then try to start a new one.
-local function reload()
+function M.reload()
   log.fmt_trace("Reload called. Checking if we need to reload")
   local effective_cwd = util.auto.cwd()
   local autosession = render_autosession_context(effective_cwd)
@@ -211,7 +214,7 @@ local function reload()
   if not autosession then
     if cur then
       log.fmt_trace("Reload check result: New context disables active autosession")
-      detach()
+      M.detach()
       require("continuity.core.layout").close_everything()
     else
       log.fmt_trace(
@@ -228,7 +231,7 @@ local function reload()
   end
   log.fmt_trace("Reloading. Current session:\n%s\nNew session:\n%s", cur or "nil", autosession)
   -- Don't call save here, it's done in a pre_load hook which calls detach().
-  load(autosession)
+  M.load(autosession)
 end
 
 ---Remove all monitoring hooks.
@@ -324,7 +327,7 @@ function monitor(autosession)
             last_head or "nil",
             vim.g.gitsigns_head or "nil"
           )
-          reload()
+          M.reload()
         end
         ---@diagnostic disable-next-line: unused
         last_head = vim.g.gitsigns_head
@@ -360,7 +363,7 @@ function monitor(autosession)
         -- We're going to switch/disable the active autosession.
         -- Ensure we detach before the global cwd is changed, otherwise
         -- Resession saves the new one in the current session instead.
-        detach()
+        M.detach()
       end
     end,
     group = monitor_group,
@@ -370,7 +373,7 @@ function monitor(autosession)
     callback = function()
       if not Session.is_loading() then
         log.fmt_trace("DirChanged: trying reload")
-        reload()
+        M.reload()
       end
     end,
     group = monitor_group,
@@ -382,16 +385,16 @@ end
 ---2. In any case, start monitoring for directory or branch changes.
 ---@param cwd string? The working directory to switch to before starting autosession. Defaults to nvim's process' cwd.
 ---@param opts continuity.LoadOpts? Parameters for continuity.core.load. silence_errors is forced to true.
-local function start(cwd, opts)
-  load(cwd or util.auto.cwd(), opts)
+function M.start(cwd, opts)
+  M.load(cwd or util.auto.cwd(), opts)
 end
 
 ---Stop Continuity:
 ---1. If we're inside an active autosession, save it and detach. Does not close everything by default.
 ---2. In any case, stop monitoring for directory or branch changes.
-local function stop()
+function M.stop()
   stop_monitoring()
-  detach()
+  M.detach()
 end
 
 ---@class continuity.ResetOpts: resession.DeleteOpts
@@ -399,7 +402,7 @@ end
 
 ---Reset the currently active autosession. Closes everything.
 ---@param opts? continuity.ResetOpts Options to influence execution (TODO docs)
-local function reset(opts)
+function M.reset(opts)
   local cur = current_autosession()
   if not cur then
     return
@@ -410,14 +413,14 @@ local function reset(opts)
   Core.delete(cur.name, { dir = cur.project.data_dir, notify = opts.notify })
   require("continuity.core.layout").close_everything()
   if opts.reload ~= false then
-    reload()
+    M.reload()
   end
 end
 
 ---Remove all autosessions associated with a project.
 ---If the target is the active project, resets current session as well and closes everything.
 ---@param opts {name?: string}? Specify the project to reset. If unspecified, resets active project, if available.
-local function reset_project(opts)
+function M.reset_project(opts)
   opts = opts or {}
   local name = opts.name
   local cur = current_autosession()
@@ -437,7 +440,7 @@ local function reset_project(opts)
   local resetting_active = false
   -- If we're resetting the active project, ensure we detach from the active session before deleting the data
   if cur and project_dir:find(cur.project.data_dir) then
-    reset({ reload = false })
+    M.reset({ reload = false })
     resetting_active = true
   end
 
@@ -446,14 +449,14 @@ local function reset_project(opts)
   util.path.rmdir(project_dir, { recursive = true })
 
   if resetting_active then
-    reload()
+    M.reload()
   end
 end
 
 ---List autosessions associated with a project.
 ---@param opts {cwd?: string}? Specify the project to list. If unspecified, lists active project, if available.
 ---@return string[]
-local function list(opts)
+function M.list(opts)
   opts = opts or {}
   local ctx = render_autosession_context(opts.cwd or assert(util.auto.cwd_init()))
   if ctx then
@@ -464,7 +467,7 @@ end
 
 ---List all known projects.
 ---@return string[]
-local function list_projects()
+function M.list_projects()
   --TODO: This is quite inefficient and could benefit from an inventory somewhere.
   local projects = {}
 
@@ -495,7 +498,7 @@ end
 ---cleans projects whose cwd does not exist anymore or which are disabled
 ---Caution! This does not account for projects with multiple associated directories/sessions!
 ---Checks the first session's cwd/enabled state only!
-local function migrate_projects()
+function M.migrate_projects()
   local ret = {
     broken = {},
     missing = {},
@@ -581,7 +584,7 @@ end
 
 ---Return info about the currently active autosession.
 ---@return {current_session: continuity.Autosession|false, current_session_data?: table}
-local function info()
+function M.info()
   local cur = current_autosession()
   return {
     current_session = cur or false,
@@ -591,25 +594,8 @@ local function info()
 end
 
 ---@param opts continuity.UserConfig?
-local function setup(opts)
+function M.setup(opts)
   Config.setup(opts)
 end
-
----@class continuity
-local M = {
-  save = save,
-  reset = reset,
-  reset_project = reset_project,
-  list = list,
-  list_projects = list_projects,
-  migrate_projects = migrate_projects,
-  reload = reload,
-  load = load,
-  detach = detach,
-  setup = setup,
-  start = start,
-  stop = stop,
-  info = info,
-}
 
 return M
