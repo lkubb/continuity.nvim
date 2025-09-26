@@ -1,3 +1,4 @@
+---@class continuity.core.buf
 local M = {}
 
 local Config = require("continuity.config")
@@ -547,7 +548,7 @@ function M.clean_modified(state_dir, keep)
 end
 
 ---Iterate over modified buffers, save them and their undo history
----and return data to resession.
+---and return session data.
 ---@param state_dir string
 ---@param bufs continuity.BufContext[] List of buffers to check for modifications.
 ---@return table<continuity.ManagedBufID, true?>?

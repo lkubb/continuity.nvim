@@ -1,4 +1,4 @@
----@class continuity.Cli
+---@class continuity.cli
 local M = {}
 
 local Continuity = require("continuity")
@@ -93,7 +93,7 @@ local function parse_args(args, skip)
         return acc
       end
       if v ~= "" then
-        table.insert(acc.args, to_lua(v))
+        acc.args[#acc.args + 1] = to_lua(v)
       end
       return acc
     end)
@@ -145,7 +145,7 @@ function M.complete(_, line)
           completions = completions()
         end
         for _, val in ipairs(completions) do
-          table.insert(matches, ("%s=%s"):format(kwarg, val))
+          matches[#matches + 1] = ("%s=%s"):format(kwarg, val)
         end
       end
     end

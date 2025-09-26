@@ -1,4 +1,4 @@
----@class continuity.util.Git
+---@class continuity.util.git
 local M = {}
 
 ---@class continuity.util.GitOpts

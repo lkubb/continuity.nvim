@@ -2,10 +2,10 @@
 local Config
 
 ---@class continuity.util
----@field auto continuity.util.Auto
----@field git continuity.util.Git
----@field opts continuity.util.Opts
----@field path continuity.util.Path
+---@field auto continuity.util.auto
+---@field git continuity.util.git
+---@field opts continuity.util.opts
+---@field path continuity.util.path
 local M = {}
 
 --- Declare a require eagerly, but only load a module when it's first accessed.

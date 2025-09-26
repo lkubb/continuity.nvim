@@ -10,6 +10,7 @@ local log = lazy_require("continuity.log")
 ---@diagnostic disable-next-line: deprecated
 local uv = vim.uv or vim.loop
 
+---@class continuity.core.manager
 local M = {}
 
 local current_session ---@type string?
@@ -266,7 +267,7 @@ function M.list(opts)
       if entry.type == "file" then
         local name = entry.name:match("^(.+)%.json$")
         if name then
-          table.insert(ret, name)
+          ret[#ret + 1] = name
         end
       end
     end

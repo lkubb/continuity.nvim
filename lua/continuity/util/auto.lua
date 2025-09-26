@@ -1,4 +1,4 @@
----@class continuity.util.Auto
+---@class continuity.util.auto
 local M = {}
 
 ---Check if nvim is running headless

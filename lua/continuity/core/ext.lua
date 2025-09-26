@@ -1,9 +1,13 @@
 local Config = require("continuity.config")
 
 local hooks = setmetatable({
+  ---@type continuity.LoadHook[]
   pre_load = {},
+  ---@type continuity.LoadHook[]
   post_load = {},
+  ---@type continuity.SaveHook[]
   pre_save = {},
+  ---@type continuity.SaveHook[]
   post_save = {},
 }, {
   __index = function(_, key)
@@ -20,6 +24,7 @@ local hook_to_event = {
 
 local has_setup = false
 
+---@class continuity.core.ext
 local M = {}
 
 --- Trigger a `User` event
@@ -36,6 +41,7 @@ function M.setup()
     return
   end
   for hook, _ in pairs(hooks) do
+    ---@diagnostic disable-next-line: param-type-not-match
     M.add_hook(hook, function()
       event(hook_to_event[hook])
     end)
@@ -46,14 +52,14 @@ end
 
 --- Add a callback that runs at a specific time
 ---@param name resession.Hook
----@param callback fun(...: any)
+---@param callback continuity.LoadHook|continuity.SaveHook
 function M.add_hook(name, callback)
-  table.insert(hooks[name], callback)
+  hooks[name][#hooks[name] + 1] = callback
 end
 
 --- Remove a hook callback
 ---@param name resession.Hook
----@param callback fun(...: any)
+---@param callback continuity.LoadHook|continuity.SaveHook
 function M.remove_hook(name, callback)
   local cbs = hooks[name]
   for i, cb in ipairs(cbs) do
@@ -83,19 +89,19 @@ function M.load_extension(name, opts)
   end
 end
 
----@type table<string, resession.Extension?>
+---@type table<string, continuity.Extension?>
 local ext_cache = {}
 
 --- Attempt to load an extension.
 ---@param name string The name of the extension to fetch.
----@return resession.Extension?
+---@return continuity.Extension?
 function M.get(name)
   if ext_cache[name] then
     return ext_cache[name]
   end
   local has_ext, ext = pcall(require, string.format("resession.extensions.%s", name))
   if has_ext then
-    ---@cast ext resession.Extension
+    ---@cast ext continuity.Extension
     if ext.config then
       local ok, err = pcall(ext.config, Config.extensions[name])
       if not ok then

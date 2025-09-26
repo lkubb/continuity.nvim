@@ -6,6 +6,7 @@ local Buf = lazy_require("continuity.core.buf")
 local Ext = lazy_require("continuity.core.ext")
 local log = lazy_require("continuity.log")
 
+---@class continuity.core.session
 local M = {}
 
 local _is_loading = false
@@ -270,9 +271,7 @@ function M.restore(session, opts)
       if win then
         curwin = win
       end
-      if tab.options then
-        util.opts.restore_tab(tab.options)
-      end
+      util.opts.restore_tab(tab.options)
     end
 
     -- curwin can be nil if we saved a session in a window with an unsupported buffer. If this was the only window in the active tabpage,

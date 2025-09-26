@@ -9,7 +9,7 @@ local Ext = lazy_require("continuity.core.ext")
 local uv = vim.uv or vim.loop
 
 --- Interactive API, compatible with stevearc/resession.nvim.
----@class continuity.core.API
+---@class continuity.core
 local M = {}
 
 local function get_save_name(tab_scoped)
@@ -155,6 +155,7 @@ function M.autosave(enabled, interval, notify)
     autosave_timer = nil
   end
   local autosave_group = vim.api.nvim_create_augroup("ContinuityAutosave", { clear = true })
+  ---@diagnostic disable-next-line: param-type-not-match
   Ext.remove_hook("pre_load", autosave_hook)
   if enabled then
     vim.api.nvim_create_autocmd("VimLeavePre", {
@@ -163,6 +164,7 @@ function M.autosave(enabled, interval, notify)
     })
     -- Cannot rely on autocmds since they are executed
     -- only after the new session has begun loading. Hooks are called procedurally.
+    ---@diagnostic disable-next-line: param-type-not-match
     Ext.add_hook("pre_load", autosave_hook)
     if interval ~= false then
       if notify == nil then

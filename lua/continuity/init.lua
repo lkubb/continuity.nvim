@@ -397,9 +397,6 @@ function M.stop()
   M.detach()
 end
 
----@class continuity.ResetOpts: resession.DeleteOpts
----@field reload? boolean Restart a new autosession after reset. Defaults to true.
-
 ---Reset the currently active autosession. Closes everything.
 ---@param opts? continuity.ResetOpts Options to influence execution (TODO docs)
 function M.reset(opts)

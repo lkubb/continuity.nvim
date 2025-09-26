@@ -1,3 +1,5 @@
+---@meta
+
 ---@class (exact) resession.ListOpts
 ---@field dir? string Name of directory to list (overrides config.dir)
 
@@ -25,15 +27,17 @@
 ---@field tabpage integer? The tabpage being saved, if in a tab-scoped session
 
 ---@class (exact) resession.Extension
----@field on_save? fun(opts: resession.Extension.OnSaveOpts):any
+---@field on_save? fun(opts: resession.Extension.OnSaveOpts): any
 ---@field on_pre_load? fun(data: any)
----@field on_post_bufinit? fun(data: any, visible_only: boolean)
----@field on_buf_load? fun(buffer: integer, data: any)
 ---@field on_post_load? fun(data: any)
 ---@field config? fun(options: table)
 ---@field is_win_supported? fun(winid: integer, bufnr: integer): boolean
 ---@field save_win? fun(winid: integer): any
----@field load_win? fun(winid: integer, data: any): nil|integer
+---@field load_win? fun(winid: integer, data: any): integer?
+
+---@class continuity.Extension: resession.Extension
+---@field on_post_bufinit? fun(data: any, visible_only: boolean)
+---@field on_buf_load? fun(buffer: integer, data: any)
 
 ---@class (exact) resession.SessionInfo
 ---@field name string Name of the session in the currently active tab
@@ -41,6 +45,10 @@
 ---@field tab_scoped boolean Whether the session in the currently active tab is limited to the tab
 
 ---@alias resession.Hook "pre_save"|"post_save"|"pre_load"|"post_load"
+
+---@alias continuity.LoadHook fun(name: string, opts: continuity.LoadOpts)[]
+---@alias continuity.SaveHook fun(name: string, opts: continuity.SaveOpts, target_tabpage: continuity.TabNr?)[]
+
 ---@alias continuity.BufUUID string
 ---@alias continuity.WinID integer
 ---@alias continuity.WinNr integer

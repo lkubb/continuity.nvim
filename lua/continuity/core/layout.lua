@@ -6,6 +6,7 @@ local util = require("continuity.util")
 local lazy_require = util.lazy_require
 local log = lazy_require("continuity.log")
 
+---@class continuity.core.layout
 local M = {}
 
 --- Check if a window should be saved. If so, return relevant information.
@@ -127,7 +128,7 @@ local function set_winlayout(layout)
           vim.cmd("split")
         end
       end
-      table.insert(winids, vim.api.nvim_get_current_win())
+      winids[#winids + 1] = vim.api.nvim_get_current_win()
     end
     vim.opt.splitright = splitright
     vim.opt.splitbelow = splitbelow

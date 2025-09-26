@@ -1,4 +1,4 @@
----@class continuity.util.Path
+---@class continuity.util.path
 local M = {}
 
 ---@diagnostic disable-next-line: deprecated

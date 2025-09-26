@@ -1,4 +1,4 @@
----@class continuity.util.Opts
+---@class continuity.util.opts
 local M = {}
 
 --- Get the scope of an option. Note: Does not work for the only tabpage-scoped one (cmdheight).

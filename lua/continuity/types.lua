@@ -59,3 +59,6 @@
 --- that must have already been tagged with an internal UUID.
 ---@class continuity.ManagedBufID: continuity.BufID
 ---@field uuid string The UUID assigned to the buffer.
+
+---@class continuity.ResetOpts: resession.DeleteOpts
+---@field reload? boolean Attempt to restart a new autosession after reset. Defaults to true.
