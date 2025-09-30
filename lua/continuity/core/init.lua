@@ -1,5 +1,5 @@
 local Config = require("continuity.config")
-local Session = require("continuity.core.manager")
+local Session = require("continuity.core.session")
 local util = require("continuity.util")
 
 --- Interactive API, compatible with stevearc/resession.nvim.

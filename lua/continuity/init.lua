@@ -31,7 +31,7 @@ local util = require("continuity.util")
 
 local lazy_require = util.lazy_require
 local Core = lazy_require("continuity.core")
-local Session = lazy_require("continuity.core.manager")
+local Session = lazy_require("continuity.core.session")
 local Snapshot = lazy_require("continuity.core.snapshot")
 local log = lazy_require("continuity.log")
 
