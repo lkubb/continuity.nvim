@@ -15,19 +15,15 @@ local hooks = setmetatable({
   end,
 })
 
--- FIXME: IIRC autocmds are only triggered after the respective logic has finished running,
---        unless we schedule the rest of the logic after triggering hooks (this might not
---        be possible for the loading logic because it should reduce disturbances).
---        This would mean autocmds cannot influence the respective operation and ergo
---        the pre/post distinction in events doesn't make sense. Consider reducing
---        the events to loaded/saved ones on post hooks.
-
+-- Autocmds are only triggered after our logic has already finished,
+-- meaning that there's no practical distinction between pre/post variants for events.
+-- Therefore, we just trigger a general saved/loaded on post hooks.
+-- We could make pre/post meaningful by scheduling after the autocmds were triggered,
+-- but this could break session loading (especially).
 ---@type table<resession.Hook, string>
 local hook_to_event = {
-  pre_load = "ResessionLoadPre",
-  post_load = "ResessionLoadPost",
-  pre_save = "ResessionSavePre",
-  post_save = "ResessionSavePost",
+  post_load = "ContinuityLoaded",
+  post_save = "ContinuitySaved",
 }
 
 local has_setup = false
