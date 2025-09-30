@@ -8,7 +8,8 @@ local funcs = {
   detach = {
     func = Continuity.detach,
     kwargs = {
-      notify = { "true", "false" },
+      reset = { "true", "false" },
+      save = { "true", "false" },
     },
   },
   info = {
@@ -35,6 +36,11 @@ local funcs = {
     kwargs = {
       attach = { "true", "false" },
       reset = { "true", "false", "auto" },
+      detach_save = { "true", "false" },
+      modified = { "true", "false", "auto" },
+      autosave_enabled = { "true", "false" },
+      autosave_interval = { "true", "false" },
+      notify = { "true", "false" },
     },
   },
   reload = {
@@ -54,13 +60,30 @@ local funcs = {
       name = Continuity.list_projects,
     },
   },
+  save = {
+    func = Continuity.save,
+    kwargs = {
+      attach = { "true", "false" },
+      reset = { "true", "false" },
+      modified = { "true", "false", "auto" },
+      autosave_enabled = { "true", "false" },
+      autosave_interval = { "true", "false" },
+      notify = { "true", "false" },
+    },
+  },
   start = {
     func = Continuity.start,
     args = {
       {}, -- This would need path completion, not sure if it's possible to instruct nvim to do this
     },
     kwargs = {
+      attach = { "true", "false" },
       reset = { "true", "false", "auto" },
+      detach_save = { "true", "false" },
+      modified = { "true", "false", "auto" },
+      autosave_enabled = { "true", "false" },
+      autosave_interval = { "true", "false" },
+      notify = { "true", "false" },
     },
   },
   stop = {

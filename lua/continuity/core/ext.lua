@@ -14,6 +14,14 @@ local hooks = setmetatable({
     error(string.format('Unrecognized hook "%s"', key))
   end,
 })
+
+-- FIXME: IIRC autocmds are only triggered after the respective logic has finished running,
+--        unless we schedule the rest of the logic after triggering hooks (this might not
+--        be possible for the loading logic because it should reduce disturbances).
+--        This would mean autocmds cannot influence the respective operation and ergo
+--        the pre/post distinction in events doesn't make sense. Consider reducing
+--        the events to loaded/saved ones on post hooks.
+
 ---@type table<resession.Hook, string>
 local hook_to_event = {
   pre_load = "ResessionLoadPre",
@@ -85,6 +93,9 @@ function M.load_extension(name, opts)
     config.extensions[name] = opts
     vim.g.continuity_config = config
   else
+    -- FIXME: This is incorrect, it just requires vim.g.continuity_config to be set
+    --        in order to avoid the situation where someone will call setup, which
+    --        would overwrite the pending config.
     error("Cannot load extension before setup was called")
   end
 end

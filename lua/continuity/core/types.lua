@@ -1,5 +1,6 @@
 ---@meta
 
+--- API options for `core.list`
 ---@class (exact) resession.ListOpts
 ---@field dir? string Name of directory to list (overrides config.dir)
 
@@ -7,21 +8,38 @@
 ---@field dir? string Name of directory to delete from (overrides config.dir)
 ---@field notify? boolean Notify on success (default true)
 
----@class continuity.SaveOpts: continuity.SessionConfig
+--- API options for `core.delete`
+---@class continuity.DeleteOpts: resession.DeleteOpts
+---@field reset? boolean When deleting an attached session, close all associated tabpages. Defaults to false.
+
+--- API options for `core.save`
+---@class continuity.SaveOpts: continuity.SessionOpts
 ---@field attach? boolean Stay attached to session after saving (default true)
 ---@field dir? string Name of directory to save to (overrides config.dir)
 ---@field meta? table External data remembered in association with this session. Useful to build on top of the core API.
 ---@field notify? boolean Notify on success (default true)
+---@field reset? boolean When not staying attached to the session, close all associated tabpages. Defaults to false.
 
+--- API options for `core.save_all`
 ---@class continuity.SaveAllOpts
 ---@field notify? boolean Notify on success
 
----@class continuity.LoadOpts: continuity.SessionConfig
+--- API options for `core.load`
+---@class continuity.LoadOpts: continuity.SessionOpts
 ---@field attach? boolean Attach to session after loading
 ---@field dir? string Name of directory to load from (overrides config.dir)
 ---@field meta? table External data remembered in association with this session. Useful to build on top of the core API.
 ---@field reset? boolean|"auto" Close everything before loading the session (default "auto")
 ---@field silence_errors? boolean Don't error when trying to load a missing session
+---@field detach_save? boolean When detaching other sessions, override their autosave behavior
+
+--- API options for `core.detach`
+---@class continuity.DetachOpts
+---@field reset? boolean Whether to close all session-associated tabpages. Defaults to false.
+---@field save? boolean Whether to save the session before detaching
+
+---@alias continuity.DetachReasonBuiltin "delete"|"load"|"quit"|"request"|"save"|"tab_closed"
+---@alias continuity.DetachReason continuity.DetachReasonBuiltin|string
 
 ---@class (exact) resession.Extension.OnSaveOpts
 ---@field tabpage integer? The tabpage being saved, if in a tab-scoped session
@@ -46,8 +64,29 @@
 
 ---@alias resession.Hook "pre_save"|"post_save"|"pre_load"|"post_load"
 
----@alias continuity.LoadHook fun(name: string, opts: continuity.LoadOpts)[]
----@alias continuity.SaveHook fun(name: string, opts: continuity.SaveOpts, target_tabpage: continuity.TabNr?)[]
+--- All save/load hooks receive these options.
+---@class continuity.HookOpts
+---@field session_file string The path to the session file
+---@field state_dir string The path to the directory holding session-associated data
+---@field attach? boolean Loading: Attach to session after restoring. Saving: Attach to/detach from session after saving.
+---@field meta? table External data remembered in association with this session. Useful to build on top of the core API.
+---@field reset? boolean Close everything associated with the session (saving)/other sessions (loading) after the operation.
+---@field autosave_enabled? boolean When this session is attached, automatically save it in intervals. Defaults to the global setting `session.autosave_enabled`.
+---@field autosave_interval? integer Seconds between autosaves of this session, if enabled. Defaults to the global setting `session.autosave_interval`.
+---@field autosave_notify? boolean Trigger a notification when autosaving this session. Defaults to the global setting `session.autosave_notify`.
+---@field options? string[] Save and restore these options. Defaults to the global setting `session.options`.
+---@field buf_filter? fun(bufnr: integer, opts: continuity.SnapshotOpts): boolean Custom logic for determining if the buffer should be included. Defaults to the global setting `session.buf_filter`.
+---@field tab_buf_filter? fun(tabpage: integer, bufnr: integer, opts: continuity.SnapshotOpts): boolean Custom logic for determining if a buffer should be included in a tab-scoped session. Defaults to the global setting `session.tab_buf_filter`.
+---@field modified? boolean|"auto" Save/load modified buffers and their undo history. If set to `auto`, does not save, but still loads modified buffers. Defaults to the global setting `session.modified`.
+
+---@class continuity.LoadHookOpts: continuity.HookOpts
+---@field silence_errors? boolean Don't error when trying to load a missing session
+---@field detach_save? boolean When detaching other sessions, override their autosave behavior
+
+---@class continuity.SaveHookOpts: continuity.HookOpts
+
+---@alias continuity.LoadHook fun(name: string, opts: continuity.LoadHookOpts)[]
+---@alias continuity.SaveHook fun(name: string, opts: continuity.SaveHookOpts, target_tabpage: continuity.TabNr?)[]
 
 ---@alias continuity.BufUUID string
 ---@alias continuity.WinID integer
@@ -111,33 +150,44 @@
 ---@field wins continuity.WinLayout
 ---@field cwd string?
 
----@class continuity.SessionData
+---@class continuity.Snapshot
 ---@field buffers continuity.BufData[]
 ---@field tabs continuity.TabData[]
 ---@field tab_scoped boolean
 ---@field global continuity.GlobalData
 ---@field modified table<continuity.BufUUID, true?>?
 
+---@alias continuity.AttachHook fun(session: continuity.Session)
+--- Detach hooks can modify detach opts in place or return new ones.
+---@alias continuity.DetachHook fun(session: continuity.Session, reason: continuity.DetachReason, opts: continuity.DetachOpts): continuity.DetachOpts?
+
+--- Options to influence which data is included in a snapshot.
 ---@class continuity.SnapshotOpts
 ---@field options? string[] Save and restore these options
----@field buf_filter? fun(bufnr: integer, opts: continuity.SaveOpts): boolean Custom logic for determining if the buffer should be included
----@field tab_buf_filter? fun(tabpage: integer, bufnr: integer, opts: continuity.SaveOpts): boolean Custom logic for determining if a buffer should be included in a tab-scoped session
+---@field buf_filter? fun(bufnr: integer, opts: continuity.SnapshotOpts): boolean Custom logic for determining if the buffer should be included
+---@field tab_buf_filter? fun(tabpage: integer, bufnr: integer, opts: continuity.SnapshotOpts): boolean Custom logic for determining if a buffer should be included in a tab-scoped session
+---@field modified? boolean|"auto" Save/load modified buffers and their undo history. If set to `auto` (default), does not save, but still loads modified buffers.
 
+--- Options to influence how an attached session is handled.
+---@class continuity.SessionOpts: continuity.SnapshotOpts
+---@field autosave_enabled? boolean When this session is attached, automatically save it in intervals. Defaults to false.
+---@field autosave_interval? integer Seconds between autosaves of this session, if enabled. Defaults to 60.
+---@field autosave_notify? boolean Trigger a notification when autosaving this session. Defaults to true.
+---@field on_attach? continuity.AttachHook A function that's called when attaching to this session. No global default.
+---@field on_detach? continuity.DetachHook A function that's called when detaching from this session. No global default.
+
+--- Session-associated configuration, rendered from passed options and default config.
 ---@class continuity.SessionConfig: continuity.SnapshotOpts
----@field modified? boolean|"auto" Save/load modified buffers and their undo history.
-
----@alias continuity.SessionType
----| "global"
----| "tab"
----| "global_auto"
-
---- Data to remember when a session is attached.
----@class continuity.AttachedSessionData: continuity.SessionConfig
----@field dir string The directory the session is located in
+---@field session_file string The path to the session file
+---@field state_dir string The path to the directory holding session-associated data
+---@field autosave_enabled boolean When this session is attached, automatically save it in intervals.
+---@field autosave_interval integer Seconds between autosaves of this session, if enabled.
+---@field autosave_notify? boolean Trigger a notification when autosaving this session. Defaults to the global setting `session.autosave_notify`/`true`.
 ---@field meta? table External data remembered in association with this session. Useful to build on top of the core API.
 
----@class continuity.AttachedSessionInfo: continuity.AttachedSessionData
+---@class continuity.AttachedSessionInfo: continuity.SessionConfig
 ---@field name string The name of the session
+---@field tabnr continuity.TabNr? The tab the session is attached to, if any
 
 ---@class continuity.BufContext
 ---@field bufnr continuity.BufNr The buffer number of the buffer this context references

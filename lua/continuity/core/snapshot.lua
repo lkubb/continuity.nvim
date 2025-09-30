@@ -6,7 +6,7 @@ local Buf = lazy_require("continuity.core.buf")
 local Ext = lazy_require("continuity.core.ext")
 local log = lazy_require("continuity.log")
 
----@class continuity.core.session
+---@class continuity.core.snapshot
 local M = {}
 
 local _is_loading = false
@@ -21,7 +21,7 @@ end
 ---@param tabpage? continuity.TabNr When saving a tab-scoped session, the tab number.
 ---@param bufnr continuity.BufNr The buffer to check for inclusion
 ---@param tabpage_bufs table<continuity.BufNr, true?> When saving a tab-scoped session, the list of buffers that are displayed in the tabpage.
----@param opts continuity.SaveOpts
+---@param opts continuity.SnapshotOpts
 local function include_buf(tabpage, bufnr, tabpage_bufs, opts)
   if not (opts.buf_filter or Config.session.buf_filter)(bufnr, opts) then
     return false
@@ -33,13 +33,15 @@ local function include_buf(tabpage, bufnr, tabpage_bufs, opts)
     or (opts.tab_buf_filter or Config.session.tab_buf_filter)(tabpage, bufnr, opts)
 end
 
----@param target_tabpage? continuity.TabNr Limit the session to this tab. If unspecified, saves global state.
----@param opts? continuity.SaveOpts Influence which buffers and options are persisted (overrides global default config). Note that only the filter functions and options configs are handled by this function, all other parameters of continuity's save API are only passed through for use in the filter functions.
----@return continuity.SessionData
+--- Create a snapshot and return the data.
+--- Note: Does not handle modified buffer contents, which requires a path to save to.
+---@param target_tabpage? continuity.TabNr
+---@param opts? continuity.SnapshotOpts
+---@return continuity.Snapshot
 ---@return continuity.BufContext[] List of included buffers
-function M.snapshot(target_tabpage, opts)
+local function create(target_tabpage, opts)
   opts = opts or {}
-  ---@type continuity.SessionData
+  ---@type continuity.Snapshot
   local data = {
     buffers = {},
     tabs = {},
@@ -149,6 +151,64 @@ function M.snapshot(target_tabpage, opts)
   return data, included_bufs
 end
 
+--- Create a snapshot and return the data.
+--- Note: Does not handle modified buffer contents, which requires a path to save to.
+---@param target_tabpage? continuity.TabNr Limit the session to this tab. If unspecified, saves global state.
+---@param opts? continuity.SnapshotOpts Influence which buffers and options are persisted (overrides global default config).
+---@return continuity.Snapshot?
+---@return continuity.BufContext[] List of included buffers
+function M.create(target_tabpage, opts)
+  if _is_loading then
+    log.warn("Save triggered while still loading session. Skipping save.")
+    return nil, {}
+  end
+  return create(target_tabpage, opts)
+end
+
+--- Save the current global or tabpage state to a path.
+--- Also handles changed buffer contents.
+---@param name string The name of the session
+---@param opts continuity.SnapshotOpts Influence which data is included. Note: Passed through to hooks, is allowed to contain more fields.
+---@param target_tabpage? continuity.TabNr Instead of saving everything, only save the current tabpage
+---@param session_file string The path to write the session to.
+---@param state_dir string The path to write the session-associated data to (modified buffers).
+---@return continuity.Snapshot?
+---@return continuity.BufContext[] List of included buffers
+function M.save_as(name, opts, target_tabpage, session_file, state_dir)
+  if _is_loading then
+    log.warn("Save triggered while still loading session. Skipping save.")
+    return nil, {}
+  end
+  log.fmt_debug(
+    "Saving %s session %s with opts %s",
+    target_tabpage and "tab" or "global",
+    name,
+    opts
+  )
+  if opts.modified == nil then
+    opts.modified = Config.session.modified
+  end
+  if opts.modified == "auto" then
+    opts.modified = false
+  end
+  -- Most API opts are passed through for the hooks, so opts in this case
+  -- should be understood as more like continuity.SaveOpts, not just continuity.SnapshotOpts.
+  -- TODO: Type
+  Ext.dispatch("pre_save", name, opts --[[@as continuity.SaveHookOpts]], target_tabpage)
+  local session, included_bufs = create(target_tabpage, opts)
+  if opts.modified then
+    session.modified = Buf.save_modified(state_dir, included_bufs)
+  else
+    -- Forget all saved changes later
+    vim.schedule(function()
+      Buf.clean_modified(state_dir, {})
+    end)
+  end
+  util.path.write_json_file(session_file, session)
+  Ext.dispatch("post_save", name, opts --[[@as continuity.SaveHookOpts]], target_tabpage)
+  return session, included_bufs
+end
+
 --- Call extensions that implement on_post_bufinit, which is triggered
 --- directly after buffers were initialized, before all of them were re-:edited.
 --- Extracted from the loading logic to keep DRY.
@@ -171,7 +231,7 @@ local function dispatch_post_bufinit(data, visible_only)
   end
 end
 
----@param session continuity.SessionData
+---@param session continuity.Snapshot
 ---@param opts {reset?: boolean, modified?: boolean, state_dir?: string}
 function M.restore(session, opts)
   _is_loading = true
@@ -189,7 +249,7 @@ function M.restore(session, opts)
   end
 
   if not opts.modified and session.modified then
-    ---@type continuity.SessionData
+    ---@type continuity.Snapshot
     local shallow_session_copy = {}
     for key, val in pairs(session) do
       if key ~= "modified" then
@@ -252,6 +312,7 @@ function M.restore(session, opts)
 
     -- Ensure the cwd is set correctly for each loaded buffer
     if not session.tab_scoped then
+      -- FIXME: This should fire DirChanged[Pre] events
       vim.api.nvim_set_current_dir(session.global.cwd)
     end
 

@@ -1,19 +1,13 @@
 ---This is the user config, which can be a partial one.
 ---@class continuity.UserConfig
----@field autosave? continuity.UserConfig.autosave Influence autosave behavior
 ---@field autosession? continuity.UserConfig.autosession Influence autosession behavior
 ---@field extensions? table<string,any> Configuration for extensions
 ---@field load? continuity.UserConfig.load Configure load list contents
 ---@field log? continuity.UserConfig.log Configuration for plenary.log
 ---@field session? continuity.UserConfig.session Influence session behavior and contents
 
----@class continuity.UserConfig.autosave
----@field enabled? boolean When a session is active, automatically save it in intervals. Defaults to false.
----@field interval? integer Seconds between autosaves
----@field notify? boolean Trigger a notification when autosaving. Defaults to true.
-
 ---@class continuity.UserConfig.autosession
----@field config? continuity.SessionConfig Save/load configuration for autosessions
+---@field config? continuity.SessionOpts Save/load configuration for autosessions
 ---@field dir? string The name of the directory to store autosessions in
 ---@field workspace? fun(cwd: string): [string, boolean] A function that receives the effective nvim cwd and returns the workspace root dir and whether it's a git-tracked dir
 ---@field project_name? fun(workspace: string, git_info: continuity.GitInfo?): string A function that receives the workspace root dir and whether it's git-tracked and returns the project-specific session directory name.
@@ -30,31 +24,21 @@
 ---@field use_console? "async"|"sync"|false Print logs to neovim console. Defaults to async.
 ---@field use_file? boolean Print logs to logfile. Defaults to true.
 
----@class continuity.UserConfig.session
+---@class continuity.UserConfig.session: continuity.SessionOpts
 ---@field dir? string The name of the directory to store regular sessions in
----@field options? string[] Save and restore these options
----@field buf_filter? fun(bufnr: integer, opts: continuity.SaveOpts): boolean Custom logic for determining if the buffer should be included
----@field tab_buf_filter? fun(tabpage: integer, bufnr: integer, opts: continuity.SaveOpts): boolean Custom logic for determining if a buffer should be included in a tab-scoped session
----@field modified? boolean|"auto" Save/load modified buffers and their undo history. If set to `auto` (default), does not save, but still loads modified buffers by default.
 
 -- Until https://github.com/EmmyLuaLs/emmylua-analyzer-rust/issues/328 is resolved:
 -- NOTE: Keep in sync with above
 
 ---@class continuity.Config
----@field autosave continuity.Config.autosave Influence autosave behavior
 ---@field autosession continuity.Config.autosession Influence autosession behavior
 ---@field extensions table<string,any> Configuration for extensions
 ---@field load continuity.Config.load Configure load list contents
 ---@field log continuity.Config.log Configuration for plenary.log
 ---@field session continuity.Config.session Influence session behavior and contents
 
----@class continuity.Config.autosave
----@field enabled boolean
----@field interval integer
----@field notify boolean
-
 ---@class continuity.Config.autosession
----@field config continuity.SessionConfig
+---@field config continuity.SessionOpts
 ---@field dir string
 ---@field workspace fun(cwd: string): string, boolean
 ---@field project_name fun(workspace: string, git_info: continuity.GitInfo?): string
@@ -74,9 +58,14 @@
 ---@class continuity.Config.session
 ---@field dir string
 ---@field options string[]
----@field buf_filter fun(bufnr: integer, opts: continuity.SaveOpts): boolean
----@field tab_buf_filter fun(tabpage: integer, bufnr: integer, opts: continuity.SaveOpts): boolean
+---@field buf_filter fun(bufnr: integer, opts: continuity.SnapshotOpts): boolean
+---@field tab_buf_filter fun(tabpage: integer, bufnr: integer, opts: continuity.SnapshotOpts): boolean
 ---@field modified boolean|"auto"
+---@field autosave_enabled boolean
+---@field autosave_interval integer
+---@field autosave_notify boolean
+---@field on_attach? continuity.AttachHook
+---@field on_detach? continuity.DetachHook
 
 local util = require("continuity.util")
 
@@ -88,7 +77,7 @@ local M = {}
 --- * all **listed** buffers that correspond to a file (regular and `acwrite` type buffers with a name)
 --- * when saving buffer modifications with `modified`, also **listed** unnamed buffers
 ---@param bufnr integer
----@param opts continuity.SaveOpts
+---@param opts continuity.SnapshotOpts
 ---@return boolean
 local function default_buf_filter(bufnr, opts)
   local buftype = vim.bo[bufnr].buftype
@@ -107,11 +96,6 @@ end
 
 ---@type continuity.Config
 local defaults = {
-  autosave = {
-    enabled = false,
-    interval = 60,
-    notify = true,
-  },
   autosession = {
     config = {
       modified = false,
@@ -163,6 +147,9 @@ local defaults = {
       return true
     end,
     modified = "auto",
+    autosave_enabled = false,
+    autosave_interval = 60,
+    autosave_notify = true,
   },
 }
 
@@ -180,7 +167,7 @@ function M.setup(config)
   vim.g.continuity_config = nil
 
   -- TODO: This should be session-specific config
-  require("continuity.core").autosave(M.autosave.enabled, M.autosave.interval, M.autosave.notify)
+  require("continuity.core").setup()
   require("continuity.core.ext").setup()
 end
 

@@ -31,8 +31,8 @@ local util = require("continuity.util")
 
 local lazy_require = util.lazy_require
 local Core = lazy_require("continuity.core")
-local Manager = lazy_require("continuity.core.manager")
-local Session = lazy_require("continuity.core.session")
+local Session = lazy_require("continuity.core.manager")
+local Snapshot = lazy_require("continuity.core.snapshot")
 local log = lazy_require("continuity.log")
 
 -- Monitor the currently active branch and check if we need to reload when it changes
@@ -46,7 +46,7 @@ local monitor_group
 --- Return the autosession context if there is an attached session and it's an autosession.
 ---@return continuity.Autosession?
 local function current_autosession()
-  local cur = Manager.get_current_data()
+  local cur = Session.get_current_data()
   if not cur or not cur.meta or not cur.meta.autosession then
     return
   end
@@ -139,16 +139,15 @@ function M.save(opts)
   Core.save(cur.name, opts)
 end
 
----Save the currently active autosession and stop autosaving it after.
----Does not close anything after detaching.
----@param opts? continuity.SaveOpts Parameters for continuity.core.save
+--- Detach from the currently active autosession.
+--- If autosave is enabled, save it. Optionally closes everything.
+---@param opts? continuity.DetachOpts Parameters for continuity.core.detach
 function M.detach(opts)
   local cur = current_autosession()
   if not cur then
     return
   end
-  opts = vim.tbl_extend("force", opts or {}, { attach = false })
-  M.save(opts)
+  Core.detach(cur.name, nil, opts)
 end
 
 ---Load an autosession.
@@ -214,8 +213,7 @@ function M.reload()
   if not autosession then
     if cur then
       log.fmt_trace("Reload check result: New context disables active autosession")
-      M.detach()
-      require("continuity.core.layout").close_everything()
+      M.detach({ reset = true })
     else
       log.fmt_trace(
         "Reload check result: No active autosession, new context is disabled as well. Nothing to do."
@@ -230,7 +228,8 @@ function M.reload()
     return
   end
   log.fmt_trace("Reloading. Current session:\n%s\nNew session:\n%s", cur or "nil", autosession)
-  -- Don't call save here, it's done in a pre_load hook which calls detach().
+  -- FIXME: This could be the whole call. Currently, this doesn't reconfigure monitoring when
+  --      disabling an autosession. Need to think about the semantics.
   M.load(autosession)
 end
 
@@ -327,6 +326,8 @@ function monitor(autosession)
             last_head or "nil",
             vim.g.gitsigns_head or "nil"
           )
+          -- TODO: If we're autoclosing a session with buffer changes, they might get lost
+          --       if not saving modifications. Ask before? :)
           M.reload()
         end
         ---@diagnostic disable-next-line: unused
@@ -343,7 +344,7 @@ function monitor(autosession)
         "DirChangedPre: Global directory is going to change, checking if we need to detach before"
       )
       local cur = current_autosession()
-      if not cur or Session.is_loading() then
+      if not cur or Snapshot.is_loading() then
         -- We don't need to detach if we don't have an active session or
         -- if we're in the process of loading one
         return
@@ -363,7 +364,7 @@ function monitor(autosession)
         -- We're going to switch/disable the active autosession.
         -- Ensure we detach before the global cwd is changed, otherwise
         -- Resession saves the new one in the current session instead.
-        M.detach()
+        M.detach({ reset = true })
       end
     end,
     group = monitor_group,
@@ -371,7 +372,7 @@ function monitor(autosession)
   vim.api.nvim_create_autocmd("DirChanged", {
     pattern = "global",
     callback = function()
-      if not Session.is_loading() then
+      if not Snapshot.is_loading() then
         log.fmt_trace("DirChanged: trying reload")
         M.reload()
       end
@@ -394,7 +395,7 @@ end
 ---2. In any case, stop monitoring for directory or branch changes.
 function M.stop()
   stop_monitoring()
-  M.detach()
+  M.detach({ reset = false })
 end
 
 ---Reset the currently active autosession. Closes everything.
@@ -406,9 +407,7 @@ function M.reset(opts)
   end
   opts = vim.tbl_extend("force", { notify = false }, opts or {})
   opts.dir = cur.project.data_dir
-  Core.detach()
-  Core.delete(cur.name, { dir = cur.project.data_dir, notify = opts.notify })
-  require("continuity.core.layout").close_everything()
+  Core.delete(cur.name, { dir = cur.project.data_dir, notify = opts.notify, reset = true })
   if opts.reload ~= false then
     M.reload()
   end

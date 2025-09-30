@@ -310,7 +310,7 @@ end
 --- Allows extensions to modify the final buffer contents and restores the cursor position (again).
 ---@param ctx continuity.BufContext The buffer context for the buffer to restore
 ---@param buf continuity.BufData The saved buffer information
----@param data continuity.SessionData The complete session data
+---@param data continuity.Snapshot The complete session data
 local function finish_restore_buf(ctx, buf, data)
   -- Save the last position of the cursor for buf_load plugins
   -- that change the buffer text, which can reset cursor position.
@@ -366,7 +366,7 @@ local plan_restore
 --- b) on_buf_load plugins reenabled recovery after altering the contents.
 ---@param ctx continuity.BufContext The buffer context for the buffer to restore
 ---@param buf continuity.BufData The saved buffer metadata of the buffer to restore
----@param data continuity.SessionData The complete session data
+---@param data continuity.Snapshot The complete session data
 local function restore_buf(ctx, buf, data)
   if not ctx.need_edit then
     -- prevent recursion in nvim <0.11: https://github.com/neovim/neovim/pull/29544
@@ -443,7 +443,7 @@ end
 --- Required since events were suppressed when loading it initially, which breaks many extensions.
 ---@param ctx continuity.BufContext The buffer context for the buffer to schedule restoration for
 ---@param buf continuity.BufData The saved buffer metadata of the buffer to schedule restoration for
----@param data continuity.SessionData The complete session data
+---@param data continuity.Snapshot The complete session data
 function plan_restore(ctx, buf, data)
   ctx.need_edit = true
   vim.api.nvim_create_autocmd("BufEnter", {
@@ -510,7 +510,7 @@ end
 --- Extracted from the loading logic to keep DRY.
 --- This should be called when events are suppressed.
 ---@param buf continuity.BufData The saved buffer metadata for the buffer
----@param data continuity.SessionData The complete session data
+---@param data continuity.Snapshot The complete session data
 ---@param state_dir string? The directory where unsaved buffers are persisted to
 ---@return continuity.BufNr
 function M.restore(buf, data, state_dir)
@@ -519,8 +519,8 @@ function M.restore(buf, data, state_dir)
   if buf.loaded then
     vim.fn.bufload(ctx.bufnr)
     ctx.restore_last_pos = true
-    -- FIXME: All autocmds are added to the same, global augroup. When detaching a session,
-    --        the corresponding aucmds (and maybe continuity context) should be cleared though.
+    -- FIXME: All autocmds are added to the same, global augroup. When detaching a session with reset,
+    --        the corresponding aucmds (and maybe continuity context) should likely be cleared though.
     plan_restore(ctx, buf, data)
   end
   ctx.last_buffer_pos = buf.last_pos

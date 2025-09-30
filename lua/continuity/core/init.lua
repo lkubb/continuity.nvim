@@ -1,12 +1,6 @@
 local Config = require("continuity.config")
-local Manager = require("continuity.core.manager")
+local Session = require("continuity.core.manager")
 local util = require("continuity.util")
-
-local lazy_require = util.lazy_require
-local Ext = lazy_require("continuity.core.ext")
-
----@diagnostic disable-next-line: deprecated
-local uv = vim.uv or vim.loop
 
 --- Interactive API, compatible with stevearc/resession.nvim.
 ---@class continuity.core
@@ -14,8 +8,8 @@ local M = {}
 
 local function get_save_name(tab_scoped)
   -- Try to default to the current session
-  info = Manager.get_current_session_info()
-  if info and info.tab_scoped == tab_scoped then
+  info = Session.get_current_data()
+  if info and not not info.tabnr == tab_scoped then
     return info.name
   end
   local name
@@ -33,7 +27,7 @@ function M.save(name, opts)
   if not name then
     return
   end
-  Manager.save(name, opts)
+  Session.save(name, opts)
 end
 
 --- Save the state of the current tabpage to disk
@@ -44,14 +38,14 @@ function M.save_tab(name, opts)
   if not name then
     return
   end
-  Manager.save_tab(name, opts)
+  Session.save_tab(name, opts)
 end
 
-M.save_all = Manager.save_all
+M.save_all = Session.save_all
 
 ---@param opts? continuity.LoadOpts
 local function get_load_name(opts)
-  local sessions = Manager.list({ dir = opts and opts.dir })
+  local sessions = Session.list({ dir = opts and opts.dir })
   if vim.tbl_isempty(sessions) then
     vim.notify("No saved sessions", vim.log.levels.WARN)
     return
@@ -102,16 +96,16 @@ function M.load(name, opts)
   if not name then
     return
   end
-  Manager.load(name, opts)
+  Session.load(name, opts)
 end
 
 -- M.get_current = Manager.get_current
--- M.get_current_session_info = Manager.get_current_session_info
-M.detach = Manager.detach
-M.list = Manager.list
+-- M.get_current_data = Manager.get_current_data
+M.detach = Session.detach
+M.list = Session.list
 
 local function get_delete_name(opts)
-  local sessions = Manager.list({ dir = opts and opts.dir })
+  local sessions = Session.list({ dir = opts and opts.dir })
   if vim.tbl_isempty(sessions) then
     vim.notify("No saved sessions", vim.log.levels.WARN)
     return
@@ -129,57 +123,25 @@ end
 
 --- Delete a saved session
 ---@param name string? Name of the session. If not provided, prompt for session to delete
----@param opts? resession.DeleteOpts
+---@param opts? continuity.DeleteOpts
 function M.delete(name, opts)
   name = name or get_delete_name(opts)
   if not name then
     return
   end
-  Manager.delete(name, opts)
+  Session.delete(name, opts)
 end
 
-local function autosave_hook()
-  M.save_all({ notify = false })
-end
-
----@type uv.uv_timer_t?
-local autosave_timer
---- Setup autosaving behavior.
---- If enabled, active sessions are autosaved when switching a session, before exiting Neovim and optionally in intervals.
----@param enabled boolean Whether autosave behavior (during exit/periodically) should be enabled or disabled.
----@param interval? integer|false Additionally, autosave active sessions periodically (in seconds, false to disable). Defaults to 60.
----@param notify? boolean Whether to notify when autosaving periodically. Defaults to true.
-function M.autosave(enabled, interval, notify)
-  if autosave_timer then
-    autosave_timer:close()
-    autosave_timer = nil
-  end
-  local autosave_group = vim.api.nvim_create_augroup("ContinuityAutosave", { clear = true })
-  ---@diagnostic disable-next-line: param-type-not-match
-  Ext.remove_hook("pre_load", autosave_hook)
-  if enabled then
-    vim.api.nvim_create_autocmd("VimLeavePre", {
-      group = autosave_group,
-      callback = autosave_hook,
-    })
-    -- Cannot rely on autocmds since they are executed
-    -- only after the new session has begun loading. Hooks are called procedurally.
-    ---@diagnostic disable-next-line: param-type-not-match
-    Ext.add_hook("pre_load", autosave_hook)
-    if interval ~= false then
-      if notify == nil then
-        notify = true
-      end
-      autosave_timer = assert(uv.new_timer())
-      autosave_timer:start(
-        (interval or 60) * 1000,
-        (interval or 60) * 1000,
-        vim.schedule_wrap(function()
-          M.save_all({ notify = notify })
-        end)
-      )
-    end
-  end
+local autosave_group
+function M.setup()
+  autosave_group = vim.api.nvim_create_augroup("ContinuityAutosave", { clear = true })
+  vim.api.nvim_create_autocmd("VimLeavePre", {
+    group = autosave_group,
+    callback = function()
+      -- Trigger detach, which in turn triggers autosave for sessions that have it enabled.
+      M.detach(nil, "quit")
+    end,
+  })
 end
 
 return util.lazy_setup_wrapper(M)
