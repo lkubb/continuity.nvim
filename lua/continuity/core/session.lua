@@ -384,7 +384,7 @@ local function detach_global(reason, opts)
 end
 
 --- Detach a tabpage-scoped session, either by its name or tabnr
----@param target (string|continuity.TabNr|(string|continuity.TabNr)[]) Target a tabpage session by name or associated tabpage. Defaults to current tabpage. Also takes a list.
+---@param target? (string|continuity.TabNr|(string|continuity.TabNr)[]) Target a tabpage session by name or associated tabpage. Defaults to current tabpage. Also takes a list.
 ---@param reason continuity.DetachReason A reason to pass to detach handlers.
 ---@param opts continuity.DetachOpts
 ---@return boolean

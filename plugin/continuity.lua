@@ -30,13 +30,14 @@ if vim.g.continuity_autosession then
   local init_group = vim.api.nvim_create_augroup("ContinuityInit", { clear = true })
   local is_pager = false
 
-  -- This event is triggered before VimEnter and indicates we're running as a pager
-  -- Disable continuity in that case.
+  -- This event is triggered before VimEnter and indicates we're running as a pager.
+  -- Continuity should usually be disabled in that case.
   vim.api.nvim_create_autocmd("StdinReadPre", {
     callback = function()
       is_pager = true
     end,
     group = init_group,
+    once = true,
   })
 
   -- The actual loading happens on VimEnter.
@@ -60,7 +61,9 @@ if vim.g.continuity_autosession then
         is_headless = require("continuity.util").auto.is_headless(),
         is_pager = is_pager,
       })
-      -- Don't load at all if we're told so
+      -- Don't load at all if we're instructed to.
+      -- This can be nil, which indicates we shouldn't autoload a session,
+      -- but still monitor for directory/branch changes.
       if startup_cwd == false then
         return
       end
