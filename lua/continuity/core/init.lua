@@ -122,7 +122,7 @@ local function get_delete_name(opts)
 end
 
 --- Delete a saved session
----@param name string? Name of the session. If not provided, prompt for session to delete
+---@param name? string Name of the session. If not provided, prompt for session to delete
 ---@param opts? continuity.DeleteOpts
 function M.delete(name, opts)
   name = name or get_delete_name(opts)

@@ -93,10 +93,9 @@ function M.load_extension(name, opts)
     config.extensions[name] = opts
     vim.g.continuity_config = config
   else
-    -- FIXME: This is incorrect, it just requires vim.g.continuity_config to be set
-    --        in order to avoid the situation where someone will call setup, which
-    --        would overwrite the pending config.
-    error("Cannot load extension before setup was called")
+    error(
+      "Cannot load extension before setup was called or vim.g.continuity_config was initialized"
+    )
   end
 end
 

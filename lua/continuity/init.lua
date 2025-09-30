@@ -151,8 +151,8 @@ function M.detach(opts)
 end
 
 ---Load an autosession.
----@param autosession (continuity.Autosession|string)? The autosession table as rendered by render_autosession_context
----@param opts continuity.LoadOpts? Parameters for continuity.core.load. silence_errors is forced to true.
+---@param autosession? continuity.Autosession|string The autosession table as rendered by render_autosession_context
+---@param opts? continuity.LoadOpts Parameters for continuity.core.load. silence_errors is forced to true.
 function M.load(autosession, opts)
   if type(autosession) == "string" then
     autosession = render_autosession_context(autosession)
@@ -248,7 +248,7 @@ end
 ---2. When neovim exits, save an active autosession.
 ---3. When the session is associated with a git repo and gitsigns is available, save/detach/reload active autosession on branch changes.
 ---4. When the global CWD changes, save/detach/reload active autosession.
----@param autosession continuity.Autosession? The active autosession that should be monitored
+---@param autosession? continuity.Autosession The active autosession that should be monitored
 function monitor(autosession)
   monitor_group = vim.api.nvim_create_augroup("ContinuityHooks", { clear = true })
 
@@ -384,8 +384,8 @@ end
 ---Start Continuity:
 ---1. If the current working directory has an associated project and session, closes everything and loads that session.
 ---2. In any case, start monitoring for directory or branch changes.
----@param cwd string? The working directory to switch to before starting autosession. Defaults to nvim's process' cwd.
----@param opts continuity.LoadOpts? Parameters for continuity.core.load. silence_errors is forced to true.
+---@param cwd? string The working directory to switch to before starting autosession. Defaults to nvim's process' cwd.
+---@param opts? continuity.LoadOpts Parameters for continuity.core.load. silence_errors is forced to true.
 function M.start(cwd, opts)
   M.load(cwd or util.auto.cwd(), opts)
 end
@@ -415,7 +415,7 @@ end
 
 ---Remove all autosessions associated with a project.
 ---If the target is the active project, resets current session as well and closes everything.
----@param opts {name?: string}? Specify the project to reset. If unspecified, resets active project, if available.
+---@param opts? {name?: string} Specify the project to reset. If unspecified, resets active project, if available.
 function M.reset_project(opts)
   opts = opts or {}
   local name = opts.name
@@ -450,7 +450,7 @@ function M.reset_project(opts)
 end
 
 ---List autosessions associated with a project.
----@param opts {cwd?: string}? Specify the project to list. If unspecified, lists active project, if available.
+---@param opts? {cwd?: string} Specify the project to list. If unspecified, lists active project, if available.
 ---@return string[]
 function M.list(opts)
   opts = opts or {}
@@ -597,7 +597,7 @@ end
 --- meaning successive writes to the global variable do not build on top of each other.
 --- If you need to force application of the passed config eagerly, pass it
 --- to `continuity.config.setup` instead, which parses and applies the configuration immediately.
----@param opts continuity.UserConfig?
+---@param opts? continuity.UserConfig
 function M.setup(opts)
   vim.g.continuity_config = opts
 end

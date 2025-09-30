@@ -42,7 +42,7 @@ end
 ---we name it after the parent directory of its common git dir instead, which correctly resolves
 ---multiple worktrees into the same project.
 ---@param workspace string The path of the workspace
----@param git_info continuity.GitInfo? When the workspace is part of a git repository, git meta information
+---@param git_info? continuity.GitInfo When the workspace is part of a git repository, git meta information
 ---@return string
 function M.workspace_project_map(workspace, git_info)
   local project_name = workspace

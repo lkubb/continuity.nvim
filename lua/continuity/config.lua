@@ -155,7 +155,7 @@ local defaults = {
 
 --- Read configuration overrides from `vim.g.continuity_config` and
 --- (re)initialize all modules that need initialization.
----@param config continuity.UserConfig? Default config overrides. This table is merged on top of `vim.g.continuity_config`, which is itself merged on top of the default config.
+---@param config? continuity.UserConfig Default config overrides. This table is merged on top of `vim.g.continuity_config`, which is itself merged on top of the default config.
 function M.setup(config)
   ---@diagnostic disable-next-line: param-type-not-match
   local new = vim.tbl_deep_extend("force", defaults, vim.g.continuity_config or {}, config or {})

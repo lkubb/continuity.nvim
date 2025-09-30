@@ -28,7 +28,7 @@ Session.__index = Session
 
 ---@param name string
 ---@param opts continuity.LoadOpts|continuity.SaveOpts
----@param tabnr? continuity.TabNr?
+---@param tabnr? continuity.TabNr
 ---@return continuity.Session
 ---@return boolean Whether this specific session is already attached
 function Session.get(name, opts, tabnr)
@@ -48,7 +48,7 @@ end
 
 ---@param name string
 ---@param opts continuity.LoadOpts|continuity.SaveOpts
----@param tabnr? continuity.TabNr?
+---@param tabnr? continuity.TabNr
 ---@param session_file? string
 ---@param state_dir? string
 ---@return continuity.Session
@@ -189,8 +189,8 @@ function Session:attach()
   self:setup_autosave()
 end
 
----@param opts continuity.SaveAllOpts?
----@param hook_opts {attach?: boolean, reset?: boolean}? Options that need to be passed through to pre_save/post_save hooks.
+---@param opts? continuity.SaveAllOpts
+---@param hook_opts? {attach?: boolean, reset?: boolean} Options that need to be passed through to pre_save/post_save hooks.
 function Session:save(opts, hook_opts)
   local save_opts =
     vim.tbl_extend("keep", self:save_opts(), hook_opts or {}, { attach = true, reset = false })
@@ -252,8 +252,8 @@ function Session:info()
   }
 end
 
----@param opts continuity.SaveAllOpts?
----@param force boolean?
+---@param opts? continuity.SaveAllOpts
+---@param force? boolean
 function Session:autosave(opts, force)
   if not (force or self.autosave_enabled) then
     return
@@ -349,7 +349,7 @@ end
 
 ---@overload fun(by_name: true): table<string,continuity.TabNr?>
 ---@overload fun(by_name: false?): table<continuity.TabNr,string?>
----@param by_name boolean?
+---@param by_name? boolean
 ---@return table<string,continuity.TabNr?>|table<continuity.TabNr,string?>
 local function list_active_tabpage_sessions(by_name)
   -- First prune tab-scoped sessions for closed tabs
@@ -384,7 +384,7 @@ local function detach_global(reason, opts)
 end
 
 --- Detach a tabpage-scoped session, either by its name or tabnr
----@param target (string|continuity.TabNr|(string|continuity.TabNr)[])? Target a tabpage session by name or associated tabpage. Defaults to current tabpage. Also takes a list.
+---@param target (string|continuity.TabNr|(string|continuity.TabNr)[]) Target a tabpage session by name or associated tabpage. Defaults to current tabpage. Also takes a list.
 ---@param reason continuity.DetachReason A reason to pass to detach handlers.
 ---@param opts continuity.DetachOpts
 ---@return boolean
@@ -628,9 +628,9 @@ function M.get_current_data()
 end
 
 --- Detach from the session that contains the target (or all active sessions if unspecified).
----@param target ("__global"|"__active"|"__active_tab"|"__all_tabs"|string|integer|(string|integer)[])? The scope/session name/tabnr to detach from. If unspecified, detaches all sessions.
----@param reason continuity.DetachReason? Pass a custom reason to detach handlers. Defaults to `request`.
----@param opts continuity.DetachOpts?
+---@param target? ("__global"|"__active"|"__active_tab"|"__all_tabs"|string|integer|(string|integer)[]) The scope/session name/tabnr to detach from. If unspecified, detaches all sessions.
+---@param reason? continuity.DetachReason Pass a custom reason to detach handlers. Defaults to `request`.
+---@param opts? continuity.DetachOpts
 ---@return boolean Whether we detached from any session
 function M.detach(target, reason, opts)
   reason = reason or "request"

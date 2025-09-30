@@ -12,7 +12,7 @@ local M = {}
 
 ---Wrapper for vim.system for git commands. Raises errors by default.
 ---@param cmd string[] The command to run
----@param opts continuity.util.GitCmdOpts? Modifiers for vim.system and additional ignore_errors option.
+---@param opts? continuity.util.GitCmdOpts Modifiers for vim.system and additional ignore_errors option.
 ---@return string[] stdout_lines
 ---@return string? stderr
 ---@return integer exitcode

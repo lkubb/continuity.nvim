@@ -34,7 +34,7 @@ end
 
 local BufContext = {}
 
----@param bufnr continuity.BufNr?
+---@param bufnr? continuity.BufNr
 ---@return continuity.BufContext
 function BufContext.new(bufnr)
   return setmetatable({ bufnr = bufnr }, BufContext)
@@ -59,8 +59,8 @@ function BufContext.__newindex(self, key, value)
 end
 
 --- Get continuity buffer context for a buffer (~ proxy to vim.b.continuity_ctx). Keys can be updated in-place.
----@param bufnr continuity.BufNr? The buffer to get the context for. Defaults to the current buffer
----@param init continuity.BufUUID? Optionally enforce a specific buffer UUID. Errors if it's already set to something else.
+---@param bufnr? continuity.BufNr The buffer to get the context for. Defaults to the current buffer
+---@param init? continuity.BufUUID Optionally enforce a specific buffer UUID. Errors if it's already set to something else.
 ---@return continuity.BufContext
 function M.ctx(bufnr, init)
   local ctx = BufContext.new(bufnr or vim.api.nvim_get_current_buf())
@@ -511,7 +511,7 @@ end
 --- This should be called when events are suppressed.
 ---@param buf continuity.BufData The saved buffer metadata for the buffer
 ---@param data continuity.Snapshot The complete session data
----@param state_dir string? The directory where unsaved buffers are persisted to
+---@param state_dir? string The directory where unsaved buffers are persisted to
 ---@return continuity.BufNr
 function M.restore(buf, data, state_dir)
   local ctx = M.added(buf.name, buf.uuid)
