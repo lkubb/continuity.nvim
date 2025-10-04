@@ -1,17 +1,13 @@
--- Setup autoloading and autosaving of resession sessions per project.
+-- Setup autoloading and autosaving of sessions per project.
 
 -- TODO: Improve usability, a lot. I'm currently mapping project names
 -- to directories by just hashing them, which hinders discoverability.
--- Session names are not escaped in any way, which means branches such
--- as fix/foobar will be rendered into a subdirectory.
 -- Consider something like https://github.com/jedrzejboczar/possession.nvim/pull/55
 -- or use the registry implementation as a light database.
 -- Note that (neo)vim saves undo files with just the pathsep replaced by %,
 -- which makes sense since they have to be valid file paths, but we cannot
 -- assume project_name is equivalent to a valid path, hence we need some kind
 -- of encoding.
-
--- TODO: Allow creating named sessions other than the default one?
 
 -- TODO: Write tests
 
@@ -30,7 +26,6 @@ local Config = require("continuity.config")
 local util = require("continuity.util")
 
 local lazy_require = util.lazy_require
-local Core = lazy_require("continuity.core")
 local Session = lazy_require("continuity.core.session")
 local Snapshot = lazy_require("continuity.core.snapshot")
 local log = lazy_require("continuity.log")
@@ -44,23 +39,34 @@ local last_head
 local monitor_group
 
 --- Return the autosession context if there is an attached session and it's an autosession.
----@return continuity.Autosession?
+---@return continuity.AutosessionConfig?
 local function current_autosession()
-  local cur = Session.get_current_data()
+  local cur = Session.get_global()
   if not cur or not cur.meta or not cur.meta.autosession then
     return
   end
   return cur.meta.autosession
 end
 
+---@class continuity.ActiveAutosession<T: continuity.SessionTarget>: continuity.ActiveSession<T>
+---@field meta {autosession: continuity.AutosessionConfig}
+
+---@generic T: continuity.SessionTarget
+---@param session continuity.ActiveSession<T>
+---@return TypeGuard<continuity.ActiveAutosession<T>>
+local function is_autosession(session)
+  return not not (session.meta and session.meta.autosession)
+end
+
 --- Merge save/load opts for passing into core funcs.
 ---@generic T: (continuity.SaveOpts|continuity.LoadOpts)?
----@param cur continuity.Autosession Autosession to operate on
+---@param cur continuity.ActiveAutosession|continuity.AutosessionConfig Autosession to operate on
 ---@param defaults? table<string, any> Call-specific defaults
 ---@param opts? T Opts passed to the function
 ---@param forced? table<string, any> Call-specific forced params
 ---@return T - nil
 local function core_opts(cur, defaults, opts, forced)
+  cur = (cur.meta and cur.meta.autosession) or cur
   return vim.tbl_extend(
     "force",
     Config.autosession.config,
@@ -75,7 +81,7 @@ end
 ---Renders autosession metadata for a specific directory.
 ---Returns nil when autosessions are disabled for this directory.
 ---@param cwd string The working directory the autosession should be rendered for.
----@return continuity.Autosession?
+---@return continuity.AutosessionConfig?
 local function render_autosession_context(cwd)
   local workspace, is_git = Config.autosession.workspace(cwd)
   -- normalize workspace dir, ensure trailing /
@@ -122,7 +128,7 @@ local function render_autosession_context(cwd)
   }
 end
 
----@type fun(autosession: continuity.Autosession?)
+---@type fun(autosession: continuity.AutosessionConfig?)
 local monitor
 
 ---@class continuity
@@ -131,28 +137,34 @@ local M = {}
 ---Save the currently active autosession.
 ---@param opts? continuity.SaveOpts Parameters for continuity.core.save
 function M.save(opts)
-  local cur = current_autosession()
-  if not cur then
+  local cur = Session.get_global()
+  if not cur or not is_autosession(cur) then
     return
   end
   opts = core_opts(cur, { attach = true, notify = false }, opts)
-  Core.save(cur.name, opts)
+  if not cur:save({ notify = opts.notify }, { attach = opts.attach, reset = opts.reset }) then
+    -- We attempted to save the session while a snapshot was being restored
+    return
+  end
+  if not opts.attach then
+    cur:detach("save", { reset = opts.reset })
+  end
 end
 
 --- Detach from the currently active autosession.
 --- If autosave is enabled, save it. Optionally closes everything.
 ---@param opts? continuity.DetachOpts Parameters for continuity.core.detach
 function M.detach(opts)
-  local cur = current_autosession()
-  if not cur then
+  local cur = Session.get_global()
+  if not cur or not is_autosession(cur) then
     return
   end
-  Core.detach(cur.name, nil, opts)
+  cur:detach("request", opts or {})
 end
 
 ---Load an autosession.
----@param autosession? continuity.Autosession|string The autosession table as rendered by render_autosession_context
----@param opts? continuity.LoadOpts Parameters for continuity.core.load. silence_errors is forced to true.
+---@param autosession? continuity.AutosessionConfig|string The autosession table as rendered by render_autosession_context
+---@param opts? continuity.LoadOpts Parameters for continuity.core.load.
 function M.load(autosession, opts)
   if type(autosession) == "string" then
     autosession = render_autosession_context(autosession)
@@ -161,47 +173,63 @@ function M.load(autosession, opts)
   if not autosession then
     return
   end
-  -- No need to detach, it's handled by the pre-load hook.
-  local load_opts = core_opts(
-    autosession,
-    { attach = true, reset = true },
-    opts,
-    { silence_errors = false }
-  )
+  local load_opts = core_opts(autosession, { attach = true, reset = true }, opts)
 
   log.fmt_debug(
     "Loading autosession %s with opts %s.\nData: %s",
     autosession.name,
-    opts,
+    load_opts,
     autosession
   )
 
-  -- TODO: Use xpcall and error handler to show better stacktrace
-  local ok, err = pcall(Core.load, autosession.name, load_opts)
+  local session_file, state_dir =
+    util.path.get_session_paths(autosession.name, autosession.project.data_dir)
 
-  if not ok then
-    ---@cast err string
-    if not err:find("Could not find session", nil, true) then
-      vim.notify("Error loading session: " .. err, vim.log.levels.ERROR)
-      return
-    end
-    local save_opts =
-      core_opts(autosession, { attach = true, notify = false }, opts --[[@as continuity.SaveOpts]])
-    if not save_opts.attach then
-      -- The autosession is used to setup a default view instead of session persistence,
-      -- but the referenced session does not exist.
-      vim.notify(
-        "Could not find autosession '{}' in project '{}', cannot start a new one because attach was set to false. "
-          .. "Make sure the session file exists if you configure autloading sessions without attaching after.",
-        vim.log.levels.ERROR
+  local session
+  if util.path.exists(session_file) then
+    local snapshot
+    session, snapshot = Session.from_snapshot(autosession.name, session_file, state_dir, load_opts)
+    if not session or not snapshot then
+      -- This is an edge case, we made sure the file existed and the call above would usually error
+      log.fmt_error(
+        "Failed loading autosession {} in project {}. Consider deleting the saved snapshot at {}.",
+        autosession.name,
+        autosession.project.name,
+        session_file
       )
       return
     end
+    if load_opts.reset then
+      Session.detach_all("load", { save = load_opts.detach_save, reset = true })
+    else
+      Session.detach("__global", "load", { save = load_opts.detach_save })
+    end
+    session = session:restore({ reset = load_opts.reset and true or false }, snapshot)
+  else
+    if not load_opts.attach then
+      -- The autosession is used to setup a default view instead of session persistence,
+      -- but the referenced session does not exist.
+      log.fmt_error(
+        "Could not find autosession {} in project {}, cannot start a new one because attach was set to false. "
+          .. "Ensure the session file exists if you configure autloading sessions without attaching after.",
+        autosession.name,
+        autosession.project.name
+      )
+      return
+    end
+    if load_opts.reset then
+      Session.detach_all("load", { save = load_opts.detach_save, reset = true })
+      -- This would usually be done by snapshot restoration, but we're not restoring anything now
+      require("continuity.core.layout").close_everything()
+    else
+      Session.detach("__global", "load", { save = load_opts.detach_save })
+    end
     -- The session did not exist, need to save to initialize an empty one.
-    -- First, change cwd to workspace root since resession saves/restores cwd.
+    -- First, change cwd to workspace root since we're saving/restoring cwd.
     vim.api.nvim_set_current_dir(autosession.root)
-    Core.save(autosession.name, save_opts)
+    session = Session.create_new(autosession.name, session_file, state_dir, load_opts)
   end
+  session = session:attach()
 end
 
 ---If an autosession is active, save it and detach. Then try to start a new one.
@@ -209,11 +237,15 @@ function M.reload()
   log.fmt_trace("Reload called. Checking if we need to reload")
   local effective_cwd = util.auto.cwd()
   local autosession = render_autosession_context(effective_cwd)
-  local cur = current_autosession()
+  local cur = Session.get_global()
+  if not cur or not is_autosession(cur) then
+    cur = nil
+  end
+  ---@cast cur continuity.ActiveAutosession?
   if not autosession then
     if cur then
       log.fmt_trace("Reload check result: New context disables active autosession")
-      M.detach({ reset = true })
+      cur:detach("auto_reload", { reset = true })
     else
       log.fmt_trace(
         "Reload check result: No active autosession, new context is disabled as well. Nothing to do."
@@ -221,7 +253,11 @@ function M.reload()
     end
     return
   end
-  if cur and cur.project.name == autosession.project.name and cur.name == autosession.name then
+  if
+    cur
+    and cur.meta.autosession.project.name == autosession.project.name
+    and cur.name == autosession.name
+  then
     log.fmt_trace(
       "Reload check result: Not reloading because new context has same project and session name as active session"
     )
@@ -248,7 +284,7 @@ end
 ---2. When neovim exits, save an active autosession.
 ---3. When the session is associated with a git repo and gitsigns is available, save/detach/reload active autosession on branch changes.
 ---4. When the global CWD changes, save/detach/reload active autosession.
----@param autosession? continuity.Autosession The active autosession that should be monitored
+---@param autosession? continuity.AutosessionConfig The active autosession that should be monitored
 function monitor(autosession)
   monitor_group = vim.api.nvim_create_augroup("ContinuityHooks", { clear = true })
 
@@ -343,17 +379,19 @@ function monitor(autosession)
       log.fmt_trace(
         "DirChangedPre: Global directory is going to change, checking if we need to detach before"
       )
-      local cur = current_autosession()
-      if not cur or Snapshot.is_loading() then
+      -- FIXME: This should detach non-autosessions as well
+      local cur = Session.get_global()
+      if not cur or not is_autosession(cur) or Snapshot.is_loading() then
         -- We don't need to detach if we don't have an active session or
         -- if we're in the process of loading one
         return
       end
+      ---@cast cur continuity.ActiveAutosession
       ---@diagnostic disable-next-line: undefined-field
       local lookahead = render_autosession_context(vim.v.event.directory)
       if
         not lookahead
-        or cur.project.name ~= lookahead.project.name
+        or cur.meta.autosession.project.name ~= lookahead.project.name
         or cur.name ~= lookahead.name
       then
         log.fmt_trace(
@@ -364,7 +402,7 @@ function monitor(autosession)
         -- We're going to switch/disable the active autosession.
         -- Ensure we detach before the global cwd is changed, otherwise
         -- Resession saves the new one in the current session instead.
-        M.detach({ reset = true })
+        cur:detach("auto_dirchange", { reset = true })
       end
     end,
     group = monitor_group,
@@ -401,13 +439,13 @@ end
 ---Reset the currently active autosession. Closes everything.
 ---@param opts? continuity.ResetOpts Options to influence execution (TODO docs)
 function M.reset(opts)
-  local cur = current_autosession()
-  if not cur then
+  local cur = Session.get_global()
+  if not cur or not is_autosession(cur) then
     return
   end
   opts = vim.tbl_extend("force", { notify = false }, opts or {})
-  opts.dir = cur.project.data_dir
-  Core.delete(cur.name, { dir = cur.project.data_dir, notify = opts.notify, reset = true })
+  cur:detach("delete", { reset = true })
+  cur:delete({ notify = opts.notify, silence_errors = opts.silence_errors })
   if opts.reload ~= false then
     M.reload()
   end
@@ -454,11 +492,27 @@ end
 ---@return string[]
 function M.list(opts)
   opts = opts or {}
-  local ctx = render_autosession_context(opts.cwd or assert(util.auto.cwd_init()))
-  if ctx then
-    return Core.list({ dir = ctx.project.data_dir })
+  local session_dir
+  if not opts.cwd then
+    local cur = Session.get_global()
+    if cur and is_autosession(cur) then
+      ---@cast cur continuity.ActiveAutosession
+      session_dir = cur.meta.autosession.project.data_dir
+    end
   end
-  return {}
+  if not session_dir then
+    local rendered = render_autosession_context(opts.cwd or util.auto.cwd())
+    if not rendered then
+      return {}
+    end
+    session_dir = rendered.project.data_dir
+  end
+  if not util.path.exists(session_dir) then
+    return {}
+  end
+  return util.path.ls(session_dir, function(entry)
+    return entry.type == "file" and entry.name:match("^(.+)%.json$")
+  end, Config.load.order)
 end
 
 ---List all known projects.
@@ -578,15 +632,39 @@ function M.migrate_projects()
   return ret
 end
 
----Return info about the currently active autosession.
----@return {current_session: continuity.Autosession|false, current_session_data?: table}
-function M.info()
-  local cur = current_autosession()
-  return {
-    current_session = cur or false,
-    current_session_data = cur
-      and util.path.load_json_file(util.path.get_session_file(cur.name, cur.project.data_dir)),
-  }
+---@class continuity.ActiveAutosessionInfo: continuity.ActiveSessionInfo
+---@field is_autosession boolean
+---@field autosession_config? continuity.AutosessionConfig
+---@field autosession_data? continuity.Snapshot
+
+---Return information about the currently active autosession.
+---@param opts {with_snapshot?: boolean}?
+---@return {is_autosession: boolean, autosession_config: continuity.AutosessionConfig?, autosession_data?: table}
+function M.info(opts)
+  local cur = Session.get_global()
+  if not cur then
+    return { is_autosession = false }
+  end
+  opts = opts or {}
+  local core_info = cur:info()
+  local is_auto = false
+  local autosession_config, autosession_data
+  if cur and is_autosession(cur) then
+    ---@cast cur continuity.ActiveAutosession
+    is_auto = true
+    autosession_config = cur.meta.autosession
+    autosession_data = opts.with_snapshot
+      and util.path.load_json_file(
+        util.path.get_session_file(cur.name, autosession_config.project.data_dir)
+      )
+  end
+  ---@type continuity.ActiveAutosessionInfo
+  local res = vim.tbl_extend("error", core_info, {
+    is_autosession = is_auto,
+    autosession_config = autosession_config,
+    autosession_data = autosession_data,
+  })
+  return res
 end
 
 --- Just sets `vim.g.continuity_config`, which you can do yourself

@@ -45,7 +45,7 @@
 ---@field name string The name of the session
 ---@field config continuity.LoadOpts Session-specific load/autosave options.
 
----@class continuity.Autosession: continuity.AutosessionSpec
+---@class continuity.AutosessionConfig: continuity.AutosessionSpec
 ---@field cwd string The effective working directory that was determined when loading this auto-session
 
 --- Represents identification information of an existing buffer.
@@ -60,5 +60,5 @@
 ---@class continuity.ManagedBufID: continuity.BufID
 ---@field uuid string The UUID assigned to the buffer.
 
----@class continuity.ResetOpts: resession.DeleteOpts
+---@class continuity.ResetOpts: continuity.DeleteOpts
 ---@field reload? boolean Attempt to restart a new autosession after reset. Defaults to true.

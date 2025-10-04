@@ -3,7 +3,8 @@
     "runtime": {
         "requireLikeFunction": [
             "lazy_require"
-        ]
+        ],
+        "version": "LuaJIT"
     },
     "strict": {
         "requirePath": false,

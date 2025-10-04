@@ -14,6 +14,9 @@ local funcs = {
   },
   info = {
     func = Continuity.info,
+    kwargs = {
+      with_snapshot = { "true", "false" },
+    },
   },
   list = {
     func = Continuity.list,

@@ -194,19 +194,19 @@ function M.save_as(name, opts, target_tabpage, session_file, state_dir)
   -- Most API opts are passed through for the hooks, so opts in this case
   -- should be understood as more like continuity.SaveOpts, not just continuity.SnapshotOpts.
   -- TODO: Type
-  Ext.dispatch("pre_save", name, opts --[[@as continuity.SaveHookOpts]], target_tabpage)
-  local session, included_bufs = create(target_tabpage, opts)
+  Ext.dispatch("pre_save", name, opts --[[@as continuity.HookOpts]], target_tabpage)
+  local snapshot, included_bufs = create(target_tabpage, opts)
   if opts.modified then
-    session.modified = Buf.save_modified(state_dir, included_bufs)
+    snapshot.modified = Buf.save_modified(state_dir, included_bufs)
   else
     -- Forget all saved changes later
     vim.schedule(function()
       Buf.clean_modified(state_dir, {})
     end)
   end
-  util.path.write_json_file(session_file, session)
-  Ext.dispatch("post_save", name, opts --[[@as continuity.SaveHookOpts]], target_tabpage)
-  return session, included_bufs
+  util.path.write_json_file(session_file, snapshot)
+  Ext.dispatch("post_save", name, opts --[[@as continuity.HookOpts]], target_tabpage)
+  return snapshot, included_bufs
 end
 
 --- Call extensions that implement on_post_bufinit, which is triggered
@@ -231,9 +231,20 @@ local function dispatch_post_bufinit(data, visible_only)
   end
 end
 
----@param session continuity.Snapshot
----@param opts {reset?: boolean, modified?: boolean, state_dir?: string}
-function M.restore(session, opts)
+---@class continuity.core.snapshot.RestoreOpts
+---@field reset? boolean Close everything in this neovim instance. If unset/false, loads the snapshot into one or several clean tabs.
+---@field modified? boolean|"auto" If the snapshot contains unsaved buffer modifications, restore them.
+---@field state_dir? string Directory session-associated data like unsaved buffer modifications are stored in. Required for `modified` loading.
+
+---@param snapshot continuity.Snapshot
+---@param opts continuity.core.snapshot.RestoreOpts
+function M.restore(snapshot, opts)
+  if opts.modified == nil then
+    opts.modified = Config.session.modified
+  end
+  if opts.modified == "auto" then
+    opts.modified = not not snapshot.modified
+  end
   _is_loading = true
   layout = require("continuity.core.layout")
   if opts.reset then
@@ -248,16 +259,16 @@ function M.restore(session, opts)
     opts.modified = false
   end
 
-  if not opts.modified and session.modified then
+  if not opts.modified and snapshot.modified then
     ---@type continuity.Snapshot
-    local shallow_session_copy = {}
-    for key, val in pairs(session) do
+    local shallow_snapshot_copy = {}
+    for key, val in pairs(snapshot) do
       if key ~= "modified" then
         ---@diagnostic disable-next-line: assign-type-mismatch
-        shallow_session_copy[key] = val
+        shallow_snapshot_copy[key] = val
       end
     end
-    session = shallow_session_copy
+    snapshot = shallow_snapshot_copy
   end
 
   -- Keep track of buffers that are not displayed for later restoration
@@ -265,19 +276,19 @@ function M.restore(session, opts)
   ---@type continuity.BufData[]
   local buffers_later = {}
 
-  -- Don't trigger autocmds during session load
-  -- Ignore all messages (including swapfile messages) during session load
+  -- Don't trigger autocmds during snapshot restoration
+  -- Ignore all messages (including swapfile messages) as well
   util.opts.with({ eventignore = "all", shortmess = "aAF" }, function()
-    if not session.tab_scoped then
+    if not snapshot.tab_scoped then
       -- Set the options immediately
-      util.opts.restore_global(session.global.options)
+      util.opts.restore_global(snapshot.global.options)
     end
 
     for ext_name in pairs(Config.extensions) do
-      if session[ext_name] then
+      if snapshot[ext_name] then
         local extmod = Ext.get(ext_name)
         if extmod and extmod.on_pre_load then
-          local ok, err = pcall(extmod.on_pre_load, session[ext_name])
+          local ok, err = pcall(extmod.on_pre_load, snapshot[ext_name])
           if not ok then
             vim.notify(
               string.format("[continuity] Extension %s on_pre_load error: %s", ext_name, err),
@@ -289,17 +300,17 @@ function M.restore(session, opts)
     end
 
     local scale = {
-      vim.o.columns / session.global.width,
-      (vim.o.lines - vim.o.cmdheight) / session.global.height,
+      vim.o.columns / snapshot.global.width,
+      (vim.o.lines - vim.o.cmdheight) / snapshot.global.height,
     }
 
     ---@type integer?
     local last_bufnr
-    for _, buf in ipairs(session.buffers) do
+    for _, buf in ipairs(snapshot.buffers) do
       if buf.in_win == false then
         buffers_later[#buffers_later + 1] = buf
       else
-        last_bufnr = Buf.restore(buf, session, opts.state_dir)
+        last_bufnr = Buf.restore(buf, snapshot, opts.state_dir)
       end
       -- TODO: Restore buffer preview cursor
       -- Cannot restore m" here because unsaved restoration can increase
@@ -308,17 +319,17 @@ function M.restore(session, opts)
       -- restoration of unsaved changes is now included here.
     end
 
-    dispatch_post_bufinit(session, true)
+    dispatch_post_bufinit(snapshot, true)
 
     -- Ensure the cwd is set correctly for each loaded buffer
-    if not session.tab_scoped then
+    if not snapshot.tab_scoped then
       -- FIXME: This should fire DirChanged[Pre] events
-      vim.api.nvim_set_current_dir(session.global.cwd)
+      vim.api.nvim_set_current_dir(snapshot.global.cwd)
     end
 
     ---@type integer?
     local curwin
-    for i, tab in ipairs(session.tabs) do
+    for i, tab in ipairs(snapshot.tabs) do
       if i > 1 then
         vim.cmd.tabnew()
         -- Tabnew creates a new empty buffer. Dispose of it when hidden.
@@ -343,18 +354,18 @@ function M.restore(session, opts)
     if curwin then
       vim.api.nvim_set_current_win(curwin)
     elseif
-      session.tabs[#session.tabs]
-      and session.tabs[#session.tabs].wins == false
+      snapshot.tabs[#snapshot.tabs]
+      and snapshot.tabs[#snapshot.tabs].wins == false
       and last_bufnr
     then
       vim.cmd("buffer " .. last_bufnr)
     end
 
     for ext_name in pairs(Config.extensions) do
-      if session[ext_name] then
+      if snapshot[ext_name] then
         local extmod = Ext.get(ext_name)
         if extmod and extmod.on_post_load then
-          local ok, err = pcall(extmod.on_post_load, session[ext_name])
+          local ok, err = pcall(extmod.on_post_load, snapshot[ext_name])
           if not ok then
             vim.notify(
               string.format('[continuity] Extension "%s" on_post_load error: %s', ext_name, err),
@@ -380,12 +391,12 @@ function M.restore(session, opts)
     restore_triggered = true
     log.debug("Restoring invisible buffers")
     -- Don't trigger autocmds during buffer load (shouldn't be necessary since this autocmd is not nested)
-    -- Ignore all messages (including swapfile messages) during session load
+    -- Ignore all messages (including swapfile messages) during buffer restoration
     util.opts.with({ eventignore = "all", shortmess = "aAF" }, function()
       for _, buf in ipairs(buffers_later) do
-        Buf.restore(buf, session, opts.state_dir)
+        Buf.restore(buf, snapshot, opts.state_dir)
       end
-      dispatch_post_bufinit(session, false)
+      dispatch_post_bufinit(snapshot, false)
     end)
     log.debug("Finished loading session")
     _is_loading = false
@@ -399,6 +410,29 @@ function M.restore(session, opts)
   -- is not focused. This caused the autosave hook to print warnings since the session
   -- was still loading. Make the final restoration happen in 1s at the latest.
   vim.defer_fn(restore_invisible, 1000)
+end
+
+---@class continuity.core.snapshot.RestoreWithHooksOpts: continuity.core.snapshot.RestoreOpts
+---@field [any] any Any unhandled opts are also passed through to hooks
+
+--- Restore a saved snapshot. Also handles hooks.
+---@param name string The name of the target session. Only used for hooks.
+---@param snapshot continuity.Snapshot The snapshot contents
+---@param opts continuity.core.snapshot.RestoreWithHooksOpts
+---@return continuity.TabNr?
+function M.restore_as(name, snapshot, opts)
+  if opts.modified == nil then
+    opts.modified = Config.session.modified
+  end
+  if opts.modified == "auto" then
+    opts.modified = not not snapshot.modified
+  end
+  Ext.dispatch("pre_load", name, opts --[[@as continuity.HookOpts]])
+  M.restore(snapshot, { modified = opts.modified, state_dir = opts.state_dir, reset = opts.reset })
+  Ext.dispatch("post_load", name, opts --[[@as continuity.HookOpts]])
+  if snapshot.tab_scoped then
+    return vim.api.nvim_get_current_tabpage()
+  end
 end
 
 return M

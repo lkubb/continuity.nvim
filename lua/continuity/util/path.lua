@@ -142,6 +142,87 @@ function M.mkdir(dirname, perms)
   end
 end
 
+---@generic T
+---@param dir string The directory to list
+---@param predicate (fun(entry: uv.fs_readdir.entry, dir: string): T?, boolean?)? Function to map list results to return value. If unspecified, returns a list of file names.
+---@param order_by ("filename"|"creation_time"|"modification_time"|fun(a: [string, T], b: [string, T]): boolean)? Order the returned list in some fashion. If a function is passed, it receives a tuple of [full_path, predicate_return].
+---@return T[]
+function M.ls(dir, predicate, order_by)
+  predicate = predicate or function(entry, _)
+    return entry.type == "file" and entry.name
+  end
+  ---@type "filename"|"creation_time"|"modification_time"|fun(a: [string, T], b: [string, T]): boolean
+  order_by = order_by or "filename"
+
+  local dirs = { dir } ---@type string[]
+  local visited = {} ---@type table<string, true?>
+  local ret = {} ---@type [string, T][]
+
+  local function ls_inner(dir_inner)
+    visited[dir_inner] = true
+    ---@diagnostic disable-next-line: param-type-mismatch, param-type-not-match, unnecessary-assert
+    local fd = assert(uv.fs_opendir(dir_inner, nil, 256))
+    ---@diagnostic disable-next-line: cast-type-mismatch
+    ---@cast fd uv.luv_dir_t
+    local entries = uv.fs_readdir(fd)
+    while entries do
+      for _, entry in ipairs(entries) do
+        local res, recurse = predicate(entry, dir_inner)
+        if res then
+          ret[#ret + 1] = { M.join(dir_inner, entry.name), res }
+        end
+        if entry.type == "directory" and recurse then
+          local dir_path = M.join(dir_inner, entry.name)
+          if not visited[dir_path] then
+            dirs[#dirs + 1] = dir_path
+          end
+        end
+      end
+      entries = uv.fs_readdir(fd)
+    end
+    uv.fs_closedir(fd)
+  end
+
+  while #dirs > 0 do
+    for i, idir in ipairs(dirs) do
+      ls_inner(idir)
+      dirs[i] = nil
+    end
+  end
+
+  -- Order options
+  if order_by == "filename" then
+    -- Sort by filename
+    table.sort(ret, function(a, b)
+      return a[1] < b[1]
+    end)
+  elseif order_by == "modification_time" then
+    -- Sort by modification_time
+    local default = { mtime = { sec = 0 } }
+    table.sort(ret, function(a, b)
+      local file_a = uv.fs_stat(a[1]) or default
+      local file_b = uv.fs_stat(b[1]) or default
+      return file_a.mtime.sec > file_b.mtime.sec
+    end)
+  elseif order_by == "creation_time" then
+    -- Sort by creation_time in descending order (most recent first)
+    local default = { birthtime = { sec = 0 } }
+    table.sort(ret, function(a, b)
+      local file_a = uv.fs_stat(a[1]) or default
+      local file_b = uv.fs_stat(b[1]) or default
+      return file_a.birthtime.sec > file_b.birthtime.sec
+    end)
+  elseif type(order_by) == "function" then
+    table.sort(ret, order_by)
+  end
+  return vim
+    .iter(ret)
+    :map(function(v)
+      return v[2]
+    end)
+    :totable()
+end
+
 --- Write a file (synchronously). Currently performs no error checking.
 ---@param filename string The path of the file to write
 ---@param contents string The contents to write
@@ -197,7 +278,7 @@ end
 --- Get the path to the file that stores a saved session.
 ---@param name string The name of the session
 ---@param dirname string The name of the session directory
----@return string
+---@return string session_file
 function M.get_session_file(name, dirname)
   local filename = string.format("%s.json", serialize_session_name(name))
   return M.join(M.get_session_dir(dirname), filename)
@@ -207,9 +288,21 @@ end
 --- like modified buffer contents and corresponding undo history.
 ---@param name string The name of the session
 ---@param dirname string The name of the session directory
----@return string
+---@return string state_dir
 function M.get_session_state_dir(name, dirname)
   return M.join(M.get_session_dir(dirname), serialize_session_name(name))
+end
+
+--- Get both session-related paths (session data filename and state directory) in one swoop.
+---@param name string The name of the session
+---@param dirname string The name of the session directory
+---@return string session_file
+---@return string state_dir
+function M.get_session_paths(name, dirname)
+  local session_name = serialize_session_name(name)
+  local session_dir = M.get_session_dir(dirname)
+  local filename = string.format("%s.json", session_name)
+  return M.join(session_dir, filename), M.join(session_dir, session_name)
 end
 
 return M
