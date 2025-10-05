@@ -9,14 +9,16 @@ local log = lazy_require("continuity.log")
 ---@class continuity.core.layout
 local M = {}
 
+---@namespace continuity
+
 --- Check if a window should be saved. If so, return relevant information.
 --- Only exposed for testing purposes
 ---@private
 ---@param tabnr integer The number of the tab that contains the window
----@param winid continuity.WinID The window id of the window to query
+---@param winid WinID The window id of the window to query
 ---@param current_win integer The window id of the currently active window
----@param opts continuity.SaveOpts
----@return continuity.WinInfo|false
+---@param opts SaveOpts
+---@return WinInfo|false
 function M.get_win_info(tabnr, winid, current_win, opts)
   local bufnr = vim.api.nvim_win_get_buf(winid)
   local win = {}
@@ -54,7 +56,7 @@ function M.get_win_info(tabnr, winid, current_win, opts)
     height = vim.api.nvim_win_get_height(winid),
     options = util.opts.get_win(winid, opts.options or Config.session.options),
   })
-  ---@cast win continuity.WinInfo
+  ---@cast win WinInfo
   local winnr = vim.api.nvim_win_get_number(winid)
   if vim.fn.haslocaldir(winnr, tabnr) == 1 then
     win.cwd = vim.fn.getcwd(winnr, tabnr)
@@ -68,8 +70,8 @@ end
 ---@param tabnr integer
 ---@param layout vim.fn.winlayout.ret
 ---@param current_win integer
----@param opts continuity.SaveOpts
----@return continuity.WinLayout|false
+---@param opts SaveOpts
+---@return WinLayout|false
 function M.add_win_info_to_layout(tabnr, layout, current_win, opts)
   ---@diagnostic disable-next-line: undefined-field
   ---@type 'leaf'|'col'|'row'|nil
@@ -99,22 +101,22 @@ function M.add_win_info_to_layout(tabnr, layout, current_win, opts)
 end
 
 --- Create all windows in the saved layout. Add created window ID information to leaves.
----@param layout continuity.WinLayoutLeaf|continuity.WinLayoutBranch The window layout to apply, as returned by `add_win_info_to_layout`
----@return continuity.WinLayoutRestored
+---@param layout WinLayoutLeaf|WinLayoutBranch The window layout to apply, as returned by `add_win_info_to_layout`
+---@return WinLayoutRestored
 local function set_winlayout(layout)
   local typ = layout[1]
   if typ == "leaf" then
-    ---@cast layout continuity.WinLayoutLeaf
-    ---@type continuity.WinInfoRestored
+    ---@cast layout WinLayoutLeaf
+    ---@type WinInfoRestored
     local win = layout[2]
-    ---@type continuity.WinID
+    ---@type WinID
     local winid = vim.api.nvim_get_current_win()
     win.winid = winid
     if win.cwd then
       vim.cmd(string.format("lcd %s", win.cwd))
     end
   else
-    ---@cast layout continuity.WinLayoutBranch
+    ---@cast layout WinLayoutBranch
     local winids = {}
     local splitright = vim.opt.splitright
     local splitbelow = vim.opt.splitbelow
@@ -148,27 +150,27 @@ local function scale(base, factor)
 end
 
 --- Apply saved data to restored windows. Calls extensions or loads files, then restores options and dimensions
----@param layout continuity.WinLayoutLeafRestored|continuity.WinLayoutBranchRestored
+---@param layout WinLayoutLeafRestored|WinLayoutBranchRestored
 ---@param scale_factor [number, number] Scaling factor for [width, height]
----@return continuity.WinLayoutRestored
----@return {winid?: continuity.WinID}
+---@return WinLayoutRestored
+---@return {winid?: WinID}
 local function set_winlayout_data(layout, scale_factor, visit_data)
   local typ = layout[1]
   if typ == "leaf" then
-    ---@cast layout continuity.WinLayoutLeafRestored
+    ---@cast layout WinLayoutLeafRestored
     local win = layout[2]
     vim.api.nvim_set_current_win(win.winid)
     if win.extension then
       local extmod = Ext.get(win.extension)
       if extmod and extmod.load_win then
         -- Re-enable autocmds so if the extensions rely on BufReadCmd it works
-        ---@type boolean, (continuity.WinID|string)?
+        ---@type boolean, (WinID|string)?
         local ok, new_winid
         util.opts.with({ eventignore = "" }, function()
           ok, new_winid = pcall(extmod.load_win, win.winid, win.extension_data)
         end)
         if ok then
-          ---@cast new_winid continuity.WinID?
+          ---@cast new_winid WinID?
           new_winid = new_winid or win.winid
           win.winid = new_winid
         else
@@ -238,9 +240,9 @@ local function set_winlayout_data(layout, scale_factor, visit_data)
   return layout, visit_data
 end
 
----@param layout continuity.WinLayout|false|nil
+---@param layout WinLayout|false|nil
 ---@param scale_factor [number, number] Scaling factor for [width, height]
----@return continuity.WinID? The ID of the window that should have focus after session load
+---@return WinID? The ID of the window that should have focus after session load
 function M.set_winlayout(layout, scale_factor)
   if not layout or not layout[1] then
     return

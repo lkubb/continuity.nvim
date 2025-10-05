@@ -11,13 +11,15 @@ local uv = vim.uv or vim.loop
 ---@class continuity.core.session
 local M = {}
 
+---@namespace continuity
+
 local current_session ---@type string?
-local tab_sessions = {} ---@type table<continuity.TabNr, string?>
-local sessions = {} ---@type table<string, continuity.ActiveSession<continuity.TabTarget>|continuity.ActiveSession<continuity.GlobalTarget>?>
+local tab_sessions = {} ---@type table<TabNr, string?>
+local sessions = {} ---@type table<string, ActiveSession<TabTarget>|ActiveSession<GlobalTarget>?>
 
 ---@param session_file string
 ---@param silence_errors boolean?
----@return continuity.Snapshot?
+---@return Snapshot?
 local function load_snapshot(session_file, silence_errors)
   local snapshot = util.path.load_json_file(session_file)
   if not snapshot then
@@ -31,20 +33,20 @@ end
 
 -- Not sure how assigning Session<T: SessionTarget> is supposed to work with separate definitions.
 
----@generic T: continuity.SessionTarget
----@type continuity.Session<T> ---@diagnostic disable-line generic-constraint-mismatch
+---@generic T: SessionTarget
+---@type Session<T> ---@diagnostic disable-line generic-constraint-mismatch
 local Session = {} ---@diagnostic disable-line: assign-type-mismatch,missing-fields
----@generic T: continuity.SessionTarget
----@type continuity.PendingSession<T> ---@diagnostic disable-line generic-constraint-mismatch
+---@generic T: SessionTarget
+---@type PendingSession<T> ---@diagnostic disable-line generic-constraint-mismatch
 local PendingSession = {} ---@diagnostic disable-line: assign-type-mismatch,missing-fields
----@generic T: continuity.SessionTarget
----@type continuity.IdleSession<T> ---@diagnostic disable-line generic-constraint-mismatch
+---@generic T: SessionTarget
+---@type IdleSession<T> ---@diagnostic disable-line generic-constraint-mismatch
 local IdleSession = {} ---@diagnostic disable-line: assign-type-mismatch,missing-fields
----@generic T: continuity.SessionTarget
----@type continuity.ActiveSession<T> ---@diagnostic disable-line generic-constraint-mismatch
+---@generic T: SessionTarget
+---@type ActiveSession<T> ---@diagnostic disable-line generic-constraint-mismatch
 local ActiveSession = {} ---@diagnostic disable-line: assign-type-mismatch,missing-fields
 
----@generic T: continuity.SessionTarget
+---@generic T: SessionTarget
 function Session.new(name, session_file, state_dir, opts, tabnr, needs_restore)
   local autosave_enabled = opts.autosave_enabled
   -- "ternary" expression does not work when false is a valid value, need to pre-define for below
@@ -55,9 +57,9 @@ function Session.new(name, session_file, state_dir, opts, tabnr, needs_restore)
     ---@diagnostic disable-next-line: unnecessary-assert
     assert(needs_restore, "tabnr must not be `true` unless needs_restore is set as well")
   end
-  ---@type continuity.SessionConfig
+  ---@type SessionConfig
   local config = {
-    -- continuity.SessionConfig part
+    -- SessionConfig part
     session_file = session_file,
     state_dir = state_dir,
     -- We need to query defaults for these values during load since we cannot
@@ -66,7 +68,7 @@ function Session.new(name, session_file, state_dir, opts, tabnr, needs_restore)
     autosave_interval = opts.autosave_interval or Config.session.autosave_interval,
     autosave_notify = opts.autosave_notify,
     meta = opts.meta,
-    -- continuity.SnapshotOpts part
+    -- SnapshotOpts part
     modified = opts.modified,
     -- These can be defined even when loading to be able to configure autosave settings.
     -- They currently don't affect loading though.
@@ -81,7 +83,7 @@ function Session.new(name, session_file, state_dir, opts, tabnr, needs_restore)
     _on_attach = {},
     _on_detach = {},
   }
-  ---@type continuity.PendingSession<T>|continuity.IdleSession<T>
+  ---@type PendingSession<T>|IdleSession<T>
   local self
   if needs_restore then ---@diagnostic disable-line: unnecessary-if
     self = setmetatable(config, {
@@ -191,7 +193,7 @@ function Session:is_attached()
   if not self.tab_scoped then
     return self.name == current_session and sessions[self.name] == self
   end
-  ---@cast self continuity.Session<continuity.TabTarget>
+  ---@cast self Session<TabTarget>
   if self.tabnr == true then
     -- Unrestored, cannot be attached
     return false
@@ -251,12 +253,12 @@ function Session:delete(opts)
   end
 end
 
----@generic T: continuity.SessionTarget
+---@generic T: SessionTarget
 function IdleSession:attach()
   self = setmetatable(self, { __index = ActiveSession })
   self._aug = vim.api.nvim_create_augroup("continuity__" .. self.name, { clear = true })
   if self.tab_scoped then
-    ---@cast self continuity.ActiveSession<continuity.TabTarget>
+    ---@cast self ActiveSession<TabTarget>
     tab_sessions[self.tabnr] = self.name
     vim.api.nvim_create_autocmd("TabClosed", {
       pattern = tostring(self.tabnr),
@@ -269,7 +271,7 @@ function IdleSession:attach()
   else
     current_session = self.name
   end
-  ---@cast self continuity.ActiveSession<T>
+  ---@cast self ActiveSession<T>
   sessions[self.name] = self
   for _, hook in ipairs(self._on_attach) do
     hook(self)
@@ -359,23 +361,23 @@ function ActiveSession:detach(reason, opts)
   vim.api.nvim_del_augroup_by_id(self._aug)
   if opts.reset then
     if self.tab_scoped then
-      ---@cast self continuity.ActiveSession<continuity.TabTarget>
+      ---@cast self ActiveSession<TabTarget>
       if reason ~= "tab_closed" then
         vim.cmd.tabclose({ self.tabnr, bang = true })
       end
       -- TODO: Consider unloading associated buffers? (cave: should happen even on tab_closed)
     else
-      ---@cast self continuity.ActiveSession<continuity.GlobalTarget>
+      ---@cast self ActiveSession<GlobalTarget>
       -- TODO: Everything except tabs with associated sessions?
       require("continuity.core.layout").close_everything()
     end
   end
   if self.tab_scoped then
-    ---@cast self continuity.ActiveSession<continuity.TabTarget>
+    ---@cast self ActiveSession<TabTarget>
     tab_sessions[self.tabnr] = nil
     self.tabnr = nil
   else
-    ---@cast self continuity.ActiveSession<continuity.GlobalTarget>
+    ---@cast self ActiveSession<GlobalTarget>
     current_session = nil
   end
   sessions[self.name] = nil
@@ -384,7 +386,7 @@ end
 
 function ActiveSession:forget()
   assert(self.tab_scoped, "Cannot forget global session")
-  ---@cast self continuity.ActiveSession<continuity.TabTarget>
+  ---@cast self ActiveSession<TabTarget>
   if self._aug then ---@diagnostic disable-line: unnecessary-if
     vim.api.nvim_del_augroup_by_id(self._aug)
     self._aug = nil
@@ -400,7 +402,7 @@ IdleSession = vim.tbl_extend("keep", IdleSession, Session) ---@diagnostic disabl
 ActiveSession = vim.tbl_extend("keep", ActiveSession, IdleSession) ---@diagnostic disable-line: assign-type-mismatch
 
 ---@param name string
----@return continuity.TabNr?
+---@return TabNr?
 local function find_tabpage_for_session(name)
   for k, v in pairs(tab_sessions) do
     if v == name then
@@ -409,10 +411,10 @@ local function find_tabpage_for_session(name)
   end
 end
 
----@overload fun(by_name: true): table<string,continuity.TabNr?>
----@overload fun(by_name: false?): table<continuity.TabNr,string?>
+---@overload fun(by_name: true): table<string,TabNr?>
+---@overload fun(by_name: false?): table<TabNr,string?>
 ---@param by_name? boolean
----@return table<string,continuity.TabNr?>|table<continuity.TabNr,string?>
+---@return table<string,TabNr?>|table<TabNr,string?>
 local function list_active_tabpage_sessions(by_name)
   -- First prune tab-scoped sessions for closed tabs
   -- Note: Shouldn't usually be necessary because we're auto-detaching on TabClosed
@@ -431,8 +433,8 @@ local function list_active_tabpage_sessions(by_name)
   end)
 end
 
----@param reason continuity.DetachReason A reason to pass to detach handlers.
----@param opts continuity.DetachOpts
+---@param reason DetachReason A reason to pass to detach handlers.
+---@param opts DetachOpts
 ---@return boolean
 local function detach_global(reason, opts)
   if not current_session then
@@ -446,9 +448,9 @@ local function detach_global(reason, opts)
 end
 
 --- Detach a tabpage-scoped session, either by its name or tabnr
----@param target? (string|continuity.TabNr|(string|continuity.TabNr)[]) Target a tabpage session by name or associated tabpage. Defaults to current tabpage. Also takes a list.
----@param reason continuity.DetachReason A reason to pass to detach handlers.
----@param opts continuity.DetachOpts
+---@param target? (string|TabNr|(string|TabNr)[]) Target a tabpage session by name or associated tabpage. Defaults to current tabpage. Also takes a list.
+---@param reason DetachReason A reason to pass to detach handlers.
+---@param opts DetachOpts
 ---@return boolean
 local function detach_tabpage(target, reason, opts)
   if type(target) == "table" then
@@ -476,8 +478,8 @@ local function detach_tabpage(target, reason, opts)
 end
 
 --- Detach all sessions (global + tab-scoped).
----@param reason continuity.DetachReason A reason to pass to detach handlers.
----@param opts continuity.DetachOpts
+---@param reason DetachReason A reason to pass to detach handlers.
+---@param opts DetachOpts
 ---@return boolean
 function M.detach_all(reason, opts)
   local detached_global = detach_global(reason, opts)
@@ -503,8 +505,8 @@ end
 
 --- Detach a session by name.
 ---@param name string
----@param reason continuity.DetachReason A reason to pass to detach handlers.
----@param opts continuity.DetachOpts
+---@param reason DetachReason A reason to pass to detach handlers.
+---@param opts DetachOpts
 ---@return boolean
 local function detach_named(name, reason, opts)
   if current_session and current_session == name then
@@ -513,16 +515,16 @@ local function detach_named(name, reason, opts)
   return detach_tabpage(name, reason, opts)
 end
 
----@generic T: continuity.SessionTarget
----@overload fun(name: string, session_file: string, state_dir: string, opts: continuity.LoadOpts|continuity.SaveOpts): continuity.IdleSession<continuity.GlobalTarget>
----@overload fun(name: string, session_file: string, state_dir: string, opts: continuity.LoadOpts|continuity.SaveOpts, tabnr: nil): continuity.IdleSession<continuity.GlobalTarget>
----@overload fun(name: string, session_file: string, state_dir: string, opts: continuity.LoadOpts|continuity.SaveOpts, tabnr: continuity.TabNr): continuity.IdleSession<continuity.TabTarget>
+---@generic T: SessionTarget
+---@overload fun(name: string, session_file: string, state_dir: string, opts: LoadOpts|SaveOpts): IdleSession<GlobalTarget>
+---@overload fun(name: string, session_file: string, state_dir: string, opts: LoadOpts|SaveOpts, tabnr: nil): IdleSession<GlobalTarget>
+---@overload fun(name: string, session_file: string, state_dir: string, opts: LoadOpts|SaveOpts, tabnr: TabNr): IdleSession<TabTarget>
 ---@param name string
 ---@param session_file string
 ---@param state_dir string
----@param opts continuity.LoadOpts|continuity.SaveOpts
----@param tabnr continuity.TabNr?
----@return continuity.IdleSession<T>
+---@param opts LoadOpts|SaveOpts
+---@param tabnr TabNr?
+---@return IdleSession<T>
 function M.create_new(name, session_file, state_dir, opts, tabnr)
   -- help emmylua resolve to the proper type with this conditional
   if tabnr then
@@ -531,27 +533,27 @@ function M.create_new(name, session_file, state_dir, opts, tabnr)
   return Session.new(name, session_file, state_dir, opts)
 end
 
----@generic T: continuity.SessionTarget
+---@generic T: SessionTarget
 ---@param name string
 ---@param session_file string
 ---@param state_dir string
----@param opts continuity.LoadOpts
----@return continuity.PendingSession<T>?
----@return continuity.Snapshot?
+---@param opts LoadOpts
+---@return PendingSession<T>?
+---@return Snapshot?
 function M.from_snapshot(name, session_file, state_dir, opts)
   return Session.from_snapshot(name, session_file, state_dir, opts)
 end
 
----@generic T: continuity.SessionTarget
----@return continuity.ActiveSession<T>[]
+---@generic T: SessionTarget
+---@return ActiveSession<T>[]
 function M.get_all()
   local global = M.get_global()
-  ---@type continuity.ActiveSession<T>[]
+  ---@type ActiveSession<T>[]
   local res = global and { global } or {}
   return vim.list_extend(res, vim.tbl_values(M.get_tabs()))
 end
 
----@return table<continuity.TabNr, continuity.ActiveSession<continuity.TabTarget>>
+---@return table<TabNr, ActiveSession<TabTarget>>
 function M.get_tabs()
   return vim.iter(pairs(list_active_tabpage_sessions())):fold({}, function(res, tabnr, name)
     res[tabnr] = assert(
@@ -562,15 +564,15 @@ function M.get_tabs()
   end)
 end
 
----@generic T: continuity.SessionTarget
+---@generic T: SessionTarget
 ---@param name string The session name to get
----@return continuity.ActiveSession<T>?
+---@return ActiveSession<T>?
 function M.get_named(name)
   return sessions[name]
 end
 
----@param tabnr? continuity.TabNr The tabnr the session is associated with. Empty for current tab.
----@return continuity.ActiveSession<continuity.TabTarget>?
+---@param tabnr? TabNr The tabnr the session is associated with. Empty for current tab.
+---@return ActiveSession<TabTarget>?
 function M.get_tabnr(tabnr)
   ---@type string?
   local name = list_active_tabpage_sessions()[tabnr or vim.api.nvim_get_current_tabpage()]
@@ -584,7 +586,7 @@ function M.get_tabnr(tabnr)
     or nil
 end
 
----@return continuity.ActiveSession<continuity.GlobalTarget>?
+---@return ActiveSession<GlobalTarget>?
 function M.get_global()
   ---@diagnostic disable-next-line: return-type-mismatch
   return current_session
@@ -596,14 +598,14 @@ function M.get_global()
     or nil
 end
 
----@generic T: continuity.SessionTarget
----@return continuity.ActiveSession<T>?
+---@generic T: SessionTarget
+---@return ActiveSession<T>?
 function M.get_active()
   local name = M.get_current()
   return name and assert(sessions[name], "Current session not known, this is likely a bug") or nil
 end
 
----@param opts? continuity.SaveAllOpts
+---@param opts? SaveAllOpts
 ---@param is_autosave boolean
 local function save_all(opts, is_autosave)
   -- Difference to Resession:
@@ -621,13 +623,13 @@ end
 
 --- Trigger an autosave for all attached sessions, respecting session-specific
 --- `autosave_enabled` configuration. Mostly for internal use.
----@param opts? continuity.SaveAllOpts
+---@param opts? SaveAllOpts
 function M.autosave(opts)
   save_all(opts, true)
 end
 
 --- Save all currently attached sessions to disk
----@param opts? continuity.SaveAllOpts
+---@param opts? SaveAllOpts
 function M.save_all(opts)
   save_all(opts, false)
 end
@@ -640,7 +642,7 @@ function M.get_current()
 end
 
 --- Get data/config remembered from attaching the currently active session
----@return continuity.ActiveSessionInfo?
+---@return ActiveSessionInfo?
 function M.get_current_data()
   local current = M.get_current()
   if not current then
@@ -652,8 +654,8 @@ end
 
 --- Detach from the session that contains the target (or all active sessions if unspecified).
 ---@param target? ("__global"|"__active"|"__active_tab"|"__all_tabs"|string|integer|(string|integer)[]) The scope/session name/tabnr to detach from. If unspecified, detaches all sessions.
----@param reason? continuity.DetachReason Pass a custom reason to detach handlers. Defaults to `request`.
----@param opts? continuity.DetachOpts
+---@param reason? DetachReason Pass a custom reason to detach handlers. Defaults to `request`.
+---@param opts? DetachOpts
 ---@return boolean Whether we detached from any session
 function M.detach(target, reason, opts)
   reason = reason or "request"

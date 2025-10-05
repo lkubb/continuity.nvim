@@ -6,6 +6,8 @@ local util = require("continuity.util")
 ---@class continuity.core
 local M = {}
 
+---@namespace continuity
+
 ---@param tab_scoped boolean?
 ---@return string?
 local function get_save_name(tab_scoped)
@@ -28,16 +30,16 @@ end
 --- Get a session with the specified configuration. If a session with this configuration
 --- (name + session_file + state_dir + tabnr) exists, update its other options and return it,
 --- otherwise create a new one.
----@generic T: continuity.SessionTarget
----@overload fun(name: string, opts: continuity.LoadOpts|continuity.SaveOpts, tabnr: nil): continuity.IdleSession<continuity.GlobalTarget>, TypeGuard<continuity.ActiveSession<T>>
----@overload fun(name: string, opts: continuity.LoadOpts|continuity.SaveOpts, tabnr: continuity.TabNr): continuity.IdleSession<continuity.TabTarget>, TypeGuard<continuity.ActiveSession<T>>
----@overload fun(name: string, opts: continuity.LoadOpts|continuity.SaveOpts, tabnr: nil): continuity.ActiveSession<continuity.GlobalTarget>, TypeGuard<continuity.ActiveSession<T>>
----@overload fun(name: string, opts: continuity.LoadOpts|continuity.SaveOpts, tabnr: continuity.TabNr): continuity.ActiveSession<continuity.TabTarget>, TypeGuard<continuity.ActiveSession<T>>
+---@generic T: SessionTarget
+---@overload fun(name: string, opts: LoadOpts|SaveOpts, tabnr: nil): IdleSession<GlobalTarget>, TypeGuard<ActiveSession<T>>
+---@overload fun(name: string, opts: LoadOpts|SaveOpts, tabnr: TabNr): IdleSession<TabTarget>, TypeGuard<ActiveSession<T>>
+---@overload fun(name: string, opts: LoadOpts|SaveOpts, tabnr: nil): ActiveSession<GlobalTarget>, TypeGuard<ActiveSession<T>>
+---@overload fun(name: string, opts: LoadOpts|SaveOpts, tabnr: TabNr): ActiveSession<TabTarget>, TypeGuard<ActiveSession<T>>
 ---@param name string
----@param opts continuity.LoadOpts|continuity.SaveOpts
----@param tabnr? continuity.TabNr
----@return continuity.IdleSession<T>|continuity.ActiveSession<T> session
----@return TypeGuard<continuity.ActiveSession<T>> attached
+---@param opts LoadOpts|SaveOpts
+---@param tabnr? TabNr
+---@return IdleSession<T>|ActiveSession<T> session
+---@return TypeGuard<ActiveSession<T>> attached
 local function get_session(name, opts, tabnr)
   local attached = Session.get_named(name)
   -- emmylua 0.13 seems to choke on these expressions
@@ -55,13 +57,13 @@ local function get_session(name, opts, tabnr)
 end
 
 --- Check if a session with this configuration is already attached and return it if so
----@generic T: continuity.SessionTarget
----@overload fun(name: string, opts: continuity.LoadOpts|continuity.SaveOpts, tabnr: nil): continuity.ActiveSession<continuity.GlobalTarget>?
----@overload fun(name: string, opts: continuity.LoadOpts|continuity.SaveOpts, tabnr: continuity.TabNr): continuity.ActiveSession<continuity.TabTarget>
+---@generic T: SessionTarget
+---@overload fun(name: string, opts: LoadOpts|SaveOpts, tabnr: nil): ActiveSession<GlobalTarget>?
+---@overload fun(name: string, opts: LoadOpts|SaveOpts, tabnr: TabNr): ActiveSession<TabTarget>
 ---@param name string
----@param opts continuity.LoadOpts|continuity.SaveOpts|continuity.DeleteOpts|continuity.DetachOpts
----@param tabnr? continuity.TabNr|boolean
----@return continuity.ActiveSession<T>?
+---@param opts LoadOpts|SaveOpts|DeleteOpts|DetachOpts
+---@param tabnr? TabNr|boolean
+---@return ActiveSession<T>?
 local function find_attached(name, opts, tabnr)
   local attached = Session.get_named(name)
   if not attached then
@@ -80,10 +82,10 @@ end
 
 --- Save the current global or tabpage state to a named session.
 ---@param name string The name of the session
----@param opts? continuity.SaveOpts
----@param target_tabpage? continuity.TabNr Instead of saving everything, only save the current tabpage
+---@param opts? SaveOpts
+---@param target_tabpage? TabNr Instead of saving everything, only save the current tabpage
 local function save(name, opts, target_tabpage)
-  ---@type continuity.SaveOpts
+  ---@type SaveOpts
   opts = vim.tbl_extend("keep", opts or {}, {
     notify = true,
     attach = true,
@@ -118,7 +120,7 @@ end
 
 --- Save the current global state to disk
 ---@param name? string Name of the session
----@param opts? continuity.SaveOpts
+---@param opts? SaveOpts
 function M.save(name, opts)
   name = name or get_save_name(false)
   if not name then
@@ -129,7 +131,7 @@ end
 
 --- Save the state of the current tabpage to disk
 ---@param name? string Name of the tabpage session. If not provided, will prompt user for session name
----@param opts? continuity.SaveOpts
+---@param opts? SaveOpts
 function M.save_tab(name, opts)
   name = name or get_save_name(true)
   if not name then
@@ -140,7 +142,7 @@ end
 
 M.save_all = Session.save_all
 
----@param opts? continuity.LoadOpts
+---@param opts? LoadOpts
 local function get_load_name(opts)
   local sessions = M.list({ dir = opts and opts.dir or nil })
   if vim.tbl_isempty(sessions) then
@@ -179,7 +181,7 @@ end
 
 --- Load a session
 ---@param name? string
----@param opts? continuity.LoadOpts
+---@param opts? LoadOpts
 ---    attach? boolean Stay attached to session after loading (default true)
 ---    reset? boolean|"auto" Close everything before loading the session (default "auto")
 ---    silence_errors? boolean Don't error when trying to load a missing session
@@ -241,7 +243,7 @@ end
 M.detach = Session.detach
 
 --- List all available saved sessions
----@param opts? resession.ListOpts
+---@param opts? ListOpts
 ---@return string[]
 function M.list(opts)
   opts = opts or {}
@@ -273,7 +275,7 @@ end
 
 --- Delete a saved session
 ---@param name? string Name of the session. If not provided, prompt for session to delete
----@param opts? continuity.DeleteOpts
+---@param opts? DeleteOpts
 function M.delete(name, opts)
   opts = opts or {}
   name = name or get_delete_name(opts)

@@ -1,13 +1,18 @@
+---@class continuity.core.ext
+local M = {}
+
+---@namespace continuity
+
 local Config = require("continuity.config")
 
 local hooks = setmetatable({
-  ---@type continuity.LoadHook[]
+  ---@type LoadHook[]
   pre_load = {},
-  ---@type continuity.LoadHook[]
+  ---@type LoadHook[]
   post_load = {},
-  ---@type continuity.SaveHook[]
+  ---@type SaveHook[]
   pre_save = {},
-  ---@type continuity.SaveHook[]
+  ---@type SaveHook[]
   post_save = {},
 }, {
   __index = function(_, key)
@@ -20,16 +25,13 @@ local hooks = setmetatable({
 -- Therefore, we just trigger a general saved/loaded on post hooks.
 -- We could make pre/post meaningful by scheduling after the autocmds were triggered,
 -- but this could break session loading (especially).
----@type table<resession.Hook, string>
+---@type table<Hook, string>
 local hook_to_event = {
   post_load = "ContinuityLoaded",
   post_save = "ContinuitySaved",
 }
 
 local has_setup = false
-
----@class continuity.core.ext
-local M = {}
 
 --- Trigger a `User` event
 ---@param name string The event name to be emitted
@@ -55,15 +57,15 @@ function M.setup()
 end
 
 --- Add a callback that runs at a specific time
----@param name resession.Hook
----@param callback continuity.LoadHook|continuity.SaveHook
+---@param name Hook
+---@param callback LoadHook|SaveHook
 function M.add_hook(name, callback)
   hooks[name][#hooks[name] + 1] = callback
 end
 
 --- Remove a hook callback
----@param name resession.Hook
----@param callback continuity.LoadHook|continuity.SaveHook
+---@param name Hook
+---@param callback LoadHook|SaveHook
 function M.remove_hook(name, callback)
   local cbs = hooks[name]
   for i, cb in ipairs(cbs) do
@@ -95,24 +97,24 @@ function M.load_extension(name, opts)
   end
 end
 
----@type table<string, continuity.Extension?>
+---@type table<string, Extension?>
 local ext_cache = {}
 
 --- Attempt to load an extension.
 ---@param name string The name of the extension to fetch.
----@return continuity.Extension?
+---@return Extension?
 function M.get(name)
   if ext_cache[name] then
     return ext_cache[name]
   end
   local has_ext, ext = pcall(require, string.format("resession.extensions.%s", name))
   if has_ext then
-    ---@cast ext continuity.Extension
+    ---@cast ext Extension
     if ext.config then
       local ok, err = pcall(ext.config, Config.extensions[name])
       if not ok then
         vim.notify_once(
-          string.format('Error configuring resession extension "%s": %s', name, err),
+          string.format('Error configuring continuity extension "%s": %s', name, err),
           vim.log.levels.ERROR
         )
         return
@@ -132,7 +134,7 @@ function M.get(name)
 end
 
 --- Call registered hooks for `name`.
----@param name resession.Hook The specific hook to dispatch
+---@param name Hook The specific hook to dispatch
 ---@param ... any Arguments to pass to registered callbacks
 function M.dispatch(name, ...)
   for _, cb in ipairs(hooks[name]) do

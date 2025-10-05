@@ -1,83 +1,91 @@
----This is the user config, which can be a partial one.
----@class continuity.UserConfig
----@field autosession? continuity.UserConfig.autosession Influence autosession behavior
----@field extensions? table<string,any> Configuration for extensions
----@field load? continuity.UserConfig.load Configure load list contents
----@field log? continuity.UserConfig.log Configuration for plenary.log
----@field session? continuity.UserConfig.session Influence session behavior and contents
+---@class continuity.config: continuity.Config
+local M = {}
 
----@class continuity.UserConfig.autosession
----@field config? continuity.SessionOpts Save/load configuration for autosessions
+---@namespace continuity
+
+-- This is the user config, which can be a partial one.
+
+--- User configuration for this plugin.
+---@class UserConfig
+---@field autosession? UserConfig.autosession Influence autosession behavior and contents
+---@field extensions? table<string,any> Configuration for extensions, both Resession ones and those specific to Continuity
+---@field load? UserConfig.load Configure session list information detail and sort order
+---@field log? UserConfig.log Configure plugin logging
+---@field session? UserConfig.session Influence session behavior and contents
+
+--- Configure autosession behavior and contents
+---@class UserConfig.autosession
+---@field config? SessionOpts Save/load configuration for autosessions
 ---@field dir? string The name of the directory to store autosessions in
 ---@field workspace? fun(cwd: string): [string, boolean] A function that receives the effective nvim cwd and returns the workspace root dir and whether it's a git-tracked dir
----@field project_name? fun(workspace: string, git_info: continuity.GitInfo?): string A function that receives the workspace root dir and whether it's git-tracked and returns the project-specific session directory name.
----@field session_name? fun(meta: {cwd: string, workspace: string, project_name: string, git_info: continuity.GitInfo?}): string A function that receives the effective nvim cwd, the workspace root, the project name and cwd git info and generates a session name.
+---@field project_name? fun(workspace: string, git_info: GitInfo?): string A function that receives the workspace root dir and whether it's git-tracked and returns the project-specific session directory name.
+---@field session_name? fun(meta: {cwd: string, workspace: string, project_name: string, git_info: GitInfo?}): string A function that receives the effective nvim cwd, the workspace root, the project name and cwd git info and generates a session name.
 ---@field enabled? fun(meta: {cwd: string, workspace: string, project_name: string, session_name: string}): boolean A function that receives the effective nvim cwd, the workspace root and project name and decides whether a session should be started automatically.
----@field load_opts? fun(meta: {cwd: string, workspace: string, project_name: string, session_name: string}): continuity.LoadOpts? A function that can influence how an autosession is loaded/persisted, e.g. load the session without attaching it or disabling modified persistence.
+---@field load_opts? fun(meta: {cwd: string, workspace: string, project_name: string, session_name: string}): LoadOpts? A function that can influence how an autosession is loaded/persisted, e.g. load the session without attaching it or disabling modified persistence.
 
----@class continuity.UserConfig.load
+--- Configure session list information detail and sort order
+---@class UserConfig.load
 ---@field detail? boolean Show more detail about the sessions when selecting one to load. Disable if it causes lag.
 ---@field order? "modification_time"|"creation_time"|"filename" Session list order
 
----@class continuity.UserConfig.log
+--- Configure plugin logging
+---@class UserConfig.log
 ---@field level? "trace"|"debug"|"info"|"warn"|"error"|"fatal" The minimum level to log for
 ---@field use_console? "async"|"sync"|false Print logs to neovim console. Defaults to async.
 ---@field use_file? boolean Print logs to logfile. Defaults to true.
 
----@class continuity.UserConfig.session: continuity.SessionOpts
+--- Configure default session behavior and contents, affects both manual and autosessions.
+---@class UserConfig.session: SessionOpts
 ---@field dir? string The name of the directory to store regular sessions in
 
 -- Until https://github.com/EmmyLuaLs/emmylua-analyzer-rust/issues/328 is resolved:
 -- NOTE: Keep in sync with above
 
----@class continuity.Config
----@field autosession continuity.Config.autosession Influence autosession behavior
+---@class Config
+---@field autosession Config.autosession Influence autosession behavior
 ---@field extensions table<string,any> Configuration for extensions
----@field load continuity.Config.load Configure load list contents
----@field log continuity.Config.log Configuration for plenary.log
----@field session continuity.Config.session Influence session behavior and contents
+---@field load Config.load Configure load list contents
+---@field log Config.log Configuration for plenary.log
+---@field session Config.session Influence session behavior and contents
 
----@class continuity.Config.autosession
----@field config continuity.SessionOpts
+---@class Config.autosession
+---@field config SessionOpts
 ---@field dir string
 ---@field workspace fun(cwd: string): string, boolean
----@field project_name fun(workspace: string, git_info: continuity.GitInfo?): string
----@field session_name fun(meta: {cwd: string, workspace: string, project_name: string, git_info: continuity.GitInfo?}): string
----@field enabled fun(meta: {cwd: string, workspace: string, project_name: string, session_name: string, git_info: continuity.GitInfo?}): boolean
----@field load_opts fun(meta: {cwd: string, workspace: string, project_name: string, session_name: string, git_info: continuity.GitInfo?}): continuity.LoadOpts?
+---@field project_name fun(workspace: string, git_info: GitInfo?): string
+---@field session_name fun(meta: {cwd: string, workspace: string, project_name: string, git_info: GitInfo?}): string
+---@field enabled fun(meta: {cwd: string, workspace: string, project_name: string, session_name: string, git_info: GitInfo?}): boolean
+---@field load_opts fun(meta: {cwd: string, workspace: string, project_name: string, session_name: string, git_info: GitInfo?}): LoadOpts?
 
----@class continuity.Config.load
+---@class Config.load
 ---@field detail boolean
 ---@field order "modification_time"|"creation_time"|"filename"
 
----@class continuity.Config.log
+---@class Config.log
 ---@field level "trace"|"debug"|"info"|"warn"|"error"|"fatal"
 ---@field use_console "async"|"sync"|false
 ---@field use_file boolean
 
----@class continuity.Config.session
+---@class Config.session
 ---@field dir string
 ---@field options string[]
----@field buf_filter fun(bufnr: integer, opts: continuity.SnapshotOpts): boolean
----@field tab_buf_filter fun(tabpage: integer, bufnr: integer, opts: continuity.SnapshotOpts): boolean
+---@field buf_filter fun(bufnr: integer, opts: SnapshotOpts): boolean
+---@field tab_buf_filter fun(tabpage: integer, bufnr: integer, opts: SnapshotOpts): boolean
 ---@field modified boolean|"auto"
 ---@field autosave_enabled boolean
 ---@field autosave_interval integer
 ---@field autosave_notify boolean
----@field on_attach? continuity.AttachHook
----@field on_detach? continuity.DetachHook
+---@field on_attach? AttachHook
+---@field on_detach? DetachHook
 
 local util = require("continuity.util")
-
----@class continuity.config: continuity.Config
-local M = {}
 
 --- The default `config.session.buf_filter`. It allows the following buffers to be included in the session:
 --- * all `help` buffers
 --- * all **listed** buffers that correspond to a file (regular and `acwrite` type buffers with a name)
 --- * when saving buffer modifications with `modified`, also **listed** unnamed buffers
 ---@param bufnr integer
----@param opts continuity.SnapshotOpts
+---@param opts SnapshotOpts
 ---@return boolean
 local function default_buf_filter(bufnr, opts)
   local buftype = vim.bo[bufnr].buftype
@@ -94,7 +102,7 @@ local function default_buf_filter(bufnr, opts)
   return vim.bo[bufnr].buflisted
 end
 
----@type continuity.Config
+---@type Config
 local defaults = {
   autosession = {
     config = {
@@ -155,7 +163,7 @@ local defaults = {
 
 --- Read configuration overrides from `vim.g.continuity_config` and
 --- (re)initialize all modules that need initialization.
----@param config? continuity.UserConfig Default config overrides. This table is merged on top of `vim.g.continuity_config`, which is itself merged on top of the default config.
+---@param config? UserConfig Default config overrides. This table is merged on top of `vim.g.continuity_config`, which is itself merged on top of the default config.
 function M.setup(config)
   ---@diagnostic disable-next-line: param-type-not-match
   local new = vim.tbl_deep_extend("force", defaults, vim.g.continuity_config or {}, config or {})

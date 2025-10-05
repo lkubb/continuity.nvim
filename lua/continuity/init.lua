@@ -38,8 +38,13 @@ local last_head
 ---@type integer?
 local monitor_group
 
+---@class continuity
+local M = {}
+
+---@namespace continuity
+
 --- Return the autosession context if there is an attached session and it's an autosession.
----@return continuity.AutosessionConfig?
+---@return AutosessionConfig?
 local function current_autosession()
   local cur = Session.get_global()
   if not cur or not cur.meta or not cur.meta.autosession then
@@ -48,19 +53,16 @@ local function current_autosession()
   return cur.meta.autosession
 end
 
----@class continuity.ActiveAutosession<T: continuity.SessionTarget>: continuity.ActiveSession<T>
----@field meta {autosession: continuity.AutosessionConfig}
-
----@generic T: continuity.SessionTarget
----@param session continuity.ActiveSession<T>
----@return TypeGuard<continuity.ActiveAutosession<T>>
+---@generic T: SessionTarget
+---@param session ActiveSession<T>
+---@return TypeGuard<ActiveAutosession<T>>
 local function is_autosession(session)
   return not not (session.meta and session.meta.autosession)
 end
 
 --- Merge save/load opts for passing into core funcs.
----@generic T: (continuity.SaveOpts|continuity.LoadOpts)?
----@param cur continuity.ActiveAutosession|continuity.AutosessionConfig Autosession to operate on
+---@generic T: (SaveOpts|LoadOpts)?
+---@param cur ActiveAutosession|AutosessionConfig Autosession to operate on
 ---@param defaults? table<string, any> Call-specific defaults
 ---@param opts? T Opts passed to the function
 ---@param forced? table<string, any> Call-specific forced params
@@ -81,7 +83,7 @@ end
 ---Renders autosession metadata for a specific directory.
 ---Returns nil when autosessions are disabled for this directory.
 ---@param cwd string The working directory the autosession should be rendered for.
----@return continuity.AutosessionConfig?
+---@return AutosessionConfig?
 local function render_autosession_context(cwd)
   local workspace, is_git = Config.autosession.workspace(cwd)
   -- normalize workspace dir, ensure trailing /
@@ -128,14 +130,11 @@ local function render_autosession_context(cwd)
   }
 end
 
----@type fun(autosession: continuity.AutosessionConfig?)
+---@type fun(autosession: AutosessionConfig?)
 local monitor
 
----@class continuity
-local M = {}
-
 ---Save the currently active autosession.
----@param opts? continuity.SaveOpts Parameters for continuity.core.save
+---@param opts? SaveOpts Parameters for continuity.core.save
 function M.save(opts)
   local cur = Session.get_global()
   if not cur or not is_autosession(cur) then
@@ -153,7 +152,7 @@ end
 
 --- Detach from the currently active autosession.
 --- If autosave is enabled, save it. Optionally closes everything.
----@param opts? continuity.DetachOpts Parameters for continuity.core.detach
+---@param opts? DetachOpts Parameters for continuity.core.detach
 function M.detach(opts)
   local cur = Session.get_global()
   if not cur or not is_autosession(cur) then
@@ -163,8 +162,8 @@ function M.detach(opts)
 end
 
 ---Load an autosession.
----@param autosession? continuity.AutosessionConfig|string The autosession table as rendered by render_autosession_context
----@param opts? continuity.LoadOpts Parameters for continuity.core.load.
+---@param autosession? AutosessionConfig|string The autosession table as rendered by render_autosession_context or cwd to pass to it
+---@param opts? LoadOpts Parameters for continuity.core.load.
 function M.load(autosession, opts)
   if type(autosession) == "string" then
     autosession = render_autosession_context(autosession)
@@ -241,7 +240,7 @@ function M.reload()
   if not cur or not is_autosession(cur) then
     cur = nil
   end
-  ---@cast cur continuity.ActiveAutosession?
+  ---@cast cur ActiveAutosession?
   if not autosession then
     if cur then
       log.fmt_trace("Reload check result: New context disables active autosession")
@@ -279,12 +278,10 @@ local function stop_monitoring()
   -- TODO: Should we remove buffer-local variables like _continuity_needs_restore?
 end
 
----Load the continuity extension for resession and create hooks that:
----1. When resession loads another session, try to detach/save an active autosession.
----2. When neovim exits, save an active autosession.
----3. When the session is associated with a git repo and gitsigns is available, save/detach/reload active autosession on branch changes.
----4. When the global CWD changes, save/detach/reload active autosession.
----@param autosession? continuity.AutosessionConfig The active autosession that should be monitored
+-- Create hooks that:
+---1. When the session is associated with a git repo and gitsigns is available, save/detach/reload active autosession on branch changes.
+---2. When the global CWD changes, save/detach/reload active autosession.
+---@param autosession? AutosessionConfig The active autosession that should be monitored
 function monitor(autosession)
   monitor_group = vim.api.nvim_create_augroup("ContinuityHooks", { clear = true })
 
@@ -386,7 +383,7 @@ function monitor(autosession)
         -- if we're in the process of loading one
         return
       end
-      ---@cast cur continuity.ActiveAutosession
+      ---@cast cur ActiveAutosession
       ---@diagnostic disable-next-line: undefined-field
       local lookahead = render_autosession_context(vim.v.event.directory)
       if
@@ -401,7 +398,7 @@ function monitor(autosession)
         )
         -- We're going to switch/disable the active autosession.
         -- Ensure we detach before the global cwd is changed, otherwise
-        -- Resession saves the new one in the current session instead.
+        -- we would override the current session's intended cwd with the new one.
         cur:detach("auto_dirchange", { reset = true })
       end
     end,
@@ -423,7 +420,7 @@ end
 ---1. If the current working directory has an associated project and session, closes everything and loads that session.
 ---2. In any case, start monitoring for directory or branch changes.
 ---@param cwd? string The working directory to switch to before starting autosession. Defaults to nvim's process' cwd.
----@param opts? continuity.LoadOpts Parameters for continuity.core.load. silence_errors is forced to true.
+---@param opts? LoadOpts Parameters for continuity.core.load. silence_errors is forced to true.
 function M.start(cwd, opts)
   M.load(cwd or util.auto.cwd(), opts)
 end
@@ -437,7 +434,7 @@ function M.stop()
 end
 
 ---Reset the currently active autosession. Closes everything.
----@param opts? continuity.ResetOpts Options to influence execution (TODO docs)
+---@param opts? ResetOpts Options to influence execution (TODO docs)
 function M.reset(opts)
   local cur = Session.get_global()
   if not cur or not is_autosession(cur) then
@@ -496,7 +493,7 @@ function M.list(opts)
   if not opts.cwd then
     local cur = Session.get_global()
     if cur and is_autosession(cur) then
-      ---@cast cur continuity.ActiveAutosession
+      ---@cast cur ActiveAutosession
       session_dir = cur.meta.autosession.project.data_dir
     end
   end
@@ -632,25 +629,21 @@ function M.migrate_projects()
   return ret
 end
 
----@class continuity.ActiveAutosessionInfo: continuity.ActiveSessionInfo
----@field is_autosession boolean
----@field autosession_config? continuity.AutosessionConfig
----@field autosession_data? continuity.Snapshot
-
----Return information about the currently active autosession.
+--- Return information about the currently active session.
+--- Includes autosession information, if it is an autosession.
 ---@param opts {with_snapshot?: boolean}?
----@return {is_autosession: boolean, autosession_config: continuity.AutosessionConfig?, autosession_data?: table}
+---@return ActiveAutosessionInfo?
 function M.info(opts)
   local cur = Session.get_global()
   if not cur then
-    return { is_autosession = false }
+    return
   end
   opts = opts or {}
   local core_info = cur:info()
   local is_auto = false
   local autosession_config, autosession_data
   if cur and is_autosession(cur) then
-    ---@cast cur continuity.ActiveAutosession
+    ---@cast cur ActiveAutosession
     is_auto = true
     autosession_config = cur.meta.autosession
     autosession_data = opts.with_snapshot
@@ -658,7 +651,7 @@ function M.info(opts)
         util.path.get_session_file(cur.name, autosession_config.project.data_dir)
       )
   end
-  ---@type continuity.ActiveAutosessionInfo
+  ---@type ActiveAutosessionInfo
   local res = vim.tbl_extend("error", core_info, {
     is_autosession = is_auto,
     autosession_config = autosession_config,
@@ -675,7 +668,7 @@ end
 --- meaning successive writes to the global variable do not build on top of each other.
 --- If you need to force application of the passed config eagerly, pass it
 --- to `continuity.config.setup` instead, which parses and applies the configuration immediately.
----@param opts? continuity.UserConfig
+---@param opts? UserConfig
 function M.setup(opts)
   vim.g.continuity_config = opts
 end
