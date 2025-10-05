@@ -1,9 +1,12 @@
+-- This module defines a similar interface to resession, which allows manual
+-- and interactive session management.
+
 local Config = require("continuity.config")
 local Session = require("continuity.core.session")
 local util = require("continuity.util")
 
 --- Interactive API, compatible with stevearc/resession.nvim.
----@class continuity.core
+---@class continuity.session
 local M = {}
 
 ---@namespace continuity

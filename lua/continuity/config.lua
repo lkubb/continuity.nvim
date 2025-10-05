@@ -174,8 +174,7 @@ function M.setup(config)
 
   vim.g.continuity_config = nil
 
-  -- TODO: This should be session-specific config
-  require("continuity.core").setup()
+  require("continuity.session").setup()
   require("continuity.core.ext").setup()
 end
 

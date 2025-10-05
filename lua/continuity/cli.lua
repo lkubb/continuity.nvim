@@ -1,9 +1,9 @@
 ---@class continuity.cli
 local M = {}
 
-local Continuity = require("continuity")
+local Continuity = require("continuity.auto")
 
----@type {[keyof continuity]: {func: function, args?: {complete: string[]|function}[], kwargs?: table<string, string[]|function>}}
+---@type {[keyof continuity.auto]: {func: function, args?: {complete: string[]|function}[], kwargs?: table<string, string[]|function>}}
 local funcs = {
   detach = {
     func = Continuity.detach,

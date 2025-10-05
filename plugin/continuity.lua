@@ -67,7 +67,7 @@ if vim.g.continuity_autosession then
       if startup_cwd == false then
         return
       end
-      require("continuity").load(startup_cwd)
+      require("continuity.auto").load(startup_cwd)
     end,
     group = init_group,
     once = true,
