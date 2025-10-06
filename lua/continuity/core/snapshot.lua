@@ -115,20 +115,19 @@ local function create(target_tabpage, opts)
       if not skip_set_current then
         vim.api.nvim_set_current_tabpage(tabpage)
       end
-      ---@type Snapshot.TabData
-      local tab = {}
       local tabnr = vim.api.nvim_tabpage_get_number(tabpage)
-      if target_tabpage or vim.fn.haslocaldir(-1, tabnr) == 1 then
-        tab.cwd = vim.fn.getcwd(-1, tabnr)
-      end
-      tab.options = util.opts.get_tab(tabpage, opts.options or Config.session.options)
       local winlayout = vim.fn.winlayout(tabnr)
-      tab.wins = require("continuity.core.layout").add_win_info_to_layout(
-        tabnr,
-        winlayout,
-        current_win,
-        opts
-      ) or {}
+      ---@type Snapshot.TabData
+      local tab = {
+        cwd = (target_tabpage or vim.fn.haslocaldir(-1, tabnr) == 1) and vim.fn.getcwd(-1, tabnr),
+        options = util.opts.get_tab(tabpage, opts.options or Config.session.options),
+        wins = require("continuity.core.layout").add_win_info_to_layout(
+          tabnr,
+          winlayout,
+          current_win,
+          opts
+        ) or {},
+      }
       data.tabs[#data.tabs + 1] = tab
     end
     if not skip_set_current then
@@ -218,29 +217,6 @@ function M.save_as(name, opts, target_tabpage, session_file, state_dir)
   return snapshot, included_bufs
 end
 
---- Call extensions that implement on_post_bufinit, which is triggered
---- directly after buffers were initialized, before all of them were re-:edited.
---- Extracted from the loading logic to keep DRY.
----@generic GlobalExtData, WinExtData
----@param data table
----@param visible_only bool
-local function dispatch_post_bufinit(data, visible_only)
-  for ext_name in pairs(Config.extensions) do
-    if data[ext_name] then
-      local extmod = Ext.get(ext_name)
-      if extmod and extmod.on_post_bufinit then
-        local ok, err = pcall(extmod.on_post_bufinit, data[ext_name], visible_only)
-        if not ok then
-          vim.notify(
-            string.format("[continuity] Extension %s on_post_bufinit error: %s", ext_name, err),
-            vim.log.levels.ERROR
-          )
-        end
-      end
-    end
-  end
-end
-
 ---@param snapshot Snapshot
 ---@param opts snapshot.RestoreOpts
 function M.restore(snapshot, opts)
@@ -265,14 +241,13 @@ function M.restore(snapshot, opts)
   end
 
   if not opts.modified and snapshot.modified then
-    ---@type Snapshot
     local shallow_snapshot_copy = {}
     for key, val in pairs(snapshot) do
       if key ~= "modified" then
-        ---@diagnostic disable-next-line: assign-type-mismatch
         shallow_snapshot_copy[key] = val
       end
     end
+    ---@cast shallow_snapshot_copy Snapshot
     snapshot = shallow_snapshot_copy
   end
 
@@ -289,20 +264,7 @@ function M.restore(snapshot, opts)
       util.opts.restore_global(snapshot.global.options)
     end
 
-    for ext_name in pairs(Config.extensions) do
-      if snapshot[ext_name] then
-        local extmod = Ext.get(ext_name)
-        if extmod and extmod.on_pre_load then
-          local ok, err = pcall(extmod.on_pre_load, snapshot[ext_name])
-          if not ok then
-            vim.notify(
-              string.format("[continuity] Extension %s on_pre_load error: %s", ext_name, err),
-              vim.log.levels.ERROR
-            )
-          end
-        end
-      end
-    end
+    Ext.call("on_pre_load", snapshot)
 
     local scale = {
       vim.o.columns / snapshot.global.width,
@@ -324,7 +286,7 @@ function M.restore(snapshot, opts)
       -- restoration of unsaved changes is now included here.
     end
 
-    dispatch_post_bufinit(snapshot, true)
+    Ext.call("on_post_bufinit", snapshot, true)
 
     -- Ensure the cwd is set correctly for each loaded buffer
     if not snapshot.tab_scoped then
@@ -366,20 +328,7 @@ function M.restore(snapshot, opts)
       vim.cmd("buffer " .. last_bufnr)
     end
 
-    for ext_name in pairs(Config.extensions) do
-      if snapshot[ext_name] then
-        local extmod = Ext.get(ext_name)
-        if extmod and extmod.on_post_load then
-          local ok, err = pcall(extmod.on_post_load, snapshot[ext_name])
-          if not ok then
-            vim.notify(
-              string.format('[continuity] Extension "%s" on_post_load error: %s', ext_name, err),
-              vim.log.levels.ERROR
-            )
-          end
-        end
-      end
-    end
+    Ext.call("on_post_load", snapshot)
   end)
 
   -- Trigger the BufEnter event manually for the current buffer.
@@ -392,7 +341,6 @@ function M.restore(snapshot, opts)
     if restore_triggered then
       return
     end
-    ---@diagnostic disable-next-line: unused
     restore_triggered = true
     log.debug("Restoring invisible buffers")
     -- Don't trigger autocmds during buffer load (shouldn't be necessary since this autocmd is not nested)
@@ -401,7 +349,7 @@ function M.restore(snapshot, opts)
       for _, buf in ipairs(buffers_later) do
         Buf.restore(buf, snapshot, opts.state_dir)
       end
-      dispatch_post_bufinit(snapshot, false)
+      Ext.call("on_post_bufinit", snapshot, false)
     end)
     log.debug("Finished loading session")
     _is_loading = false

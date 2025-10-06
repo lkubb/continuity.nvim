@@ -68,7 +68,7 @@ function Session.new(name, session_file, state_dir, opts, tabnr, needs_restore)
     autosave_interval = opts.autosave_interval or Config.session.autosave_interval,
     autosave_notify = opts.autosave_notify,
     meta = opts.meta,
-    -- SnapshotOpts part
+    -- snapshot.CreateOpts part
     modified = opts.modified,
     -- These can be defined even when loading to be able to configure autosave settings.
     -- They currently don't affect loading though.
@@ -114,11 +114,24 @@ function Session.from_snapshot(name, session_file, state_dir, opts)
   if not snapshot then
     return
   end
+  ---@type Session.InitOptsWithMeta
+  local session_opts = {
+    autosave_enabled = opts.autosave_enabled,
+    autosave_interval = opts.autosave_interval,
+    autosave_notify = opts.autosave_notify,
+    on_attach = opts.on_attach,
+    on_detach = opts.on_detach,
+    buf_filter = opts.buf_filter,
+    modified = opts.modified,
+    options = opts.options,
+    tab_buf_filter = opts.tab_buf_filter,
+    meta = opts.meta,
+  }
   -- `snapshot.tab_scoped or nil` tripped up emmylua
   if snapshot.tab_scoped then
-    return Session.new(name, session_file, state_dir, opts, true, true), snapshot
+    return Session.new(name, session_file, state_dir, session_opts, true, true), snapshot
   end
-  return Session.new(name, session_file, state_dir, opts, nil, true), snapshot
+  return Session.new(name, session_file, state_dir, session_opts, nil, true), snapshot
 end
 
 function Session:add_hook(event, hook)
@@ -209,12 +222,12 @@ function Session:opts()
     options = self.options,
     buf_filter = self.buf_filter,
     tab_buf_filter = self.tab_buf_filter,
-    -- Information for pre_save/post_save hooks
-    -- 1. Session handling info
+    -- Information for hooks
+    --   1. Session handling info
     autosave_enabled = self.autosave_enabled,
     autosave_interval = self.autosave_interval,
     autosave_notify = self.autosave_notify,
-    -- 2. Metadata
+    --   2. Metadata
     meta = self.meta,
     session_file = self.session_file,
     state_dir = self.state_dir,
@@ -599,13 +612,12 @@ end
 
 ---@return ActiveSession<Session.GlobalTarget>?
 function M.get_global()
-  ---@diagnostic disable-next-line: return-type-mismatch
   return current_session
       and assert(
         sessions[current_session] and sessions[current_session].tabnr == nil,
         "Current global session unknown or points to tab, this is likely a bug"
       )
-      and sessions[current_session]
+      and sessions[current_session] --[[@as ActiveSession<Session.GlobalTarget>]]
     or nil
 end
 

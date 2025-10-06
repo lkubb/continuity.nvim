@@ -53,7 +53,7 @@
 ---@class AutosessionSpec.ProjectInfo
 ---@field data_dir string The path of the directory that is used to save autosession data related to this project
 ---@field name string The name of the project
----@field repo GitInfo? When the project is defined as a git repository, meta info
+---@field repo AutosessionSpec.GitInfo? When the project is defined as a git repository, meta info
 
 ---@class AutosessionSpec.GitInfo
 ---@field commongitdir string The common git dir, usually equal to gitdir, unless the worktree is not the default workdir (e.g. in worktree checkuots of bare repos). Then it's the actual repo root and gitdir is <git_common_dir>/worktrees/<worktree_name>

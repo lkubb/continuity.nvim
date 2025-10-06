@@ -1,6 +1,6 @@
 -- If folke/lazy.nvim is in use, we need to know when it
 -- finishes setup to be able to properly restore buffers.
----@diagnostic disable-next-line: unnecessary-if
+---@cast vim.g.lazy_did_setup boolean?
 if vim.g.lazy_did_setup then
   vim.api.nvim_create_autocmd("User", {
     pattern = "VeryLazy",
@@ -23,7 +23,7 @@ end, {
   end,
 })
 
----@type continuity.InitHandler|boolean
+---@type continuity.auto.InitHandler|boolean
 vim.g.continuity_autosession = vim.g.continuity_autosession or false
 
 if vim.g.continuity_autosession then
@@ -45,7 +45,7 @@ if vim.g.continuity_autosession then
   -- session management hooks.
   vim.api.nvim_create_autocmd("VimEnter", {
     callback = function()
-      ---@type continuity.InitHandler
+      ---@type continuity.auto.InitHandler
       local get_cwd
       if type(vim.g.continuity_autosession) == "function" then
         get_cwd = vim.g.continuity_autosession

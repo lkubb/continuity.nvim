@@ -1,6 +1,9 @@
 ---@class continuity.core.ext
 local M = {}
 
+---@type continuity.log
+local log
+
 ---@namespace continuity.core.ext
 ---@using continuity.core
 
@@ -53,7 +56,7 @@ function M.setup()
       event(hook_to_event[hook])
     end)
   end
-  ---@diagnostic disable-next-line: unused
+  log = require("continuity.log")
   has_setup = true
 end
 
@@ -109,29 +112,29 @@ function M.get(name)
     return ext_cache[name]
   end
   local has_ext, ext = pcall(require, string.format("resession.extensions.%s", name))
-  if has_ext then
-    ---@cast ext Extension
-    if ext.config then
-      local ok, err = pcall(ext.config, Config.extensions[name])
-      if not ok then
-        vim.notify_once(
-          string.format('Error configuring continuity extension "%s": %s', name, err),
-          vim.log.levels.ERROR
-        )
-        return
-      end
-    end
-    ---@diagnostic disable-next-line: undefined-field
-    if ext.on_load then
-      -- TODO maybe add some deprecation notice in the future
-      ---@diagnostic disable-next-line: undefined-field
-      ext.on_post_load = ext.on_load
-    end
-    ext_cache[name] = ext
-    return ext
-  else
+  if not has_ext then
     vim.notify_once(string.format('[continuity] Missing extension "%s"', name), vim.log.levels.WARN)
+    return
   end
+  ---@cast ext Extension
+  if ext.config then
+    local ok, err = pcall(ext.config, Config.extensions[name])
+    if not ok then
+      vim.notify_once(
+        string.format('Error configuring continuity extension "%s": %s', name, err),
+        vim.log.levels.ERROR
+      )
+      return
+    end
+  end
+  ---@diagnostic disable-next-line: undefined-field
+  if ext.on_load then
+    -- TODO maybe add some deprecation notice in the future
+    ---@diagnostic disable-next-line: undefined-field
+    ext.on_post_load = ext.on_load
+  end
+  ext_cache[name] = ext
+  return ext
 end
 
 --- Call registered hooks for `name`.
@@ -143,6 +146,38 @@ end
 function M.dispatch(name, session_name, opts, target_tabnr)
   for _, cb in ipairs(hooks[name]) do
     cb(session_name, opts, target_tabnr)
+  end
+end
+
+--- Call extension funcs that don't need special handling/don't return a value
+---@overload fun(stage_name: "on_pre_load", snapshot: Snapshot)
+---@overload fun(stage_name: "on_post_load", snapshot: Snapshot)
+---@overload fun(stage_name: "on_post_bufinit", snapshot: Snapshot, visible_only: boolean)
+---@overload fun(stage_name: "on_buf_load", snapshot: Snapshot, bufnr: BufNr)
+---@generic T
+---@param stage_name "on_pre_load"|"on_post_load"|"on_post_bufinit"|"on_buf_load"
+---@param snapshot Snapshot
+---@param ... T...
+function M.call(stage_name, snapshot, ...)
+  for ext_name in pairs(Config.extensions) do
+    if snapshot[ext_name] then
+      local extmod = M.get(ext_name)
+      if extmod and extmod[stage_name] then
+        log.fmt_trace(
+          "Calling extension %s.%s with data %s",
+          ext_name,
+          stage_name,
+          snapshot[ext_name]
+        )
+        local ok, err = pcall(extmod[stage_name], snapshot[ext_name], ...)
+        if not ok then
+          vim.notify(
+            string.format("[continuity] Extension %s %s error: %s", ext_name, stage_name, err),
+            vim.log.levels.ERROR
+          )
+        end
+      end
+    end
   end
 end
 

@@ -27,7 +27,7 @@
 --- the autosession behavior was implemented as an extension instead of a separate interface.
 ---@class Extension: resession.Extension
 ---@field on_post_bufinit? fun(data: any, visible_only: boolean) Called after **visible** buffers were loaded. Receives data from `on_save`. Note that invisible buffers are not loaded at all yet and visible buffers may not have been entered, which is necessary for a complete, functional restoration.
----@field on_buf_load? fun(buffer: integer, data: any) Called when a restored buffer is entered, during the final restoration of the buffer to make it functional. Receives the relevant buffer number and the data returned by `on_save`.
+---@field on_buf_load? fun(data: any, buffer: integer) Called when a restored buffer is entered, during the final restoration of the buffer to make it functional. Receives the relevant buffer number and the data returned by `on_save`.
 
 --- Hooks are functions that a **user** can register to subscribe to Continuity's internal events.
 --- They are separate from extensions (completely) or `User` autocmds (relatively).

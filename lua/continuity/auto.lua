@@ -44,21 +44,24 @@ local M = {}
 ---@namespace continuity.auto
 ---@using continuity.core
 
---- Return the autosession context if there is an attached session and it's an autosession.
----@return AutosessionConfig?
-local function current_autosession()
-  local cur = Session.get_global()
-  if not cur or not cur.meta or not cur.meta.autosession then
-    return
-  end
-  return cur.meta.autosession
-end
-
 ---@generic T: Session.Target
 ---@param session ActiveSession<T>
 ---@return TypeGuard<ActiveAutosession<T>>
 local function is_autosession(session)
   return not not (session.meta and session.meta.autosession)
+end
+
+--- Return the autosession context if there is an attached session and it's an autosession.
+---@generic T: Session.Target
+---@return ActiveAutosession<T>?
+---@return AutosessionConfig?
+local function current_autosession()
+  local cur = Session.get_global()
+  if not cur or not is_autosession(cur) then
+    return
+  end
+  ---@cast cur.meta -nil
+  return cur, cur.meta.autosession
 end
 
 --- Merge save/load opts for passing into core funcs.
@@ -112,7 +115,8 @@ local function render_autosession_context(cwd)
     return nil
   end
   local project_dir = util.auto.hash(project_name)
-  return {
+  ---@type continuity.auto.AutosessionSpec
+  local ret = {
     cwd = cwd,
     config = Config.autosession.load_opts({
       cwd = cwd,
@@ -129,6 +133,7 @@ local function render_autosession_context(cwd)
       repo = git_info,
     },
   }
+  return ret
 end
 
 ---@type fun(autosession: AutosessionConfig?)
@@ -137,8 +142,8 @@ local monitor
 ---Save the currently active autosession.
 ---@param opts? SaveOpts & PassthroughOpts
 function M.save(opts)
-  local cur = Session.get_global()
-  if not cur or not is_autosession(cur) then
+  local cur = current_autosession()
+  if not cur then
     return
   end
   opts = core_opts(opts, cur, { attach = true, notify = false })
@@ -156,8 +161,8 @@ end
 --- If autosave is enabled, save it. Optionally closes everything.
 ---@param opts? Session.DetachOpts & PassthroughOpts Parameters for continuity.core.session.detach
 function M.detach(opts)
-  local cur = Session.get_global()
-  if not cur or not is_autosession(cur) then
+  local cur = current_autosession()
+  if not cur then
     return
   end
   cur:detach("request", opts or {})
@@ -252,10 +257,7 @@ function M.reload()
   log.fmt_trace("Reload called. Checking if we need to reload")
   local effective_cwd = util.auto.cwd()
   local autosession = render_autosession_context(effective_cwd)
-  local cur = Session.get_global()
-  if not cur or not is_autosession(cur) then
-    cur = nil
-  end
+  local cur = current_autosession() or nil
   ---@cast cur ActiveAutosession?
   if not autosession then
     if cur then
@@ -318,6 +320,7 @@ function monitor(autosession)
       log.debug("vim.g.gitsigns_head is empty string, this is likely an empty repo")
     elseif not autosession_head then
       log.debug("vim.g.gitsigns_head is set, while the loading autosession does not have a branch")
+    -- if we're here, autosession_head is defined and thus project.repo is as well
     ---@diagnostic disable-next-line: need-check-nil
     elseif vim.g.gitsigns_head ~= autosession.project.repo.branch then
       log.debug("vim.g.gitsigns_head does not match autosession branch")
@@ -344,7 +347,6 @@ function monitor(autosession)
         -- In either case, we don't want to react here. This means worktrees are not watched for branch changes.
         return
       end
-      ---@diagnostic disable-next-line: unused
       gitsigns_in_sync = true
       last_head = autosession_head
       log.debug("Gitsigns branch monitoring now active")
@@ -379,7 +381,6 @@ function monitor(autosession)
           --       if not saving modifications. Ask before? :)
           M.reload()
         end
-        ---@diagnostic disable-next-line: unused
         last_head = vim.g.gitsigns_head
       end,
       group = monitor_group,
@@ -452,8 +453,8 @@ end
 ---Reset the currently active autosession. Closes everything.
 ---@param opts? ResetOpts Options to influence execution
 function M.reset(opts)
-  local cur = Session.get_global()
-  if not cur or not is_autosession(cur) then
+  local cur = current_autosession()
+  if not cur then
     return
   end
   opts = vim.tbl_extend("force", { notify = false }, opts or {})
@@ -470,7 +471,7 @@ end
 function M.reset_project(opts)
   opts = opts or {}
   local name = opts.name
-  local cur = current_autosession()
+  local _, cur = current_autosession()
   if not name then
     if not cur then
       return

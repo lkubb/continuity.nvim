@@ -31,6 +31,35 @@ local function get_save_name(tab_scoped)
   return name
 end
 
+--- Check if a session with this configuration is already attached and return it if so
+---@generic T: Session.Target
+---@overload fun(name: string, opts: DirParam, tabnr: TabNr, session_file: string?, state_dir: string?): ActiveSession<Session.TabTarget>?
+---@overload fun(name: string, opts: DirParam, tabnr: true, session_file: string?, state_dir: string?): ActiveSession<Session.TabTarget>?
+---@overload fun(name: string, opts: DirParam, tabnr: false, session_file: string?, state_dir: string?): ActiveSession<T>?
+---@overload fun(name: string, opts: DirParam, tabnr: nil, session_file: string?, state_dir: string?): ActiveSession<Session.GlobalTarget>?
+---@param name string Name of the session to find
+---@param opts DirParam Dir override
+---@param tabnr? TabNr|false Pass expected tabnr or `true` to filter for a tab session. Pass `nil` for a global session. Pass `false` for either.
+---@param session_file string?
+---@param state_dir string?
+---@return ActiveSession<T>?
+local function find_attached(name, opts, tabnr, session_file, state_dir)
+  local attached = Session.get_named(name)
+  if not attached then
+    return
+  end
+  if not (session_file and state_dir) then
+    session_file, state_dir = util.path.get_session_paths(name, opts.dir or Config.session.dir)
+  end
+  if
+    (tabnr == false or (tabnr == true and not not attached.tabnr) or attached.tabnr == tabnr)
+    and attached.session_file == session_file
+    and attached.state_dir == state_dir
+  then
+    return attached
+  end
+end
+
 --- Get a session with the specified configuration. If a session with this configuration
 --- (name + session_file + state_dir + tabnr) exists, update its other options and return it,
 --- otherwise create a new one.
@@ -44,9 +73,7 @@ end
 ---@return TypeGuard<ActiveSession<T>> attached Whether we referenced an already attached session.
 -- Note: TypeGuard does not work this way! It's only applied to the first *argument*.
 local function get_session(name, opts, tabnr)
-  local attached = Session.get_named(name)
-  -- emmylua 0.13 seems to choke on these expressions
-  local session_file, state_dir = util.path.get_session_paths(name, opts.dir or Config.session.dir) ---@diagnostic disable-line: param-type-not-match
+  local session_file, state_dir = util.path.get_session_paths(name, opts.dir or Config.session.dir)
   ---@type Session.InitOptsWithMeta
   local session_opts = {
     autosave_enabled = opts.autosave_enabled,
@@ -60,42 +87,12 @@ local function get_session(name, opts, tabnr)
     tab_buf_filter = opts.tab_buf_filter,
     meta = opts.meta,
   }
-  if
-    not attached
-    or attached.tabnr ~= tabnr
-    or attached.session_file ~= session_file
-    or attached.state_dir ~= state_dir
-  then
-    return Session.create_new(name, session_file, state_dir, session_opts, tabnr), false
+  local attached = find_attached(name, { dir = opts.dir }, tabnr, session_file, state_dir)
+  if attached then
+    attached:update(session_opts)
+    return attached, true
   end
-  attached:update(session_opts)
-  return attached, true
-end
-
---- Check if a session with this configuration is already attached and return it if so
----@generic T: Session.Target
----@overload fun(name: string, opts: DirParam, tabnr: TabNr): ActiveSession<Session.TabTarget>?
----@overload fun(name: string, opts: DirParam, tabnr: true): ActiveSession<Session.TabTarget>?
----@overload fun(name: string, opts: DirParam, tabnr: false): ActiveSession<T>?
----@overload fun(name: string, opts: DirParam, tabnr: nil): ActiveSession<Session.GlobalTarget>?
----@param name string Name of the session to find
----@param opts DirParam Dir override
----@param tabnr? TabNr|false Pass expected tabnr or `true` to filter for a tab session. Pass `nil` for a global session. Pass `false` for either.
----@return ActiveSession<T>?
-local function find_attached(name, opts, tabnr)
-  local attached = Session.get_named(name)
-  if not attached then
-    return
-  end
-  -- emmylua 0.13 seems to choke on this expression
-  local session_file, state_dir = util.path.get_session_paths(name, opts.dir or Config.session.dir) ---@diagnostic disable-line: param-type-not-match
-  if
-    (tabnr == false or (tabnr == true and not not attached.tabnr) or attached.tabnr == tabnr)
-    and attached.session_file == session_file
-    and attached.state_dir == state_dir
-  then
-    return attached
-  end
+  return Session.create_new(name, session_file, state_dir, session_opts, tabnr), false
 end
 
 --- Save the current global or tabpage state to a named session.
@@ -121,8 +118,6 @@ local function save(name, opts, target_tabpage)
   -- In essence, we allow both session types to coexist here and avoid detaching and then reattaching the same session since we have autosave behavior.
   -- We also don't detach when the current session is saved to another directory with the same name, e.g. as a backup.
   -- (Resession allows coexistence only when loading a global session with reset=false while a tabpage one is attached, but detaches the tabpage one if the global one is saved).
-  -- TODO: Consider exposing the session object for better customizability of this somewhat implicit behavior and getting rid of `dir` in session logic.
-  --       Then refactor the user API for manual sessions into a dedicated module with this logic.
   -- TODO: Improve the handling of simultaneous session types.
   if attached ~= opts.attach then
     local existing = Session.get_named(name)
@@ -308,17 +303,15 @@ function M.delete(name, opts)
   if not name then
     return
   end
-  local attached = true
   local session = find_attached(name, { dir = opts.dir }, false)
-  if not session then
+  if session then
+    session:detach("delete", opts)
+  else
     local session_file, state_dir =
       util.path.get_session_paths(name, opts.dir or Config.session.dir)
-    session, attached = Session.create_new(name, session_file, state_dir, {}, nil), false
+    session = Session.create_new(name, session_file, state_dir, {}, nil)
   end
   session:delete({ notify = opts.notify, silence_errors = opts.silence_errors })
-  if attached then
-    session:detach("delete", opts)
-  end
 end
 
 local autosave_group

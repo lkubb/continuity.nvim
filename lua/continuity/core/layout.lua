@@ -26,20 +26,24 @@ function M.get_win_info(tabnr, winid, current_win, opts)
   local supported_by_ext = false
   for ext_name in pairs(Config.extensions) do
     local extmod = Ext.get(ext_name)
-    if extmod and extmod.is_win_supported and extmod.is_win_supported(winid, bufnr) then
-      ---@diagnostic disable-next-line: param-type-not-match
+    if
+      extmod
+      and extmod.save_win
+      and extmod.is_win_supported
+      and extmod.is_win_supported(winid, bufnr)
+    then
       local ok, extension_data = pcall(extmod.save_win, winid)
-      if ok then
-        ---@cast extension_data -string
-        win.extension_data = extension_data
-        win.extension = ext_name
-        supported_by_ext = true
-      else
+      if not ok then
         vim.notify(
           string.format('[continuity] Extension "%s" save_win error: %s', ext_name, extension_data),
           vim.log.levels.ERROR
         )
+        break
       end
+      ---@cast extension_data -string
+      win.extension_data = extension_data
+      win.extension = ext_name
+      supported_by_ext = true
       break
     end
   end

@@ -4,7 +4,6 @@ local M = {}
 ---@namespace continuity.core.buf
 ---@using continuity.core
 
-local Config = require("continuity.config")
 local util = require("continuity.util")
 
 local lazy_require = util.lazy_require
@@ -24,7 +23,6 @@ local restore_group = vim.api.nvim_create_augroup("ContinuityBufferRestore", { c
 local function generate_uuid()
   if not seeded then
     math.randomseed(os.time())
-    ---@diagnostic disable-next-line: unused
     seeded = true
   end
   local uuid = string.gsub(uuid_v4_template, "[xy]", function(c)
@@ -327,26 +325,7 @@ local function finish_restore_buf(ctx, buf, data)
   end
 
   log.fmt_debug("Calling on_buf_load extensions")
-  for ext_name in pairs(Config.extensions) do
-    if data[ext_name] then
-      local extmod = Ext.get(ext_name)
-      if extmod and extmod.on_buf_load then
-        log.fmt_trace(
-          "Calling extension %s with bufnr %s and data %s",
-          ext_name,
-          ctx.bufnr,
-          data[ext_name]
-        )
-        local ok, err = pcall(extmod.on_buf_load, ctx.bufnr, data[ext_name])
-        if not ok then
-          vim.notify(
-            string.format("[continuity] Extension %s on_buf_load error: %s", ext_name, err),
-            vim.log.levels.ERROR
-          )
-        end
-      end
-    end
-  end
+  Ext.call("on_buf_load", data, ctx.bufnr)
 
   if ctx.restore_last_pos then
     log.fmt_debug("Need to restore last cursor pos for buf %s", ctx.bufnr)
@@ -495,7 +474,6 @@ local function restore_modified_preview(ctx, state_dir)
   else
     ---@cast file_lines -string
     log.fmt_debug("Restoring modified buf %s into bufnr %s", ctx.uuid, ctx.bufnr)
-    ---@diagnostic disable-next-line: unnecessary-if
     vim.api.nvim_buf_set_lines(ctx.bufnr, 0, -1, true, file_lines)
     -- Ensure autocmd :edit works. It will trigger the final restoration.
     -- Don't do it for unnamed buffers since :edit cannot be called for them.

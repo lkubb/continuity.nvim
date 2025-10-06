@@ -38,7 +38,6 @@ end
 function M.lazy_setup_wrapper(mod)
   -- This file is required by config, so we need to lazy-require it
   if not Config then
-    ---@diagnostic disable-next-line: unused
     Config = require("continuity.config")
   end
   -- Make sure all the API functions trigger the lazy load
