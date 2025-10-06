@@ -1,4 +1,4 @@
----@type resession.Extension
+---@type continuity.core.Extension
 local M = {}
 
 M.on_save = function()

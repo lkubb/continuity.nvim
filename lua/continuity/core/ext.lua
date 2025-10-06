@@ -111,10 +111,38 @@ function M.get(name)
   if ext_cache[name] then
     return ext_cache[name]
   end
-  local has_ext, ext = pcall(require, string.format("resession.extensions.%s", name))
+  local ns = "continuity"
+  if vim.tbl_get(Config.extensions, name, "resession_compat") then
+    ns = "resession"
+  end
+  local compat_fallback
+  local has_ext, ext = pcall(require, string.format("%s.extensions.%s", ns, name))
+  if not has_ext and ns == "continuity" then
+    compat_fallback = true
+    has_ext, ext = pcall(require, string.format("resession.extensions.%s", name))
+  end
   if not has_ext then
-    vim.notify_once(string.format('[continuity] Missing extension "%s"', name), vim.log.levels.WARN)
+    vim.notify_once(
+      string.format(
+        '[continuity] Missing extension "%s" in namespace "%s", ensure it is installed. '
+          .. "If the namespace is wrong, check the `extensions.%s.resession_compat` setting",
+        name,
+        ns,
+        name
+      ),
+      vim.log.levels.WARN
+    )
     return
+  elseif compat_fallback then
+    require("continuity.log").warn(
+      string.format(
+        '[continuity] Missing extension at "continuity.extensions.%s", but found it in "resession.extensions.%s". '
+          .. "Ensure you set `extensions.%s.resession_compat` to true to avoid overhead",
+        name,
+        name,
+        name
+      )
+    )
   end
   ---@cast ext Extension
   if ext.config then
@@ -128,7 +156,7 @@ function M.get(name)
     end
   end
   ---@diagnostic disable-next-line: undefined-field
-  if ext.on_load then
+  if (ns == "resession" or compat_fallback) and ext.on_load then
     -- TODO maybe add some deprecation notice in the future
     ---@diagnostic disable-next-line: undefined-field
     ext.on_post_load = ext.on_load

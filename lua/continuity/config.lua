@@ -8,7 +8,7 @@ local M = {}
 --- User configuration for this plugin.
 ---@class UserConfig
 ---@field autosession? UserConfig.autosession Influence autosession behavior and contents
----@field extensions? table<string,any> Configuration for extensions, both Resession ones and those specific to Continuity
+---@field extensions? table<string,any> Configuration for extensions, both Resession ones and those specific to Continuity. Note: Continuity first tries to load specified extensions in `continuity.extensions`, but falls back to `resession.extension` with a warning. Avoid this overhead by specifying `resession_compat = true` in the extension config.
 ---@field load? UserConfig.load Configure session list information detail and sort order
 ---@field log? UserConfig.log Configure plugin logging
 ---@field session? UserConfig.session Influence session behavior and contents
