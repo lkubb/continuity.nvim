@@ -84,58 +84,6 @@ local function core_opts(opts, cur, defaults, forced)
   )
 end
 
----Renders autosession metadata for a specific directory.
----Returns nil when autosessions are disabled for this directory.
----@param cwd string The working directory the autosession should be rendered for.
----@return AutosessionConfig?
-local function render_autosession_context(cwd)
-  local workspace, is_git = Config.autosession.workspace(cwd)
-  -- normalize workspace dir, ensure trailing /
-  workspace = util.path.norm(workspace)
-  local git_info
-  if is_git then
-    git_info = util.git.git_info({ cwd = workspace })
-  end
-  local project_name = Config.autosession.project_name(workspace, git_info)
-  local session_name = Config.autosession.session_name({
-    cwd = cwd,
-    git_info = git_info,
-    project_name = project_name,
-    workspace = workspace,
-  })
-  if
-    not Config.autosession.enabled({
-      cwd = cwd,
-      git_info = git_info,
-      project_name = project_name,
-      session_name = session_name,
-      workspace = workspace,
-    })
-  then
-    return nil
-  end
-  local project_dir = util.auto.hash(project_name)
-  ---@type continuity.auto.AutosessionSpec
-  local ret = {
-    cwd = cwd,
-    config = Config.autosession.load_opts({
-      cwd = cwd,
-      git_info = git_info,
-      project_name = project_name,
-      session_name = session_name,
-      workspace = workspace,
-    }) or {},
-    name = session_name,
-    root = workspace,
-    project = {
-      name = project_name,
-      data_dir = util.path.join(Config.autosession.dir, project_dir),
-      repo = git_info,
-    },
-  }
-  return ret
-end
-
 ---@type fun(autosession: AutosessionConfig?)
 local monitor
 
@@ -173,7 +121,7 @@ end
 ---@param opts? LoadOpts
 function M.load(autosession, opts)
   if type(autosession) == "string" then
-    autosession = render_autosession_context(autosession)
+    autosession = Config.autosession.spec(autosession)
   end
   monitor(autosession)
   if not autosession then
@@ -256,7 +204,7 @@ end
 function M.reload()
   log.fmt_trace("Reload called. Checking if we need to reload")
   local effective_cwd = util.auto.cwd()
-  local autosession = render_autosession_context(effective_cwd)
+  local autosession = Config.autosession.spec(effective_cwd)
   local cur = current_autosession() or nil
   ---@cast cur ActiveAutosession?
   if not autosession then
@@ -402,7 +350,7 @@ function monitor(autosession)
       end
       ---@cast cur ActiveAutosession
       ---@diagnostic disable-next-line: undefined-field
-      local lookahead = render_autosession_context(vim.v.event.directory)
+      local lookahead = Config.autosession.spec(vim.v.event.directory)
       if
         not lookahead
         or cur.meta.autosession.project.name ~= lookahead.project.name
@@ -515,7 +463,7 @@ function M.list(opts)
     end
   end
   if not session_dir then
-    local rendered = render_autosession_context(opts.cwd or util.auto.cwd())
+    local rendered = Config.autosession.spec(opts.cwd or util.auto.cwd())
     if not rendered then
       return {}
     end
@@ -545,7 +493,7 @@ function M.list_projects()
         local save_contents = util.path.load_json_file(save_file[1])
         local cwd = save_contents.global.cwd
         if util.path.exists(cwd) then
-          local ctx = render_autosession_context(cwd)
+          local ctx = Config.autosession.spec(cwd)
           if ctx then
             projects[#projects + 1] = ctx.project.name
           end
@@ -625,7 +573,7 @@ function M.migrate_projects()
         if not cwd or cwd == "" or vim.fn.isabsolutepath(cwd) == 0 then
           rm(project_dir, "broken", cwd)
         elseif util.path.exists(cwd) then
-          local ctx = render_autosession_context(cwd)
+          local ctx = Config.autosession.spec(cwd)
           if ctx then
             if not ctx.project.data_dir:find(name, nil, true) then
               local new_dir = util.path.join(continuity_dir, util.auto.hash(ctx.project.name))
