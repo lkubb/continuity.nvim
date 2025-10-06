@@ -41,7 +41,8 @@ local monitor_group
 ---@class continuity.auto
 local M = {}
 
----@namespace continuity
+---@namespace continuity.auto
+---@using continuity.core
 
 --- Return the autosession context if there is an attached session and it's an autosession.
 ---@return AutosessionConfig?
@@ -53,7 +54,7 @@ local function current_autosession()
   return cur.meta.autosession
 end
 
----@generic T: SessionTarget
+---@generic T: Session.Target
 ---@param session ActiveSession<T>
 ---@return TypeGuard<ActiveAutosession<T>>
 local function is_autosession(session)
@@ -61,7 +62,7 @@ local function is_autosession(session)
 end
 
 --- Merge save/load opts for passing into core funcs.
----@generic T: (SaveOpts|LoadOpts)?
+---@generic T: (continuity.session.SaveOpts|continuity.session.LoadOpts)?
 ---@param cur ActiveAutosession|AutosessionConfig Autosession to operate on
 ---@param defaults? table<string, any> Call-specific defaults
 ---@param opts? T Opts passed to the function
@@ -134,7 +135,7 @@ end
 local monitor
 
 ---Save the currently active autosession.
----@param opts? SaveOpts Parameters for continuity.core.save
+---@param opts? continuity.session.SaveOpts Parameters for continuity.session.save
 function M.save(opts)
   local cur = Session.get_global()
   if not cur or not is_autosession(cur) then
@@ -152,7 +153,7 @@ end
 
 --- Detach from the currently active autosession.
 --- If autosave is enabled, save it. Optionally closes everything.
----@param opts? DetachOpts Parameters for continuity.core.detach
+---@param opts? Session.DetachOpts Parameters for continuity.core.session.detach
 function M.detach(opts)
   local cur = Session.get_global()
   if not cur or not is_autosession(cur) then
@@ -163,7 +164,7 @@ end
 
 ---Load an autosession.
 ---@param autosession? AutosessionConfig|string The autosession table as rendered by render_autosession_context or cwd to pass to it
----@param opts? LoadOpts Parameters for continuity.core.load.
+---@param opts? continuity.session.LoadOpts Parameters for continuity.session.load.
 function M.load(autosession, opts)
   if type(autosession) == "string" then
     autosession = render_autosession_context(autosession)
@@ -420,7 +421,7 @@ end
 ---1. If the current working directory has an associated project and session, closes everything and loads that session.
 ---2. In any case, start monitoring for directory or branch changes.
 ---@param cwd? string The working directory to switch to before starting autosession. Defaults to nvim's process' cwd.
----@param opts? LoadOpts Parameters for continuity.core.load. silence_errors is forced to true.
+---@param opts? continuity.session.LoadOpts Parameters for continuity.session.load.
 function M.start(cwd, opts)
   M.load(cwd or util.auto.cwd(), opts)
 end
@@ -434,7 +435,7 @@ function M.stop()
 end
 
 ---Reset the currently active autosession. Closes everything.
----@param opts? ResetOpts Options to influence execution (TODO docs)
+---@param opts? ResetOpts Options to influence execution
 function M.reset(opts)
   local cur = Session.get_global()
   if not cur or not is_autosession(cur) then

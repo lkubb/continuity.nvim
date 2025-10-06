@@ -9,7 +9,8 @@ local log = lazy_require("continuity.log")
 ---@class continuity.core.snapshot
 local M = {}
 
----@namespace continuity
+---@namespace continuity.core.snapshot
+---@using continuity.core
 
 local _is_loading = false
 
@@ -23,7 +24,7 @@ end
 ---@param tabpage? TabNr When saving a tab-scoped session, the tab number.
 ---@param bufnr BufNr The buffer to check for inclusion
 ---@param tabpage_bufs table<BufNr, true?> When saving a tab-scoped session, the list of buffers that are displayed in the tabpage.
----@param opts SnapshotOpts
+---@param opts CreateOpts
 local function include_buf(tabpage, bufnr, tabpage_bufs, opts)
   if not (opts.buf_filter or Config.session.buf_filter)(bufnr, opts) then
     return false
@@ -38,10 +39,11 @@ end
 --- Create a snapshot and return the data.
 --- Note: Does not handle modified buffer contents, which requires a path to save to.
 ---@param target_tabpage? TabNr
----@param opts? SnapshotOpts
+---@param opts? CreateOpts
 ---@return Snapshot
 ---@return BufContext[] List of included buffers
 local function create(target_tabpage, opts)
+  ---@type CreateOpts
   opts = opts or {}
   ---@type Snapshot
   local data = {
@@ -74,7 +76,7 @@ local function create(target_tabpage, opts)
       if include_buf(target_tabpage, bufnr, tabpage_bufs, opts) then
         local ctx = Buf.ctx(bufnr)
         local in_win = vim.fn.bufwinid(bufnr)
-        ---@type BufData
+        ---@type Snapshot.BufData
         local buf = {
           name = ctx.name,
           -- if neovim quit unexpectedly, all buffers will appear as unloaded.
@@ -113,7 +115,7 @@ local function create(target_tabpage, opts)
       if not skip_set_current then
         vim.api.nvim_set_current_tabpage(tabpage)
       end
-      ---@type TabData
+      ---@type Snapshot.TabData
       local tab = {}
       local tabnr = vim.api.nvim_tabpage_get_number(tabpage)
       if target_tabpage or vim.fn.haslocaldir(-1, tabnr) == 1 then
@@ -156,7 +158,7 @@ end
 --- Create a snapshot and return the data.
 --- Note: Does not handle modified buffer contents, which requires a path to save to.
 ---@param target_tabpage? TabNr Limit the session to this tab. If unspecified, saves global state.
----@param opts? SnapshotOpts Influence which buffers and options are persisted (overrides global default config).
+---@param opts? CreateOpts Influence which buffers and options are persisted (overrides global default config).
 ---@return Snapshot?
 ---@return BufContext[] List of included buffers
 function M.create(target_tabpage, opts)
@@ -170,7 +172,7 @@ end
 --- Save the current global or tabpage state to a path.
 --- Also handles changed buffer contents.
 ---@param name string The name of the session
----@param opts SnapshotOpts Influence which data is included. Note: Passed through to hooks, is allowed to contain more fields.
+---@param opts CreateOpts Influence which data is included. Note: Passed through to hooks, is allowed to contain more fields.
 ---@param target_tabpage? TabNr Instead of saving everything, only save the current tabpage
 ---@param session_file string The path to write the session to.
 ---@param state_dir string The path to write the session-associated data to (modified buffers).
@@ -196,7 +198,7 @@ function M.save_as(name, opts, target_tabpage, session_file, state_dir)
   -- Most API opts are passed through for the hooks, so opts in this case
   -- should be understood as more like SaveOpts, not just SnapshotOpts.
   -- TODO: Type
-  Ext.dispatch("pre_save", name, opts --[[@as HookOpts]], target_tabpage)
+  Ext.dispatch("pre_save", name, opts --[[@as ext.HookOpts]], target_tabpage)
   local snapshot, included_bufs = create(target_tabpage, opts)
   if opts.modified then
     snapshot.modified = Buf.save_modified(state_dir, included_bufs)
@@ -207,7 +209,7 @@ function M.save_as(name, opts, target_tabpage, session_file, state_dir)
     end)
   end
   util.path.write_json_file(session_file, snapshot)
-  Ext.dispatch("post_save", name, opts --[[@as HookOpts]], target_tabpage)
+  Ext.dispatch("post_save", name, opts --[[@as ext.HookOpts]], target_tabpage)
   return snapshot, included_bufs
 end
 
@@ -235,7 +237,7 @@ local function dispatch_post_bufinit(data, visible_only)
 end
 
 ---@param snapshot Snapshot
----@param opts core.snapshot.RestoreOpts
+---@param opts snapshot.RestoreOpts
 function M.restore(snapshot, opts)
   if opts.modified == nil then
     opts.modified = Config.session.modified
@@ -271,7 +273,7 @@ function M.restore(snapshot, opts)
 
   -- Keep track of buffers that are not displayed for later restoration
   -- to speed up startup
-  ---@type BufData[]
+  ---@type Snapshot.BufData[]
   local buffers_later = {}
 
   -- Don't trigger autocmds during snapshot restoration
@@ -413,7 +415,7 @@ end
 --- Restore a saved snapshot. Also handles hooks.
 ---@param name string The name of the target session. Only used for hooks.
 ---@param snapshot Snapshot The snapshot contents
----@param opts core.snapshot.RestoreWithHooksOpts
+---@param opts snapshot.RestoreWithHooksOpts
 ---@return TabNr?
 function M.restore_as(name, snapshot, opts)
   if opts.modified == nil then
@@ -422,9 +424,9 @@ function M.restore_as(name, snapshot, opts)
   if opts.modified == "auto" then
     opts.modified = not not snapshot.modified
   end
-  Ext.dispatch("pre_load", name, opts --[[@as HookOpts]])
+  Ext.dispatch("pre_load", name, opts --[[@as ext.HookOpts]])
   M.restore(snapshot, { modified = opts.modified, state_dir = opts.state_dir, reset = opts.reset })
-  Ext.dispatch("post_load", name, opts --[[@as HookOpts]])
+  Ext.dispatch("post_load", name, opts --[[@as ext.HookOpts]])
   if snapshot.tab_scoped then
     return vim.api.nvim_get_current_tabpage()
   end

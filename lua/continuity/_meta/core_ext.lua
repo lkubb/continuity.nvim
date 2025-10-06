@@ -21,7 +21,7 @@
 --------------------------
 -- Continuity-specific  --
 --------------------------
----@namespace continuity
+---@namespace continuity.core
 
 --- Continuity-specific extensions can make use of two additional hooks, which were required when
 --- the autosession behavior was implemented as an extension instead of a separate interface.
@@ -32,10 +32,10 @@
 --- Hooks are functions that a **user** can register to subscribe to Continuity's internal events.
 --- They are separate from extensions (completely) or `User` autocmds (relatively).
 --- This is a list of event identifiers that can be subscribed to.
----@alias Hook "pre_save"|"post_save"|"pre_load"|"post_load"
+---@alias ext.Hook "pre_save"|"post_save"|"pre_load"|"post_load"
 
 --- All save/load hooks receive these options.
----@class HookOpts
+---@class ext.HookOpts
 ---@field session_file string The path to the session file
 ---@field state_dir string The path to the directory holding session-associated data
 ---@field attach? boolean Loading: Attach to session after restoring. Saving: Attach to/detach from session after saving.
@@ -45,12 +45,12 @@
 ---@field autosave_interval? integer Seconds between autosaves of this session, if enabled. Defaults to the global setting `session.autosave_interval`.
 ---@field autosave_notify? boolean Trigger a notification when autosaving this session. Defaults to the global setting `session.autosave_notify`.
 ---@field options? string[] Save and restore these options. Defaults to the global setting `session.options`.
----@field buf_filter? fun(bufnr: integer, opts: SnapshotOpts): boolean Custom logic for determining if the buffer should be included. Defaults to the global setting `session.buf_filter`.
----@field tab_buf_filter? fun(tabpage: integer, bufnr: integer, opts: SnapshotOpts): boolean Custom logic for determining if a buffer should be included in a tab-scoped session. Defaults to the global setting `session.tab_buf_filter`.
+---@field buf_filter? fun(bufnr: integer, opts: snapshot.CreateOpts): boolean Custom logic for determining if the buffer should be included. Defaults to the global setting `session.buf_filter`.
+---@field tab_buf_filter? fun(tabpage: integer, bufnr: integer, opts: snapshot.CreateOpts): boolean Custom logic for determining if a buffer should be included in a tab-scoped session. Defaults to the global setting `session.tab_buf_filter`.
 ---@field modified? boolean|"auto" Save/load modified buffers and their undo history. If set to `auto`, does not save, but still loads modified buffers. Defaults to the global setting `session.modified`.
 
 --- A function that, after being registered, is called before/after a snapshot is restored.
----@alias LoadHook fun(name: string, opts: HookOpts)[]
+---@alias ext.LoadHook fun(name: string, opts: ext.HookOpts)[]
 
 --- A function that, after being registered, is called before/after a snapshot is saved.
----@alias SaveHook fun(name: string, opts: HookOpts, target_tabpage: TabNr?)[]
+---@alias ext.SaveHook fun(name: string, opts: ext.HookOpts, target_tabpage: TabNr?)[]

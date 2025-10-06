@@ -1,7 +1,8 @@
 ---@class continuity.core.ext
 local M = {}
 
----@namespace continuity
+---@namespace continuity.core.ext
+---@using continuity.core
 
 local Config = require("continuity.config")
 

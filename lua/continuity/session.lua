@@ -9,7 +9,8 @@ local util = require("continuity.util")
 ---@class continuity.session
 local M = {}
 
----@namespace continuity
+---@namespace continuity.session
+---@using continuity.core
 
 ---@param tab_scoped boolean?
 ---@return string?
@@ -33,11 +34,11 @@ end
 --- Get a session with the specified configuration. If a session with this configuration
 --- (name + session_file + state_dir + tabnr) exists, update its other options and return it,
 --- otherwise create a new one.
----@generic T: SessionTarget
----@overload fun(name: string, opts: LoadOpts|SaveOpts, tabnr: nil): IdleSession<GlobalTarget>, TypeGuard<ActiveSession<T>>
----@overload fun(name: string, opts: LoadOpts|SaveOpts, tabnr: TabNr): IdleSession<TabTarget>, TypeGuard<ActiveSession<T>>
----@overload fun(name: string, opts: LoadOpts|SaveOpts, tabnr: nil): ActiveSession<GlobalTarget>, TypeGuard<ActiveSession<T>>
----@overload fun(name: string, opts: LoadOpts|SaveOpts, tabnr: TabNr): ActiveSession<TabTarget>, TypeGuard<ActiveSession<T>>
+---@generic T: Session.Target
+---@overload fun(name: string, opts: LoadOpts|SaveOpts, tabnr: nil): IdleSession<Session.GlobalTarget>, TypeGuard<ActiveSession<T>>
+---@overload fun(name: string, opts: LoadOpts|SaveOpts, tabnr: TabNr): IdleSession<Session.TabTarget>, TypeGuard<ActiveSession<T>>
+---@overload fun(name: string, opts: LoadOpts|SaveOpts, tabnr: nil): ActiveSession<Session.GlobalTarget>, TypeGuard<ActiveSession<T>>
+---@overload fun(name: string, opts: LoadOpts|SaveOpts, tabnr: TabNr): ActiveSession<Session.TabTarget>, TypeGuard<ActiveSession<T>>
 ---@param name string
 ---@param opts LoadOpts|SaveOpts
 ---@param tabnr? TabNr
@@ -60,9 +61,9 @@ local function get_session(name, opts, tabnr)
 end
 
 --- Check if a session with this configuration is already attached and return it if so
----@generic T: SessionTarget
----@overload fun(name: string, opts: LoadOpts|SaveOpts, tabnr: nil): ActiveSession<GlobalTarget>?
----@overload fun(name: string, opts: LoadOpts|SaveOpts, tabnr: TabNr): ActiveSession<TabTarget>
+---@generic T: Session.Target
+---@overload fun(name: string, opts: LoadOpts|SaveOpts, tabnr: nil): ActiveSession<Session.GlobalTarget>?
+---@overload fun(name: string, opts: LoadOpts|SaveOpts, tabnr: TabNr): ActiveSession<Session.TabTarget>
 ---@param name string
 ---@param opts LoadOpts|SaveOpts|DeleteOpts|DetachOpts
 ---@param tabnr? TabNr|boolean

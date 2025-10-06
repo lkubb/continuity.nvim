@@ -1,6 +1,8 @@
 ---@class continuity.util.opts
 local M = {}
 
+---@using continuity.core
+
 --- Get the scope of an option. Note: Does not work for the only tabpage-scoped one (cmdheight).
 ---@param opt string
 ---@return 'buf'|'win'|'global'
@@ -29,7 +31,7 @@ function M.get_global(opts)
 end
 
 --- Return all window-scoped options of a target window in a list of any options.
----@param winid continuity.WinID The window number to return options for.
+---@param winid WinID The window number to return options for.
 ---@param opts string[] A list of options to fetch current values for if they are window-scoped
 ---@return table<string, any>
 function M.get_win(winid, opts)
@@ -43,7 +45,7 @@ function M.get_win(winid, opts)
 end
 
 --- Return all buffer-scoped options of a target buffer in a list of any options.
----@param bufnr continuity.BufNr The buffer number to return options for.
+---@param bufnr BufNr The buffer number to return options for.
 ---@param opts string[] A list of options to fetch current values for if they are buffer-scoped
 ---@return table<string, any>
 function M.get_buf(bufnr, opts)
@@ -59,7 +61,7 @@ end
 --- Return all tab-scoped options of the current (!) tabpage.
 --- Note: Must be called with the target tabpage being the active one.
 ---@diagnostic disable-next-line: unused
----@param tabnr continuity.TabNr Unused.
+---@param tabnr TabNr Unused.
 ---@param opts string[] A list of options to fetch current values for if they are tab-scoped
 ---@return table<string, any>
 function M.get_tab(tabnr, opts)
@@ -84,7 +86,7 @@ function M.restore_global(opts)
 end
 
 --- Restore window-scoped options.
----@param winid continuity.WinID The window number to apply the option to.
+---@param winid WinID The window number to apply the option to.
 ---@param opts table<string, any> The options to apply.
 function M.restore_win(winid, opts)
   for opt, val in pairs(opts) do

@@ -107,8 +107,7 @@ function M.current_branch(opts)
 end
 
 ---@param opts? continuity.util.GitOpts Override cwd/gitdir/worktree of the git process
----@return continuity.GitInfo?
---@return {toplevel?: string, gitdir?: string, branch?: string, default_branch?: string}?
+---@return continuity.auto.AutosessionSpec.GitInfo?
 function M.git_info(opts)
   opts = opts or {}
   local stdout, stderr, code = git_cmd({

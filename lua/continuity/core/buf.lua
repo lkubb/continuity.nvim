@@ -1,7 +1,8 @@
----@class core.buf
+---@class continuity.core.buf
 local M = {}
 
----@namespace continuity
+---@namespace continuity.core.buf
+---@using continuity.core
 
 local Config = require("continuity.config")
 local util = require("continuity.util")
@@ -311,7 +312,7 @@ end
 --- for regular buffers or be called directly for non-:editable buffers (unnamed ones).
 --- Allows extensions to modify the final buffer contents and restores the cursor position (again).
 ---@param ctx BufContext The buffer context for the buffer to restore
----@param buf BufData The saved buffer information
+---@param buf Snapshot.BufData The saved buffer information
 ---@param data Snapshot The complete session data
 local function finish_restore_buf(ctx, buf, data)
   -- Save the last position of the cursor for buf_load plugins
@@ -367,7 +368,7 @@ local plan_restore
 --- of the last cursor position when a) the buffer was not inside a window when saving or
 --- b) on_buf_load plugins reenabled recovery after altering the contents.
 ---@param ctx BufContext The buffer context for the buffer to restore
----@param buf BufData The saved buffer metadata of the buffer to restore
+---@param buf Snapshot.BufData The saved buffer metadata of the buffer to restore
 ---@param data Snapshot The complete session data
 local function restore_buf(ctx, buf, data)
   if not ctx.need_edit then
@@ -444,7 +445,7 @@ end
 --- Create the autocommand that re-:edits a buffer when it's first entered.
 --- Required since events were suppressed when loading it initially, which breaks many extensions.
 ---@param ctx BufContext The buffer context for the buffer to schedule restoration for
----@param buf BufData The saved buffer metadata of the buffer to schedule restoration for
+---@param buf Snapshot.BufData The saved buffer metadata of the buffer to schedule restoration for
 ---@param data Snapshot The complete session data
 function plan_restore(ctx, buf, data)
   ctx.need_edit = true
@@ -511,7 +512,7 @@ end
 --- Ensure a saved buffer exists in the same state as it was saved.
 --- Extracted from the loading logic to keep DRY.
 --- This should be called when events are suppressed.
----@param buf BufData The saved buffer metadata for the buffer
+---@param buf Snapshot.BufData The saved buffer metadata for the buffer
 ---@param data Snapshot The complete session data
 ---@param state_dir? string The directory where unsaved buffers are persisted to
 ---@return BufNr

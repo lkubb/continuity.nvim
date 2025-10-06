@@ -1,5 +1,6 @@
 ---@meta
----@namespace continuity
+---@namespace continuity.core.layout
+---@using continuity.core
 
 --- Window-specific snapshot data
 ---@class WinInfo

@@ -15,13 +15,13 @@ local M = {}
 
 --- Configure autosession behavior and contents
 ---@class UserConfig.autosession
----@field config? SessionOpts Save/load configuration for autosessions
+---@field config? core.Session.InitOpts Save/load configuration for autosessions
 ---@field dir? string The name of the directory to store autosessions in
 ---@field workspace? fun(cwd: string): [string, boolean] A function that receives the effective nvim cwd and returns the workspace root dir and whether it's a git-tracked dir
----@field project_name? fun(workspace: string, git_info: GitInfo?): string A function that receives the workspace root dir and whether it's git-tracked and returns the project-specific session directory name.
----@field session_name? fun(meta: {cwd: string, workspace: string, project_name: string, git_info: GitInfo?}): string A function that receives the effective nvim cwd, the workspace root, the project name and cwd git info and generates a session name.
+---@field project_name? fun(workspace: string, git_info: auto.AutosessionSpec.GitInfo?): string A function that receives the workspace root dir and whether it's git-tracked and returns the project-specific session directory name.
+---@field session_name? fun(meta: {cwd: string, workspace: string, project_name: string, git_info: auto.AutosessionSpec.GitInfo?}): string A function that receives the effective nvim cwd, the workspace root, the project name and cwd git info and generates a session name.
 ---@field enabled? fun(meta: {cwd: string, workspace: string, project_name: string, session_name: string}): boolean A function that receives the effective nvim cwd, the workspace root and project name and decides whether a session should be started automatically.
----@field load_opts? fun(meta: {cwd: string, workspace: string, project_name: string, session_name: string}): LoadOpts? A function that can influence how an autosession is loaded/persisted, e.g. load the session without attaching it or disabling modified persistence.
+---@field load_opts? fun(meta: {cwd: string, workspace: string, project_name: string, session_name: string}): session.LoadOpts? A function that can influence how an autosession is loaded/persisted, e.g. load the session without attaching it or disabling modified persistence.
 
 --- Configure session list information detail and sort order
 ---@class UserConfig.load
@@ -35,7 +35,7 @@ local M = {}
 ---@field use_file? boolean Print logs to logfile. Defaults to true.
 
 --- Configure default session behavior and contents, affects both manual and autosessions.
----@class UserConfig.session: SessionOpts
+---@class UserConfig.session: core.Session.InitOpts
 ---@field dir? string The name of the directory to store regular sessions in
 
 -- Until https://github.com/EmmyLuaLs/emmylua-analyzer-rust/issues/328 is resolved:
@@ -49,13 +49,13 @@ local M = {}
 ---@field session Config.session Influence session behavior and contents
 
 ---@class Config.autosession
----@field config SessionOpts
+---@field config core.Session.InitOpts
 ---@field dir string
 ---@field workspace fun(cwd: string): string, boolean
----@field project_name fun(workspace: string, git_info: GitInfo?): string
----@field session_name fun(meta: {cwd: string, workspace: string, project_name: string, git_info: GitInfo?}): string
----@field enabled fun(meta: {cwd: string, workspace: string, project_name: string, session_name: string, git_info: GitInfo?}): boolean
----@field load_opts fun(meta: {cwd: string, workspace: string, project_name: string, session_name: string, git_info: GitInfo?}): LoadOpts?
+---@field project_name fun(workspace: string, git_info: auto.AutosessionSpec.GitInfo?): string
+---@field session_name fun(meta: {cwd: string, workspace: string, project_name: string, git_info: auto.AutosessionSpec.GitInfo?}): string
+---@field enabled fun(meta: {cwd: string, workspace: string, project_name: string, session_name: string, git_info: auto.AutosessionSpec.GitInfo?}): boolean
+---@field load_opts fun(meta: {cwd: string, workspace: string, project_name: string, session_name: string, git_info: auto.AutosessionSpec.GitInfo?}): session.LoadOpts?
 
 ---@class Config.load
 ---@field detail boolean
@@ -69,14 +69,14 @@ local M = {}
 ---@class Config.session
 ---@field dir string
 ---@field options string[]
----@field buf_filter fun(bufnr: integer, opts: SnapshotOpts): boolean
----@field tab_buf_filter fun(tabpage: integer, bufnr: integer, opts: SnapshotOpts): boolean
+---@field buf_filter fun(bufnr: integer, opts: core.snapshot.CreateOpts): boolean
+---@field tab_buf_filter fun(tabpage: integer, bufnr: integer, opts: core.snapshot.CreateOpts): boolean
 ---@field modified boolean|"auto"
 ---@field autosave_enabled boolean
 ---@field autosave_interval integer
 ---@field autosave_notify boolean
----@field on_attach? AttachHook
----@field on_detach? DetachHook
+---@field on_attach? core.Session.AttachHook
+---@field on_detach? core.Session.DetachHook
 
 local util = require("continuity.util")
 
@@ -85,7 +85,7 @@ local util = require("continuity.util")
 --- * all **listed** buffers that correspond to a file (regular and `acwrite` type buffers with a name)
 --- * when saving buffer modifications with `modified`, also **listed** unnamed buffers
 ---@param bufnr integer
----@param opts SnapshotOpts
+---@param opts core.snapshot.CreateOpts
 ---@return boolean
 local function default_buf_filter(bufnr, opts)
   local buftype = vim.bo[bufnr].buftype

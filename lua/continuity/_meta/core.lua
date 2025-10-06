@@ -1,5 +1,5 @@
 ---@meta
----@namespace continuity
+---@namespace continuity.core
 
 ---@alias BufUUID string An internal UUID that is used to keep track of buffers between snapshot restorations.
 ---@alias WinID integer Nvim window ID

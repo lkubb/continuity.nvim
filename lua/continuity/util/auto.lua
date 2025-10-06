@@ -1,6 +1,8 @@
 ---@class continuity.util.auto
 local M = {}
 
+---@using continuity.auto
+
 ---Check if nvim is running headless
 ---@return boolean
 function M.is_headless()
@@ -42,7 +44,7 @@ end
 ---we name it after the parent directory of its common git dir instead, which correctly resolves
 ---multiple worktrees into the same project.
 ---@param workspace string The path of the workspace
----@param git_info? continuity.GitInfo When the workspace is part of a git repository, git meta information
+---@param git_info? AutosessionSpec.GitInfo When the workspace is part of a git repository, git meta information
 ---@return string
 function M.workspace_project_map(workspace, git_info)
   local project_name = workspace
@@ -58,7 +60,7 @@ end
 ---If `root` is not inside a git repo, returns `default`.
 ---If the currently checked out branch is the default one, returns `default`.
 ---Otherwise, returns the branch name.
----@param meta {cwd: string, workspace: string, project_name: string, git_info: continuity.GitInfo?} Workspace meta info
+---@param meta {cwd: string, workspace: string, project_name: string, git_info: AutosessionSpec.GitInfo?} Workspace meta info
 ---@return string
 function M.generate_name(meta)
   if

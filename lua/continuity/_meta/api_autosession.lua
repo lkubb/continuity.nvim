@@ -1,7 +1,12 @@
 ---@meta
----@namespace continuity
+---@namespace continuity.auto
+---@using continuity.core
 
----@class ActiveAutosession<T: SessionTarget>: ActiveSession<T>
+--- API options for `auto.reset`
+---@class ResetOpts: continuity.session.DeleteOpts
+---@field reload? boolean Attempt to restart a new autosession after reset. Defaults to true.
+
+---@class ActiveAutosession<T: Session.Target>: ActiveSession<T>
 ---@field meta {autosession: AutosessionConfig}
 
 --- A function that is called during Neovim startup. It receives information
@@ -31,29 +36,26 @@
 --- There's no case where it enables monitoring without immediately loading an autosession.
 ---@alias InitHandler fun(ctx: {is_headless: boolean, is_pager: boolean}): (string|false)?
 
----@class GitInfo
+---@class AutosessionSpec
+---@field project AutosessionSpec.ProjectInfo Information about the project the session belongs to
+---@field root string The top level directory for this session. Usually equals the project root, but can be different when git worktrees are used.
+---@field name string The name of the session
+---@field config continuity.session.LoadOpts Session-specific load/autosave options.
+
+---@class AutosessionSpec.ProjectInfo
+---@field data_dir string The path of the directory that is used to save autosession data related to this project
+---@field name string The name of the project
+---@field repo GitInfo? When the project is defined as a git repository, meta info
+
+---@class AutosessionSpec.GitInfo
 ---@field commongitdir string The common git dir, usually equal to gitdir, unless the worktree is not the default workdir (e.g. in worktree checkuots of bare repos). Then it's the actual repo root and gitdir is <git_common_dir>/worktrees/<worktree_name>
 ---@field gitdir string The repository (or worktree) data path
 ---@field toplevel string The path of the checked out worktree
 ---@field branch? string The branch the worktree has checked out
 ---@field default_branch? string The name of the default branch
 
----@class ProjectInfo
----@field data_dir string The path of the directory that is used to save autosession data related to this project
----@field name string The name of the project
----@field repo GitInfo? When the project is defined as a git repository, meta info
-
----@class AutosessionSpec
----@field project ProjectInfo Information about the project the session belongs to
----@field root string The top level directory for this session. Usually equals the project root, but can be different when git worktrees are used.
----@field name string The name of the session
----@field config LoadOpts Session-specific load/autosave options.
-
 ---@class AutosessionConfig: AutosessionSpec
 ---@field cwd string The effective working directory that was determined when loading this auto-session
-
----@class ResetOpts: DeleteOpts
----@field reload? boolean Attempt to restart a new autosession after reset. Defaults to true.
 
 ---@class ActiveAutosessionInfo: ActiveSessionInfo
 ---@field is_autosession boolean Whether this is an autosession or a manual one
