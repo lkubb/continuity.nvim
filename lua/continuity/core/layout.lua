@@ -18,7 +18,7 @@ local M = {}
 ---@param tabnr integer The number of the tab that contains the window
 ---@param winid WinID The window id of the window to query
 ---@param current_win integer The window id of the currently active window
----@param opts continuity.session.SaveOpts
+---@param opts snapshot.CreateOpts
 ---@return WinInfo|false
 function M.get_win_info(tabnr, winid, current_win, opts)
   local bufnr = vim.api.nvim_win_get_buf(winid)
@@ -71,11 +71,11 @@ end
 ---@param tabnr integer
 ---@param layout vim.fn.winlayout.ret
 ---@param current_win integer
----@param opts continuity.session.SaveOpts
+---@param opts snapshot.CreateOpts
 ---@return WinLayout|false
 function M.add_win_info_to_layout(tabnr, layout, current_win, opts)
   ---@diagnostic disable-next-line: undefined-field
-  ---@type 'leaf'|'col'|'row'|nil
+  ---@type "leaf"|"col"|"row"|nil
   local typ = layout[1]
   if typ == "leaf" then
     ---@cast layout vim.fn.winlayout.leaf

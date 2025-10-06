@@ -86,11 +86,11 @@ function Session.new(name, session_file, state_dir, opts, tabnr, needs_restore)
   ---@type PendingSession<T>|IdleSession<T>
   local self
   if needs_restore then ---@diagnostic disable-line: unnecessary-if
-    self = setmetatable(config, {
+    self = setmetatable(config --[[@as table]], {
       __index = PendingSession,
     })
   else
-    self = setmetatable(config, {
+    self = setmetatable(config --[[@as table]], {
       __index = IdleSession,
     })
   end
@@ -173,7 +173,8 @@ function Session:restore(opts, snapshot)
     return self, false
   end
   log.fmt_trace("Loading session %s. Data: %s", self.name, snapshot)
-  local load_opts = vim.tbl_extend("keep", self:opts(), opts, { attach = false, reset = "auto" })
+  local load_opts =
+    vim.tbl_extend("keep", self:opts() --[[@as table]], opts, { attach = false, reset = "auto" })
   local tabnr = Snapshot.restore_as(self.name, snapshot, load_opts)
   if self.tab_scoped then
     self.tabnr = assert(tabnr, "Restored session defined as tab-scoped, but did not receive tabnr")
@@ -301,9 +302,18 @@ function ActiveSession:attach()
   return self
 end
 
-function IdleSession:save(opts, hook_opts)
-  local save_opts =
-    vim.tbl_extend("keep", self:opts(), hook_opts or {}, { attach = true, reset = false })
+function IdleSession:save(opts)
+  ---@type Session.KnownHookOpts.SideEffects
+  local default_hook_opts = { attach = true, reset = false }
+  ---@diagnostic disable-next-line: assign-type-mismatch
+  ---@type Session.Init.Paths & Session.Init.Autosave & Session.Init.Meta & snapshot.CreateOpts & Session.KnownHookOpts & PassthroughOpts
+  local save_opts = vim.tbl_extend(
+    "keep",
+    self:opts() --[[@as table]],
+    opts --[[@as table]]
+      or {},
+    default_hook_opts --[[@as table]]
+  )
   if
     not Snapshot.save_as(
       self.name,
@@ -315,7 +325,7 @@ function IdleSession:save(opts, hook_opts)
   then
     return false
   end
-  if (opts or {}).notify ~= false then
+  if save_opts.notify ~= false then
     vim.notify(string.format('Saved session "%s"', self.name))
   end
   return true
@@ -333,7 +343,8 @@ function ActiveSession:autosave(opts, force)
       notify = Config.session.autosave_notify
     end
   end
-  self:save({ notify = notify })
+  local save_opts = vim.tbl_extend("keep", { notify = notify }, opts)
+  self:save(save_opts)
 end
 
 function ActiveSession:detach(reason, opts)
@@ -434,7 +445,7 @@ local function list_active_tabpage_sessions(by_name)
 end
 
 ---@param reason Session.DetachReason A reason to pass to detach handlers.
----@param opts Session.DetachOpts
+---@param opts Session.DetachOpts & PassthroughOpts
 ---@return boolean
 local function detach_global(reason, opts)
   if not current_session then
@@ -450,7 +461,7 @@ end
 --- Detach a tabpage-scoped session, either by its name or tabnr
 ---@param target? (string|TabNr|(string|TabNr)[]) Target a tabpage session by name or associated tabpage. Defaults to current tabpage. Also takes a list.
 ---@param reason Session.DetachReason A reason to pass to detach handlers.
----@param opts Session.DetachOpts
+---@param opts Session.DetachOpts & PassthroughOpts
 ---@return boolean
 local function detach_tabpage(target, reason, opts)
   if type(target) == "table" then
@@ -479,7 +490,7 @@ end
 
 --- Detach all sessions (global + tab-scoped).
 ---@param reason Session.DetachReason A reason to pass to detach handlers.
----@param opts Session.DetachOpts
+---@param opts Session.DetachOpts & PassthroughOpts
 ---@return boolean
 function M.detach_all(reason, opts)
   local detached_global = detach_global(reason, opts)
@@ -506,7 +517,7 @@ end
 --- Detach a session by name.
 ---@param name string
 ---@param reason Session.DetachReason A reason to pass to detach handlers.
----@param opts Session.DetachOpts
+---@param opts Session.DetachOpts & PassthroughOpts
 ---@return boolean
 local function detach_named(name, reason, opts)
   if current_session and current_session == name then
@@ -516,13 +527,13 @@ local function detach_named(name, reason, opts)
 end
 
 ---@generic T: Session.Target
----@overload fun(name: string, session_file: string, state_dir: string, opts: continuity.session.LoadOpts|continuity.session.SaveOpts): IdleSession<Session.GlobalTarget>
----@overload fun(name: string, session_file: string, state_dir: string, opts: continuity.session.LoadOpts|continuity.session.SaveOpts, tabnr: nil): IdleSession<Session.GlobalTarget>
----@overload fun(name: string, session_file: string, state_dir: string, opts: continuity.session.LoadOpts|continuity.session.SaveOpts, tabnr: TabNr): IdleSession<Session.TabTarget>
+---@overload fun(name: string, session_file: string, state_dir: string, opts: Session.InitOptsWithMeta): IdleSession<Session.GlobalTarget>
+---@overload fun(name: string, session_file: string, state_dir: string, opts: Session.InitOptsWithMeta, tabnr: nil): IdleSession<Session.GlobalTarget>
+---@overload fun(name: string, session_file: string, state_dir: string, opts: Session.InitOptsWithMeta, tabnr: TabNr): IdleSession<Session.TabTarget>
 ---@param name string
 ---@param session_file string
 ---@param state_dir string
----@param opts continuity.session.LoadOpts|continuity.session.SaveOpts
+---@param opts Session.InitOptsWithMeta
 ---@param tabnr TabNr?
 ---@return IdleSession<T>
 function M.create_new(name, session_file, state_dir, opts, tabnr)
@@ -537,7 +548,7 @@ end
 ---@param name string
 ---@param session_file string
 ---@param state_dir string
----@param opts continuity.session.LoadOpts
+---@param opts Session.InitOptsWithMeta & continuity.SideEffects.SilenceErrors
 ---@return PendingSession<T>?
 ---@return Snapshot?
 function M.from_snapshot(name, session_file, state_dir, opts)
@@ -605,7 +616,7 @@ function M.get_active()
   return name and assert(sessions[name], "Current session not known, this is likely a bug") or nil
 end
 
----@param opts? Session.AutosaveOpts
+---@param opts? Session.AutosaveOpts & PassthroughOpts
 ---@param is_autosave boolean
 local function save_all(opts, is_autosave)
   -- Difference to Resession:
@@ -623,13 +634,13 @@ end
 
 --- Trigger an autosave for all attached sessions, respecting session-specific
 --- `autosave_enabled` configuration. Mostly for internal use.
----@param opts? Session.AutosaveOpts
+---@param opts? Session.AutosaveOpts & PassthroughOpts
 function M.autosave(opts)
   save_all(opts, true)
 end
 
 --- Save all currently attached sessions to disk
----@param opts? Session.AutosaveOpts
+---@param opts? Session.AutosaveOpts & PassthroughOpts
 function M.save_all(opts)
   save_all(opts, false)
 end
@@ -655,7 +666,7 @@ end
 --- Detach from the session that contains the target (or all active sessions if unspecified).
 ---@param target? ("__global"|"__active"|"__active_tab"|"__all_tabs"|string|integer|(string|integer)[]) The scope/session name/tabnr to detach from. If unspecified, detaches all sessions.
 ---@param reason? Session.DetachReason Pass a custom reason to detach handlers. Defaults to `request`.
----@param opts? Session.DetachOpts
+---@param opts? Session.DetachOpts & PassthroughOpts
 ---@return boolean Whether we detached from any session
 function M.detach(target, reason, opts)
   reason = reason or "request"

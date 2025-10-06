@@ -135,11 +135,14 @@ function M.get(name)
 end
 
 --- Call registered hooks for `name`.
----@param name Hook The specific hook to dispatch
----@param ... any Arguments to pass to registered callbacks
-function M.dispatch(name, ...)
+---@overload fun(name: Hook.Load, session_name: string, opts: ext.HookOpts)
+---@param name Hook.Save
+---@param session_name string
+---@param opts HookOpts
+---@param target_tabnr? TabNr
+function M.dispatch(name, session_name, opts, target_tabnr)
   for _, cb in ipairs(hooks[name]) do
-    cb(...)
+    cb(session_name, opts, target_tabnr)
   end
 end
 

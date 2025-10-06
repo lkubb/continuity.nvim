@@ -62,19 +62,19 @@ local function is_autosession(session)
 end
 
 --- Merge save/load opts for passing into core funcs.
----@generic T: (continuity.session.SaveOpts|continuity.session.LoadOpts)?
----@param cur ActiveAutosession|AutosessionConfig Autosession to operate on
----@param defaults? table<string, any> Call-specific defaults
+---@generic T: (SaveOpts & PassthroughOpts|LoadOpts & PassthroughOpts)?
 ---@param opts? T Opts passed to the function
+---@param cur ActiveAutosession|AutosessionConfig Autosession to operate on
+---@param defaults? T Call-specific defaults
 ---@param forced? table<string, any> Call-specific forced params
 ---@return T - nil
-local function core_opts(cur, defaults, opts, forced)
+local function core_opts(opts, cur, defaults, forced)
   cur = (cur.meta and cur.meta.autosession) or cur
   return vim.tbl_extend(
     "force",
-    Config.autosession.config,
+    Config.autosession.config --[[@as table]],
     defaults or {},
-    cur.config,
+    cur.config --[[@as table]],
     opts or {},
     forced or {},
     { meta = { autosession = cur }, dir = cur.project.data_dir }
@@ -135,25 +135,26 @@ end
 local monitor
 
 ---Save the currently active autosession.
----@param opts? continuity.session.SaveOpts Parameters for continuity.session.save
+---@param opts? SaveOpts & PassthroughOpts
 function M.save(opts)
   local cur = Session.get_global()
   if not cur or not is_autosession(cur) then
     return
   end
-  opts = core_opts(cur, { attach = true, notify = false }, opts)
-  if not cur:save({ notify = opts.notify }, { attach = opts.attach, reset = opts.reset }) then
+  opts = core_opts(opts, cur, { attach = true, notify = false })
+  -- TODO: Update the session config?
+  if not cur:save(opts) then
     -- We attempted to save the session while a snapshot was being restored
     return
   end
   if not opts.attach then
-    cur:detach("save", { reset = opts.reset })
+    cur:detach("save", opts)
   end
 end
 
 --- Detach from the currently active autosession.
 --- If autosave is enabled, save it. Optionally closes everything.
----@param opts? Session.DetachOpts Parameters for continuity.core.session.detach
+---@param opts? Session.DetachOpts & PassthroughOpts Parameters for continuity.core.session.detach
 function M.detach(opts)
   local cur = Session.get_global()
   if not cur or not is_autosession(cur) then
@@ -164,7 +165,7 @@ end
 
 ---Load an autosession.
 ---@param autosession? AutosessionConfig|string The autosession table as rendered by render_autosession_context or cwd to pass to it
----@param opts? continuity.session.LoadOpts Parameters for continuity.session.load.
+---@param opts? LoadOpts
 function M.load(autosession, opts)
   if type(autosession) == "string" then
     autosession = render_autosession_context(autosession)
@@ -173,8 +174,11 @@ function M.load(autosession, opts)
   if not autosession then
     return
   end
-  local load_opts = core_opts(autosession, { attach = true, reset = true }, opts)
 
+  local load_opts = core_opts(opts, autosession, { attach = true, reset = true })
+  -- We only allow global autosessions at the moment, which would be reset when reset == "auto"
+  load_opts.reset = not not load_opts.reset
+  ---@cast load_opts LoadOptsParsed & PassthroughOpts
   log.fmt_debug(
     "Loading autosession %s with opts %s.\nData: %s",
     autosession.name,
@@ -200,11 +204,11 @@ function M.load(autosession, opts)
       return
     end
     if load_opts.reset then
-      Session.detach_all("load", { save = load_opts.detach_save, reset = true })
+      Session.detach_all("load", load_opts)
     else
-      Session.detach("__global", "load", { save = load_opts.detach_save })
+      Session.detach("__global", "load", load_opts)
     end
-    session = session:restore({ reset = load_opts.reset and true or false }, snapshot)
+    session = session:restore(load_opts, snapshot)
   else
     if not load_opts.attach then
       -- The autosession is used to setup a default view instead of session persistence,
@@ -218,16 +222,27 @@ function M.load(autosession, opts)
       return
     end
     if load_opts.reset then
-      Session.detach_all("load", { save = load_opts.detach_save, reset = true })
+      Session.detach_all("load", { save = load_opts.save, reset = true })
       -- This would usually be done by snapshot restoration, but we're not restoring anything now
       require("continuity.core.layout").close_everything()
     else
-      Session.detach("__global", "load", { save = load_opts.detach_save })
+      Session.detach("__global", "load", { save = load_opts.save })
     end
     -- The session did not exist, need to save to initialize an empty one.
     -- First, change cwd to workspace root since we're saving/restoring cwd.
     vim.api.nvim_set_current_dir(autosession.root)
-    session = Session.create_new(autosession.name, session_file, state_dir, load_opts)
+    session = Session.create_new(autosession.name, session_file, state_dir, {
+      autosave_enabled = load_opts.autosave_enabled,
+      autosave_interval = load_opts.autosave_interval,
+      autosave_notify = load_opts.autosave_notify,
+      on_attach = load_opts.on_attach,
+      on_detach = load_opts.on_detach,
+      buf_filter = load_opts.buf_filter,
+      modified = load_opts.modified,
+      options = load_opts.options,
+      tab_buf_filter = load_opts.tab_buf_filter,
+      meta = load_opts.meta,
+    })
   end
   session = session:attach()
 end
@@ -421,7 +436,7 @@ end
 ---1. If the current working directory has an associated project and session, closes everything and loads that session.
 ---2. In any case, start monitoring for directory or branch changes.
 ---@param cwd? string The working directory to switch to before starting autosession. Defaults to nvim's process' cwd.
----@param opts? continuity.session.LoadOpts Parameters for continuity.session.load.
+---@param opts? LoadOpts
 function M.start(cwd, opts)
   M.load(cwd or util.auto.cwd(), opts)
 end

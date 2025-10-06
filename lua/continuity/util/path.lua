@@ -74,7 +74,7 @@ function M.shorten_path(path)
 end
 
 --- Get a path relative to a standard path
----@param stdpath 'cache'|'config'|'data'|'log'|'run'|'state'
+---@param stdpath "cache"|"config"|"data"|"log"|"run"|"state"
 ---@param ... string Variable number of path segments to append to the stdpath in OS-specific format
 function M.get_stdpath_filename(stdpath, ...)
   local ok, dir = pcall(vim.fn.stdpath, stdpath)

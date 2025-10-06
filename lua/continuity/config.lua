@@ -21,7 +21,7 @@ local M = {}
 ---@field project_name? fun(workspace: string, git_info: auto.AutosessionSpec.GitInfo?): string A function that receives the workspace root dir and whether it's git-tracked and returns the project-specific session directory name.
 ---@field session_name? fun(meta: {cwd: string, workspace: string, project_name: string, git_info: auto.AutosessionSpec.GitInfo?}): string A function that receives the effective nvim cwd, the workspace root, the project name and cwd git info and generates a session name.
 ---@field enabled? fun(meta: {cwd: string, workspace: string, project_name: string, session_name: string}): boolean A function that receives the effective nvim cwd, the workspace root and project name and decides whether a session should be started automatically.
----@field load_opts? fun(meta: {cwd: string, workspace: string, project_name: string, session_name: string}): session.LoadOpts? A function that can influence how an autosession is loaded/persisted, e.g. load the session without attaching it or disabling modified persistence.
+---@field load_opts? fun(meta: {cwd: string, workspace: string, project_name: string, session_name: string}): auto.LoadOpts? A function that can influence how an autosession is loaded/persisted, e.g. load the session without attaching it or disabling modified persistence.
 
 --- Configure session list information detail and sort order
 ---@class UserConfig.load
@@ -55,7 +55,7 @@ local M = {}
 ---@field project_name fun(workspace: string, git_info: auto.AutosessionSpec.GitInfo?): string
 ---@field session_name fun(meta: {cwd: string, workspace: string, project_name: string, git_info: auto.AutosessionSpec.GitInfo?}): string
 ---@field enabled fun(meta: {cwd: string, workspace: string, project_name: string, session_name: string, git_info: auto.AutosessionSpec.GitInfo?}): boolean
----@field load_opts fun(meta: {cwd: string, workspace: string, project_name: string, session_name: string, git_info: auto.AutosessionSpec.GitInfo?}): session.LoadOpts?
+---@field load_opts fun(meta: {cwd: string, workspace: string, project_name: string, session_name: string, git_info: auto.AutosessionSpec.GitInfo?}): auto.LoadOpts?
 
 ---@class Config.load
 ---@field detail boolean

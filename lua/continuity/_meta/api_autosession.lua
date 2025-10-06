@@ -1,9 +1,17 @@
 ---@meta
 ---@namespace continuity.auto
 ---@using continuity.core
+---@using continuity.SideEffects
+
+--- API options for `auto.load`
+---@alias LoadOpts Session.InitOptsWithMeta & Attach & Save & ResetAuto & SilenceErrors & PassthroughOpts
+---@alias LoadOptsParsed LoadOpts & Reset
+
+--- API options for `auto.save`
+---@alias SaveOpts Attach & Notify & Reset
 
 --- API options for `auto.reset`
----@class ResetOpts: continuity.session.DeleteOpts
+---@class ResetOpts: Notify & Reset & SilenceErrors
 ---@field reload? boolean Attempt to restart a new autosession after reset. Defaults to true.
 
 ---@class ActiveAutosession<T: Session.Target>: ActiveSession<T>
@@ -40,7 +48,7 @@
 ---@field project AutosessionSpec.ProjectInfo Information about the project the session belongs to
 ---@field root string The top level directory for this session. Usually equals the project root, but can be different when git worktrees are used.
 ---@field name string The name of the session
----@field config continuity.session.LoadOpts Session-specific load/autosave options.
+---@field config LoadOpts Session-specific load/autosave options.
 
 ---@class AutosessionSpec.ProjectInfo
 ---@field data_dir string The path of the directory that is used to save autosession data related to this project

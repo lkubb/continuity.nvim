@@ -5,7 +5,7 @@ local M = {}
 
 --- Get the scope of an option. Note: Does not work for the only tabpage-scoped one (cmdheight).
 ---@param opt string
----@return 'buf'|'win'|'global'
+---@return "buf"|"win"|"global"
 local function get_option_scope(opt)
   ---@diagnostic disable-next-line: unnecessary-if
   -- This only exists in nvim-0.9

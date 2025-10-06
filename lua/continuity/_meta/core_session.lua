@@ -1,38 +1,63 @@
 ---@meta
 ---@namespace continuity.core
 
---- Options to influence how an attached session is handled.
----@class Session.InitOpts: snapshot.CreateOpts
+---@class Session.Init.Paths
+---@field session_file string The path to the session file
+---@field state_dir string The path to the directory holding session-associated data
+
+---@class Session.Init.Autosave
 ---@field autosave_enabled? boolean When this session is attached, automatically save it in intervals. Defaults to false.
 ---@field autosave_interval? integer Seconds between autosaves of this session, if enabled. Defaults to 60.
 ---@field autosave_notify? boolean Trigger a notification when autosaving this session. Defaults to true.
+
+--- Autosave configuration after initializing the session, needs to resolve actual values.
+---@class Session.Init.Autosave.Rendered: Session.Init.Autosave
+---@field autosave_enabled boolean When this session is attached, automatically save it in intervals. Defaults to false.
+---@field autosave_interval integer Seconds between autosaves of this session, if enabled. Defaults to 60.
+
+---@class Session.Init.Hooks
 ---@field on_attach? Session.AttachHook A function that's called when attaching to this session. No global default.
 ---@field on_detach? Session.DetachHook A function that's called when detaching from this session. No global default.
 
---- Session-associated configuration, rendered from passed options and default config.
----@class Session.Config: snapshot.CreateOpts
----@field session_file string The path to the session file
----@field state_dir string The path to the directory holding session-associated data
----@field autosave_enabled boolean When this session is attached, automatically save it in intervals.
----@field autosave_interval integer Seconds between autosaves of this session, if enabled.
----@field autosave_notify? boolean Trigger a notification when autosaving this session. Defaults to the global setting `session.autosave_notify`/`true`.
+---@class Session.Init.Meta
 ---@field meta? table External data remembered in association with this session. Useful to build on top of the core API.
 
----@class Session.AutosaveOpts
----@field notify? boolean Notify on success
+--- Options to influence how an attached session is handled.
+---@alias Session.InitOpts Session.Init.Autosave & Session.Init.Hooks & snapshot.CreateOpts
+--- Options to influence how an attached session is handled plus `meta` field, which can only be populated by passing
+--- it to the session constructor and is useful for custom session handling.
+---@alias Session.InitOptsWithMeta Session.InitOpts & Session.Init.Meta
 
----@class Session.DetachOpts
----@field reset? boolean Whether to close all session-associated tabpages. Defaults to false.
----@field save? boolean Whether to save the session before detaching
+--- Session-associated configuration, rendered from passed options and default config.
+---@alias Session.Config Session.Init.Paths & Session.Init.Autosave.Rendered & Session.Init.Hooks & Session.Init.Meta & snapshot.CreateOpts
 
+--- Compatibility with resession-style hooks from the `continuity.session` API
+---@alias Session.KnownHookOpts.Dir continuity.session.DirParam
+
+--- Tell hooks about what happens next. This is the only form that's supported in `core.session`. `reset` being `auto` should be handled before.
+---@alias Session.KnownHookOpts.SideEffects continuity.SideEffects.Attach & continuity.SideEffects.Reset
+
+--- All internally known hook params that should be passed to pre/post save/load hooks if possible.
+---@alias Session.KnownHookOpts Session.KnownHookOpts.Dir & Session.KnownHookOpts.SideEffects
+
+--- Options for saving attached sessions with the config that was passed in when loading them
+---@alias Session.AutosaveOpts continuity.SideEffects.Notify
+
+--- Options for detaching sessions
+---@alias Session.DetachOpts continuity.SideEffects.Reset & continuity.SideEffects.Save
+
+--- Detach reasons are passed to avoid unintended side effects during operations. They are passed to
+--- detach hooks as well. These are the ones built in to the core session handling.
 ---@alias Session.DetachReasonBuiltin "delete"|"load"|"quit"|"request"|"save"|"tab_closed"
+
+--- Custom detach reasons can be given as well.
 ---@alias Session.DetachReason Session.DetachReasonBuiltin|string
 
---- Options for basic snapshot restoration (different from session restoration)
----@class Session.RestoreOpts
----@field reset? boolean Close everything in this neovim instance (note: this happens outside regular session handling, does not trigger autosave). If unset/false, loads the snapshot into one or several clean tabs.
----@field silence_errors? boolean Don't error when this session's `state_file` is missing.
----@field [any] any Any unhandled opts are also passed through to hooks, unless they are session-specific.
+--- Options for basic snapshot restoration (different from session loading!).
+--- Note that `reset` here does not handle detaching other active sessions,
+--- it really resets everything if set to true. If set to false, opens a new tab.
+--- Handle with care!
+---@alias Session.RestoreOpts continuity.SideEffects.Reset & continuity.SideEffects.SilenceErrors
 
 --- Attach hooks can inspect the session.
 --- Modifying it in-place should work, but it's not officially supported.
@@ -40,7 +65,7 @@
 
 --- Detach hooks can modify detach opts in place or return new ones.
 --- They can inspect the session. Modifying it in-place should work, but it's not officially supported.
----@alias Session.DetachHook fun(session: ActiveSession, reason: Session.DetachReason, opts: Session.DetachOpts): Session.DetachOpts?
+---@alias Session.DetachHook fun(session: ActiveSession, reason: Session.DetachReason, opts: Session.DetachOpts & PassthroughOpts): (Session.DetachOpts & PassthroughOpts)?
 
 --- Represents the complete internal state of a session
 ---@class ActiveSessionInfo: Session.Config
@@ -82,20 +107,20 @@ local Session = {}
 ---@param name string
 ---@param session_file string
 ---@param state_dir string
----@param opts continuity.session.LoadOpts|continuity.session.SaveOpts
+---@param opts Session.InitOptsWithMeta
 ---@return IdleSession<Session.GlobalTarget>
 function Session.new(name, session_file, state_dir, opts) end
 ---@param name string
 ---@param session_file string
 ---@param state_dir string
----@param opts continuity.session.LoadOpts|continuity.session.SaveOpts
+---@param opts Session.InitOptsWithMeta
 ---@param tabnr TabNr
 ---@return IdleSession<Session.TabTarget>
 function Session.new(name, session_file, state_dir, opts, tabnr) end
 ---@param name string
 ---@param session_file string
 ---@param state_dir string
----@param opts continuity.session.LoadOpts|continuity.session.SaveOpts
+---@param opts Session.InitOptsWithMeta
 ---@param tabnr nil
 ---@param needs_restore true
 ---@return PendingSession<Session.GlobalTarget>
@@ -103,7 +128,7 @@ function Session.new(name, session_file, state_dir, opts, tabnr, needs_restore) 
 ---@param name string
 ---@param session_file string
 ---@param state_dir string
----@param opts continuity.session.LoadOpts|continuity.session.SaveOpts
+---@param opts Session.InitOptsWithMeta
 ---@param tabnr true
 ---@param needs_restore true
 ---@return PendingSession<Session.TabTarget>
@@ -113,7 +138,7 @@ function Session.new(name, session_file, state_dir, opts, tabnr, needs_restore) 
 ---@param name string
 ---@param session_file string
 ---@param state_dir string
----@param opts continuity.session.LoadOpts
+---@param opts Session.InitOptsWithMeta & continuity.SideEffects.SilenceErrors
 ---@return PendingSession<T>? loaded_session The session object, if it could be loaded
 ---@return Snapshot? snapshot The snapshot data, if it could be loaded
 function Session.from_snapshot(name, session_file, state_dir, opts) end
@@ -129,12 +154,12 @@ function Session:add_hook(event, hook) end
 function Session:add_hook(event, hook) end
 
 --- Update modifiable options without attaching/detaching a session
----@param opts continuity.session.LoadOpts|continuity.session.SaveOpts
+---@param opts Session.InitOptsWithMeta
 ---@return boolean modified
 function Session:update(opts) end
 
 --- Restore a snapshot from disk or memory
----@param opts? Session.RestoreOpts
+---@param opts? Session.RestoreOpts & PassthroughOpts
 ---@param snapshot? Snapshot Snapshot to restore. If unspecified, loads from file.
 ---@return IdleSession<T> self The object itself, but now attachable
 ---@return boolean success Whether restoration was successful. Only sensible when `silence_errors` is true.
@@ -146,7 +171,7 @@ function Session:restore(opts, snapshot) end
 function Session:is_attached() end -- I couldn't make TypeGuard<ActiveSession<T>> work properly with method syntax
 
 --- Turn the session object into opts for snapshot restore/save operations
----@return continuity.session.SaveOpts|continuity.session.LoadOpts|ext.HookOpts
+---@return Session.Init.Paths & Session.Init.Autosave & Session.Init.Meta & snapshot.CreateOpts
 function Session:opts() end
 
 --- Get information about this session
@@ -154,7 +179,7 @@ function Session:opts() end
 function Session:info() end
 
 --- Delete a saved session
----@param opts? {notify?: boolean, silence_errors?: boolean}
+---@param opts? continuity.SideEffects.Notify & continuity.SideEffects.SilenceErrors
 function Session:delete(opts) end
 
 ---------------------------------------------------------------------------------------------------
@@ -181,10 +206,13 @@ local IdleSession = {}
 ---@return ActiveSession<T>
 function IdleSession:attach() end
 
----@param opts? Session.AutosaveOpts
----@param hook_opts? {attach?: boolean, reset?: boolean} Options that need to be passed through to pre_save/post_save hooks.
+--- Save this session following its configured configuration.
+--- Note: Any save configuration must be applied via `Session.update(opts)` before
+--- callig this method since all session-specific options that might be contained
+--- in `opts` are overridded with ones configured for the session.
+---@param opts? Session.AutosaveOpts & Session.KnownHookOpts & PassthroughOpts Success notification setting plus options that need to be passed through to pre_save/post_save hooks.
 ---@return boolean success
-function IdleSession:save(opts, hook_opts) end
+function IdleSession:save(opts) end
 
 ---------------------------------------------------------------------------------------------------
 -- 3. Attached session allow autosave and detaching
@@ -199,7 +227,7 @@ function IdleSession:save(opts, hook_opts) end
 ---@field private _setup_autosave fun(self: ActiveSession<T>): nil
 local ActiveSession = {}
 
----@param opts? Session.AutosaveOpts
+---@param opts? Session.AutosaveOpts & PassthroughOpts
 ---@param force? boolean
 function ActiveSession:autosave(opts, force) end
 
@@ -209,7 +237,7 @@ function ActiveSession:autosave(opts, force) end
 --- ensure that you call `detach()` on the specific session instance you called `:attach()` on before, not a copy.
 ----@param self ActiveSession<T>
 ---@param reason Session.DetachReason A reason for detaching, also passed to detach hooks. Only inbuilt reasons influence behavior by default.
----@param opts Session.DetachOpts Influence side effects. `reset` removes all associated resources. `save` overrides autosave behavior.
+---@param opts Session.DetachOpts & PassthroughOpts Influence side effects. `reset` removes all associated resources. `save` overrides autosave behavior.
 ---@return IdleSession<T>
 function ActiveSession:detach(reason, opts) end
 -- Note: In unions of e.g. ActiveSession<Session.TabTarget>|ActiveSession<Session.GlobalTarget>, the return type is wrongly
@@ -223,7 +251,7 @@ function ActiveSession.forget(self) end
 
 --- Restore a snapshot from disk or memory
 --- It seems emmylua does not pick up this override and infers IdleSession<T> instead.
----@param opts? Session.RestoreOpts
+---@param opts? Session.RestoreOpts & PassthroughOpts
 ---@param snapshot? Snapshot Snapshot to restore. If unspecified, loads from file.
 ---@return ActiveSession<T> self The object itself
 ---@return boolean success Whether restoration was successful. Only sensible when `silence_errors` is true.

@@ -172,7 +172,7 @@ end
 --- Save the current global or tabpage state to a path.
 --- Also handles changed buffer contents.
 ---@param name string The name of the session
----@param opts CreateOpts Influence which data is included. Note: Passed through to hooks, is allowed to contain more fields.
+---@param opts CreateOpts & PassthroughOpts Influence which data is included. Note: Passed through to hooks, is allowed to contain more fields.
 ---@param target_tabpage? TabNr Instead of saving everything, only save the current tabpage
 ---@param session_file string The path to write the session to.
 ---@param state_dir string The path to write the session-associated data to (modified buffers).
@@ -189,17 +189,22 @@ function M.save_as(name, opts, target_tabpage, session_file, state_dir)
     name,
     opts
   )
+  -- Ensure all hooks receive these two params
+  opts.session_file, opts.state_dir = opts.session_file or session_file, opts.state_dir or state_dir
   if opts.modified == nil then
     opts.modified = Config.session.modified
   end
   if opts.modified == "auto" then
     opts.modified = false
   end
-  -- Most API opts are passed through for the hooks, so opts in this case
-  -- should be understood as more like SaveOpts, not just SnapshotOpts.
-  -- TODO: Type
+  -- Most API opts and custom ones passed by the user are passed through for the hooks.
   Ext.dispatch("pre_save", name, opts --[[@as ext.HookOpts]], target_tabpage)
-  local snapshot, included_bufs = create(target_tabpage, opts)
+  local snapshot, included_bufs = create(target_tabpage, {
+    buf_filter = opts.buf_filter,
+    options = opts.options,
+    tab_buf_filter = opts.tab_buf_filter,
+    modified = opts.modified,
+  })
   if opts.modified then
     snapshot.modified = Buf.save_modified(state_dir, included_bufs)
   else
@@ -415,7 +420,7 @@ end
 --- Restore a saved snapshot. Also handles hooks.
 ---@param name string The name of the target session. Only used for hooks.
 ---@param snapshot Snapshot The snapshot contents
----@param opts snapshot.RestoreWithHooksOpts
+---@param opts snapshot.RestoreOpts & PassthroughOpts
 ---@return TabNr?
 function M.restore_as(name, snapshot, opts)
   if opts.modified == nil then

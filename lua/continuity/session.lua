@@ -35,38 +35,52 @@ end
 --- (name + session_file + state_dir + tabnr) exists, update its other options and return it,
 --- otherwise create a new one.
 ---@generic T: Session.Target
----@overload fun(name: string, opts: LoadOpts|SaveOpts, tabnr: nil): IdleSession<Session.GlobalTarget>, TypeGuard<ActiveSession<T>>
----@overload fun(name: string, opts: LoadOpts|SaveOpts, tabnr: TabNr): IdleSession<Session.TabTarget>, TypeGuard<ActiveSession<T>>
----@overload fun(name: string, opts: LoadOpts|SaveOpts, tabnr: nil): ActiveSession<Session.GlobalTarget>, TypeGuard<ActiveSession<T>>
----@overload fun(name: string, opts: LoadOpts|SaveOpts, tabnr: TabNr): ActiveSession<Session.TabTarget>, TypeGuard<ActiveSession<T>>
+---@overload fun(name: string, opts: Session.InitOptsWithMeta & DirParam, tabnr: nil): IdleSession<Session.GlobalTarget>|ActiveSession<Session.GlobalTarget>, TypeGuard<ActiveSession<Session.GlobalTarget>>
+---@overload fun(name: string, opts: Session.InitOptsWithMeta & DirParam, tabnr: TabNr): IdleSession<Session.TabTarget>|ActiveSession<Session.TabTarget>, TypeGuard<ActiveSession<Session.TabTarget>>
 ---@param name string
----@param opts LoadOpts|SaveOpts
+---@param opts Session.InitOptsWithMeta & DirParam
 ---@param tabnr? TabNr
 ---@return IdleSession<T>|ActiveSession<T> session
----@return TypeGuard<ActiveSession<T>> attached
+---@return TypeGuard<ActiveSession<T>> attached Whether we referenced an already attached session.
+-- Note: TypeGuard does not work this way! It's only applied to the first *argument*.
 local function get_session(name, opts, tabnr)
   local attached = Session.get_named(name)
   -- emmylua 0.13 seems to choke on these expressions
   local session_file, state_dir = util.path.get_session_paths(name, opts.dir or Config.session.dir) ---@diagnostic disable-line: param-type-not-match
+  ---@type Session.InitOptsWithMeta
+  local session_opts = {
+    autosave_enabled = opts.autosave_enabled,
+    autosave_interval = opts.autosave_interval,
+    autosave_notify = opts.autosave_notify,
+    on_attach = opts.on_attach,
+    on_detach = opts.on_detach,
+    buf_filter = opts.buf_filter,
+    modified = opts.modified,
+    options = opts.options,
+    tab_buf_filter = opts.tab_buf_filter,
+    meta = opts.meta,
+  }
   if
     not attached
     or attached.tabnr ~= tabnr
     or attached.session_file ~= session_file
     or attached.state_dir ~= state_dir
   then
-    return Session.create_new(name, session_file, state_dir, opts, tabnr), false
+    return Session.create_new(name, session_file, state_dir, session_opts, tabnr), false
   end
-  attached:update(opts)
+  attached:update(session_opts)
   return attached, true
 end
 
 --- Check if a session with this configuration is already attached and return it if so
 ---@generic T: Session.Target
----@overload fun(name: string, opts: LoadOpts|SaveOpts, tabnr: nil): ActiveSession<Session.GlobalTarget>?
----@overload fun(name: string, opts: LoadOpts|SaveOpts, tabnr: TabNr): ActiveSession<Session.TabTarget>
----@param name string
----@param opts LoadOpts|SaveOpts|DeleteOpts|DetachOpts
----@param tabnr? TabNr|boolean
+---@overload fun(name: string, opts: DirParam, tabnr: TabNr): ActiveSession<Session.TabTarget>?
+---@overload fun(name: string, opts: DirParam, tabnr: true): ActiveSession<Session.TabTarget>?
+---@overload fun(name: string, opts: DirParam, tabnr: false): ActiveSession<T>?
+---@overload fun(name: string, opts: DirParam, tabnr: nil): ActiveSession<Session.GlobalTarget>?
+---@param name string Name of the session to find
+---@param opts DirParam Dir override
+---@param tabnr? TabNr|false Pass expected tabnr or `true` to filter for a tab session. Pass `nil` for a global session. Pass `false` for either.
 ---@return ActiveSession<T>?
 local function find_attached(name, opts, tabnr)
   local attached = Session.get_named(name)
@@ -76,7 +90,7 @@ local function find_attached(name, opts, tabnr)
   -- emmylua 0.13 seems to choke on this expression
   local session_file, state_dir = util.path.get_session_paths(name, opts.dir or Config.session.dir) ---@diagnostic disable-line: param-type-not-match
   if
-    (tabnr == false or attached.tabnr == tabnr)
+    (tabnr == false or (tabnr == true and not not attached.tabnr) or attached.tabnr == tabnr)
     and attached.session_file == session_file
     and attached.state_dir == state_dir
   then
@@ -86,16 +100,16 @@ end
 
 --- Save the current global or tabpage state to a named session.
 ---@param name string The name of the session
----@param opts? SaveOpts
+---@param opts? SaveOpts & PassthroughOpts
 ---@param target_tabpage? TabNr Instead of saving everything, only save the current tabpage
 local function save(name, opts, target_tabpage)
-  ---@type SaveOpts
-  opts = vim.tbl_extend("keep", opts or {}, {
+  ---@type SaveOpts & PassthroughOpts
+  opts = vim.tbl_extend("keep", opts --[[@as table]] or {}, {
     notify = true,
     attach = true,
   })
   local session, attached = get_session(name, opts, target_tabpage)
-  if not session:save({ notify = opts.notify }, { attach = opts.attach, reset = opts.reset }) then
+  if not session:save(opts) then
     return
   end
   -- Detach behavior differences to Resession:
@@ -113,7 +127,7 @@ local function save(name, opts, target_tabpage)
   if attached ~= opts.attach then
     local existing = Session.get_named(name)
     if existing then
-      existing:detach("save", { reset = opts.reset })
+      existing:detach("save", opts)
     end
   end
   if opts.attach then
@@ -124,7 +138,7 @@ end
 
 --- Save the current global state to disk
 ---@param name? string Name of the session
----@param opts? SaveOpts
+---@param opts? SaveOpts & PassthroughOpts
 function M.save(name, opts)
   name = name or get_save_name(false)
   if not name then
@@ -135,7 +149,7 @@ end
 
 --- Save the state of the current tabpage to disk
 ---@param name? string Name of the tabpage session. If not provided, will prompt user for session name
----@param opts? SaveOpts
+---@param opts? SaveOpts & PassthroughOpts
 function M.save_tab(name, opts)
   name = name or get_save_name(true)
   if not name then
@@ -146,7 +160,7 @@ end
 
 M.save_all = Session.save_all
 
----@param opts? LoadOpts
+---@param opts? DirParam
 local function get_load_name(opts)
   local sessions = M.list({ dir = opts and opts.dir or nil })
   if vim.tbl_isempty(sessions) then
@@ -185,7 +199,7 @@ end
 
 --- Load a session
 ---@param name? string
----@param opts? LoadOpts
+---@param opts? LoadOpts & PassthroughOpts
 ---    attach? boolean Stay attached to session after loading (default true)
 ---    reset? boolean|"auto" Close everything before loading the session (default "auto")
 ---    silence_errors? boolean Don't error when trying to load a missing session
@@ -194,8 +208,9 @@ end
 --- The default value of `reset = "auto"` will reset when loading a normal session, but _not_ when
 --- loading a tab-scoped session.
 function M.load(name, opts)
+  ---@type LoadOpts & PassthroughOpts
   opts = opts or {}
-  name = name or get_load_name(opts)
+  name = name or get_load_name({ dir = opts.dir })
   if not name then
     return
   end
@@ -204,15 +219,19 @@ function M.load(name, opts)
   if not session then
     return
   end
+  if opts.reset == "auto" then
+    opts.reset = not not session.tab_scoped
+  end
+  ---@cast opts LoadOptsParsed & PassthroughOpts
   -- If we're going to possibly switch sessions, detach _before_ loading a new session.
   -- This is in contrast to resession, which does this implicitly after loading the new one.
   -- We need to do it eagerly because autosave is baked into the detach logic.
   -- TODO: Consider optionally keeping persistent tab sessions
-  if opts.reset == true or (opts.reset == "auto" and not session.tab_scoped) then
+  if opts.reset == true then
     -- We're going to close everything, detach both global and all tab scoped sessions.
     -- Autosave would not be triggered otherwise.
     for _, attached in ipairs(Session.get_all()) do
-      attached:detach("load", { reset = true, save = opts.detach_save })
+      attached:detach("load", opts)
     end
     -- Possible leftovers will be closed in snapshot restoration
   elseif opts.attach and not session.tab_scoped then
@@ -224,7 +243,7 @@ function M.load(name, opts)
     -- TODO: Think about implications and the general interplay between global and tab-scoped sessions.
     local current_global = Session.get_global()
     if current_global then
-      current_global:detach("load", { save = opts.detach_save })
+      current_global:detach("load", opts)
     end
   end
   -- Ensure we don't have an existing session named the same as the new one.
@@ -234,7 +253,7 @@ function M.load(name, opts)
   --       Seems like implicit, but expected behavior? It might desync modified buffers though.
   local name_clash = Session.get_named(name)
   if name_clash then
-    name_clash:detach("load", { save = opts.detach_save })
+    name_clash:detach("load", opts)
   end
   session = session:restore(opts, snapshot)
   if opts.attach then
@@ -250,6 +269,7 @@ M.detach = Session.detach
 ---@param opts? ListOpts
 ---@return string[]
 function M.list(opts)
+  ---@type ListOpts
   opts = opts or {}
   local session_dir = util.path.get_session_dir(opts.dir or Config.session.dir)
   if not util.path.exists(session_dir) then
@@ -277,17 +297,19 @@ local function get_delete_name(opts)
   )
 end
 
+---@generic T: Session.Target
 --- Delete a saved session
 ---@param name? string Name of the session. If not provided, prompt for session to delete
----@param opts? DeleteOpts
+---@param opts? DeleteOpts & PassthroughOpts
 function M.delete(name, opts)
+  ---@type DeleteOpts & PassthroughOpts
   opts = opts or {}
   name = name or get_delete_name(opts)
   if not name then
     return
   end
   local attached = true
-  local session = find_attached(name, opts, false)
+  local session = find_attached(name, { dir = opts.dir }, false)
   if not session then
     local session_file, state_dir =
       util.path.get_session_paths(name, opts.dir or Config.session.dir)
@@ -295,7 +317,7 @@ function M.delete(name, opts)
   end
   session:delete({ notify = opts.notify, silence_errors = opts.silence_errors })
   if attached then
-    session:detach("delete", { reset = opts.reset })
+    session:detach("delete", opts)
   end
 end
 

@@ -13,9 +13,6 @@
 ---@field modified? boolean|"auto" If the snapshot contains unsaved buffer modifications, restore them.
 ---@field state_dir? string Directory session-associated data like unsaved buffer modifications are stored in. Required for `modified` loading.
 
----@class snapshot.RestoreWithHooksOpts: snapshot.RestoreOpts
----@field [any] any Any unhandled opts are also passed through to hooks
-
 --- A snapshot of nvim's state.
 ---@class Snapshot
 ---@field buffers Snapshot.BufData[] Buffer-specific data

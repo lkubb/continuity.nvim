@@ -21,3 +21,13 @@
 ---@field state_dir? string The directory to save session-associated state in. Used for modification persistence.
 ---@field swapfile? string The path to the buffer's swapfile if it had one when loaded.
 ---@field unrestored? boolean Indicates the buffer could not be restored properly because it had a swapfile and was opened read-only
+
+--- Indicates that any unhandled opts are also passed through to custom hooks.
+---@alias PassthroughOpts table
+
+-- Note: Any other definition for PassthroughOpts caused emmylua to yield param type mismatches when used on top of other aliased intersections.
+-- Example: SaveOpts & PassthroughOpts (where SaveOpts = @alias Attach & Notify & Restore) mismatched Attach & Notify & Restore & PassthroughOpts.
+-- Approaches that were tried:
+-- @class with @field [any] any (preferred, because it can be annotated in a better way)
+-- @class inheriting from table / table<any,any>
+-- @alias table<any,any>

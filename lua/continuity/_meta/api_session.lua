@@ -31,40 +31,26 @@
 --------------------------
 ---@namespace continuity.session
 ---@using continuity.core
+---@using continuity.SideEffects
+
+---@class DirParam
+---@field dir? string Name of session directory (overrides config.dir)
 
 --- API options for `session.list`
----@class ListOpts: resession.ListOpts
----@field dir? string Name of directory to list (overrides config.dir)
+---@alias ListOpts DirParam
 
 --- API options for `session.delete`
----@class DeleteOpts: resession.DeleteOpts
----@field dir? string Name of directory to delete from (overrides config.dir)
----@field notify? boolean Notify on success (default true)
----@field reset? boolean When deleting an attached session, close all associated tabpages. Defaults to false.
----@field silence_errors? boolean Don't error when trying to delete a non-existent session
+---@alias DeleteOpts DirParam & Notify & Reset & SilenceErrors
 
 --- API options for `session.save`
----@class SaveOpts: Session.InitOpts, resession.SaveOpts
----@field attach? boolean Stay attached to session after saving (default true)
----@field dir? string Name of directory to save to (overrides config.dir)
----@field meta? table External data remembered in association with this session. Useful to build on top of the core API.
----@field notify? boolean Notify on success (default true)
----@field reset? boolean When not staying attached to the session, close all associated tabpages. Defaults to false.
+---@alias SaveOpts DirParam & Session.InitOptsWithMeta & Attach & Notify & Reset
 
 --- API options for `session.save_all`
----@class SaveAllOpts: resession.SaveAllOpts
----@field notify? boolean Notify on success
+---@alias SaveAllOpts Notify
 
 --- API options for `session.load`
----@class LoadOpts: Session.InitOpts, resession.LoadOpts
----@field attach? boolean Attach to session after loading
----@field detach_save? boolean When detaching other sessions, override their autosave behavior
----@field dir? string Name of directory to load from (overrides config.dir)
----@field meta? table External data remembered in association with this session. Useful to build on top of the core API.
----@field reset? boolean|"auto" Close everything before loading the session (default "auto")
----@field silence_errors? boolean Don't error when trying to load a missing session
+---@alias LoadOpts DirParam & Session.InitOptsWithMeta & Attach & ResetAuto & Save & SilenceErrors
+---@alias LoadOptsParsed LoadOpts & Reset
 
 --- API options for `session.detach`
----@class DetachOpts
----@field reset? boolean Whether to close all session-associated tabpages. Defaults to false.
----@field save? boolean Whether to save the session before detaching
+---@alias DetachOpts Reset & Save
