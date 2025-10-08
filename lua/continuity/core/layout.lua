@@ -118,7 +118,7 @@ local function set_winlayout(layout)
     local winid = vim.api.nvim_get_current_win()
     win.winid = winid
     if win.cwd then
-      vim.cmd(string.format("lcd %s", win.cwd))
+      vim.cmd.lcd({ args = { vim.fn.fnameescape(win.cwd) } })
     end
   else
     ---@cast layout WinLayoutBranch

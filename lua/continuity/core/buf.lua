@@ -287,7 +287,7 @@ local function restore_modified(ctx)
       local err
       ok, err = pcall(
         vim.api.nvim_cmd,
-        { cmd = "rundo", args = { undo_file }, mods = { silent = true } },
+        { cmd = "rundo", args = { vim.fn.fnameescape(undo_file) }, mods = { silent = true } },
         {}
       )
       if not ok then
@@ -577,7 +577,11 @@ function M.save_modified(state_dir, bufs)
 
         if not skip_wundo then
           vim.api.nvim_buf_call(ctx.bufnr, function()
-            vim.cmd.wundo({ undo_file, bang = true, mods = { noautocmd = true, silent = true } })
+            vim.cmd.wundo({
+              vim.fn.fnameescape(undo_file),
+              bang = true,
+              mods = { noautocmd = true, silent = true },
+            })
           end)
         else
           log.fmt_warn(

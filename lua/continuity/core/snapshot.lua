@@ -304,7 +304,7 @@ function M.restore(snapshot, opts)
         vim.bo.bufhidden = "wipe"
       end
       if tab.cwd then
-        vim.cmd.tcd({ args = { tab.cwd } })
+        vim.cmd.tcd({ args = { vim.fn.fnameescape(tab.cwd) } })
       end
       local win = layout.set_winlayout(tab.wins, scale)
       if win then
