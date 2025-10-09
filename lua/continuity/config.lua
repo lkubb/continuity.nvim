@@ -230,7 +230,7 @@ function M.setup(config)
 
   vim.g.continuity_config = nil
 
-  require("continuity.session").setup()
+  require("continuity.core.session").setup()
   require("continuity.core.ext").setup()
 end
 

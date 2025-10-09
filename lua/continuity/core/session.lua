@@ -708,4 +708,17 @@ function M.detach(target, reason, opts)
   return false
 end
 
+local autosave_group
+function M.setup()
+  autosave_group = vim.api.nvim_create_augroup("ContinuityAutosave", { clear = true })
+  -- TODO: Optionally (?) use ExitPre instead to be able to skip unsaved changes dialog when modified=true?
+  vim.api.nvim_create_autocmd("VimLeavePre", {
+    group = autosave_group,
+    callback = function()
+      -- Trigger detach, which in turn triggers autosave for sessions that have it enabled.
+      M.detach(nil, "quit")
+    end,
+  })
+end
+
 return M

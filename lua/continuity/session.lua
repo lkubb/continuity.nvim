@@ -318,16 +318,4 @@ function M.delete(name, opts)
   session:delete({ notify = opts.notify, silence_errors = opts.silence_errors })
 end
 
-local autosave_group
-function M.setup()
-  autosave_group = vim.api.nvim_create_augroup("ContinuityAutosave", { clear = true })
-  vim.api.nvim_create_autocmd("VimLeavePre", {
-    group = autosave_group,
-    callback = function()
-      -- Trigger detach, which in turn triggers autosave for sessions that have it enabled.
-      M.detach(nil, "quit")
-    end,
-  })
-end
-
 return util.lazy_setup_wrapper(M)
