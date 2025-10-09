@@ -54,7 +54,7 @@ end
 --- Return the autosession context if there is an attached session and it's an autosession.
 ---@generic T: Session.Target
 ---@return ActiveAutosession<T>?
----@return AutosessionConfig?
+---@return AutosessionContext?
 local function current_autosession()
   local cur = Session.get_global()
   if not cur or not is_autosession(cur) then
@@ -67,7 +67,7 @@ end
 --- Merge save/load opts for passing into core funcs.
 ---@generic T: (SaveOpts & PassthroughOpts|LoadOpts & PassthroughOpts)?
 ---@param opts? T Opts passed to the function
----@param cur ActiveAutosession|AutosessionConfig Autosession to operate on
+---@param cur ActiveAutosession|AutosessionContext Autosession to operate on
 ---@param defaults? T Call-specific defaults
 ---@param forced? table<string, any> Call-specific forced params
 ---@return T - nil
@@ -80,11 +80,32 @@ local function core_opts(opts, cur, defaults, forced)
     cur.config --[[@as table]],
     opts or {},
     forced or {},
-    { meta = { autosession = cur }, dir = cur.project.data_dir }
+    { meta = { autosession = cur } }
   )
 end
 
----@type fun(autosession: AutosessionConfig?)
+---@param cwd string
+---@return AutosessionContext?
+local function get_ctx(cwd)
+  local spec = Config.autosession.spec(cwd)
+  if not spec then
+    return spec
+  end
+  if not spec.project.data_dir or spec.project.data_dir == "" then
+    spec.project.data_dir = util.path.join(
+      util.path.get_session_dir(Config.autosession.dir),
+      util.path.escape(spec.project.name)
+    )
+  elseif vim.fn.isabsolutepath(spec.project.data_dir) == 0 then
+    spec.project.data_dir =
+      util.path.join(util.path.get_session_dir(Config.autosession.dir), spec.project.data_dir)
+  end
+  ---@cast spec AutosessionContext
+  spec.cwd = cwd
+  return spec
+end
+
+---@type fun(autosession: AutosessionContext?)
 local monitor
 
 ---Save the currently active autosession.
@@ -117,11 +138,11 @@ function M.detach(opts)
 end
 
 ---Load an autosession.
----@param autosession? AutosessionConfig|string The autosession table as rendered by render_autosession_context or cwd to pass to it
+---@param autosession? AutosessionContext|string The autosession table as rendered by render_autosession_context or cwd to pass to it
 ---@param opts? LoadOpts
 function M.load(autosession, opts)
   if type(autosession) == "string" then
-    autosession = Config.autosession.spec(autosession)
+    autosession = get_ctx(autosession)
   end
   monitor(autosession)
   if not autosession then
@@ -140,7 +161,7 @@ function M.load(autosession, opts)
   )
 
   local session_file, state_dir =
-    util.path.get_session_paths(autosession.name, autosession.project.data_dir)
+    util.path.get_autosession_paths(autosession.name, autosession.project.data_dir)
 
   local session
   if util.path.exists(session_file) then
@@ -204,7 +225,7 @@ end
 function M.reload()
   log.fmt_trace("Reload called. Checking if we need to reload")
   local effective_cwd = util.auto.cwd()
-  local autosession = Config.autosession.spec(effective_cwd)
+  local autosession = get_ctx(effective_cwd)
   local cur = current_autosession() or nil
   ---@cast cur ActiveAutosession?
   if not autosession then
@@ -247,7 +268,7 @@ end
 -- Create hooks that:
 ---1. When the session is associated with a git repo and gitsigns is available, save/detach/reload active autosession on branch changes.
 ---2. When the global CWD changes, save/detach/reload active autosession.
----@param autosession? AutosessionConfig The active autosession that should be monitored
+---@param autosession? AutosessionContext The active autosession that should be monitored
 function monitor(autosession)
   monitor_group = vim.api.nvim_create_augroup("ContinuityHooks", { clear = true })
 
@@ -350,7 +371,7 @@ function monitor(autosession)
       end
       ---@cast cur ActiveAutosession
       ---@diagnostic disable-next-line: undefined-field
-      local lookahead = Config.autosession.spec(vim.v.event.directory)
+      local lookahead = get_ctx(vim.v.event.directory)
       if
         not lookahead
         or cur.meta.autosession.project.name ~= lookahead.project.name
@@ -415,33 +436,46 @@ end
 
 ---Remove all autosessions associated with a project.
 ---If the target is the active project, resets current session as well and closes everything.
----@param opts? {name?: string} Specify the project to reset. If unspecified, resets active project, if available.
+---@param opts? {name?: string, force?: boolean} Specify the project to reset. If unspecified, resets active project, if available.
 function M.reset_project(opts)
   opts = opts or {}
   local name = opts.name
+  local project_dir
   local _, cur = current_autosession()
   if not name then
     if not cur then
       return
     end
     name = cur.project.name
+    project_dir = cur.project.data_dir
   end
-
-  local continuity_dir = util.path.get_session_dir(Config.autosession.dir)
-  local project_dir = util.path.join(continuity_dir, util.auto.hash(name))
+  if not project_dir then
+    local continuity_dir = util.path.get_session_dir(Config.autosession.dir)
+    project_dir = util.path.join(continuity_dir, util.path.escape(name))
+  end
   if not util.path.exists(project_dir) then
     return
   end
 
+  local expected_parent = util.path.get_stdpath_filename("data", Config.autosession.dir)
+  if not opts.force then
+    -- sanity check before recursively deleting
+    assert(
+      project_dir:sub(1, #expected_parent) == expected_parent,
+      (
+        "Rendered project data dir (%s) is not in Continuity's autosession data dir (%s), "
+        .. "refusing to recursively delete directory. Pass force=true to skip this check"
+      ):format(project_dir, expected_parent)
+    )
+  end
+
   local resetting_active = false
   -- If we're resetting the active project, ensure we detach from the active session before deleting the data
-  if cur and project_dir:find(cur.project.data_dir) then
+  if cur and project_dir == cur.project.data_dir then
     M.reset({ reload = false })
     resetting_active = true
   end
 
-  local expected_parent = util.path.get_stdpath_filename("data", Config.autosession.dir)
-  assert(project_dir:sub(1, #expected_parent) == expected_parent) -- sanity check before recursively deleting
   util.path.rmdir(project_dir, { recursive = true })
 
   if resetting_active then
@@ -456,14 +490,13 @@ function M.list(opts)
   opts = opts or {}
   local session_dir
   if not opts.cwd then
-    local cur = Session.get_global()
-    if cur and is_autosession(cur) then
-      ---@cast cur ActiveAutosession
-      session_dir = cur.meta.autosession.project.data_dir
+    local _, cur = current_autosession()
+    if cur then
+      session_dir = cur.project.data_dir
     end
   end
   if not session_dir then
-    local rendered = Config.autosession.spec(opts.cwd or util.auto.cwd())
+    local rendered = get_ctx(opts.cwd or util.auto.cwd())
     if not rendered then
       return {}
     end
@@ -493,7 +526,7 @@ function M.list_projects()
         local save_contents = util.path.load_json_file(save_file[1])
         local cwd = save_contents.global.cwd
         if util.path.exists(cwd) then
-          local ctx = Config.autosession.spec(cwd)
+          local ctx = get_ctx(cwd)
           if ctx then
             projects[#projects + 1] = ctx.project.name
           end
@@ -510,7 +543,17 @@ end
 ---cleans projects whose cwd does not exist anymore or which are disabled
 ---Caution! This does not account for projects with multiple associated directories/sessions!
 ---Checks the first session's cwd/enabled state only!
-function M.migrate_projects()
+---@param opts MigrateProjectsOpts? Options for migration. You need to pass `{dry_run = false}` for this function to have an effect.
+---@return table<"broken"|"missing"|"skipped"|"migrated"|"deactivated"|"duplicate"|"empty"|"errors", table[]>
+function M.migrate_projects(opts)
+  opts = opts or {}
+  opts.dry_run = opts.dry_run ~= false
+  if not opts.old_root or opts.old_root == "" then
+    opts.old_root = util.path.get_session_dir(Config.autosession.dir)
+  elseif vim.fn.isabsolutepath(opts.old_root) == 0 then
+    opts.old_root = util.path.get_session_dir(opts.old_root)
+  end
+
   local ret = {
     broken = {},
     missing = {},
@@ -518,12 +561,16 @@ function M.migrate_projects()
     migrated = {},
     deactivated = {},
     duplicate = {},
+    empty = {},
     errors = {},
   }
 
   local function rm(dir, scope, root)
-    local ok, msg = pcall(util.path.rmdir, dir, { recursive = true })
-    if ok then
+    local ok, msg
+    if not opts.dry_run then
+      ok, msg = pcall(util.path.rmdir, dir, { recursive = true })
+    end
+    if opts.dry_run or ok then
       table.insert(ret[scope], { root = root, old_dir = dir })
     else
       table.insert(ret.errors, { type = scope, root = root, old_dir = dir, msg = msg })
@@ -531,6 +578,7 @@ function M.migrate_projects()
   end
 
   local function mv(old, new, root, new_name)
+    local res = false
     if util.path.exists(new) then
       table.insert(ret.errors, {
         type = "migration",
@@ -541,11 +589,17 @@ function M.migrate_projects()
       })
       -- rm(old, "duplicate", root)
     else
-      local ok, msg = pcall(os.rename, old, new)
-      if ok then
+      local ok, msg
+      if not opts.dry_run then
+        ok, msg = pcall(os.rename, old, new)
+      end
+      if opts.dry_run or ok then
+        res = true
         table.insert(ret.migrated, {
           root = root,
           new_name = new_name,
+          old_dir = old,
+          new_dir = new,
         })
       else
         table.insert(ret.errors, {
@@ -558,26 +612,90 @@ function M.migrate_projects()
         })
       end
     end
+    return res
   end
 
-  local continuity_dir = util.path.get_session_dir(Config.autosession.dir)
-  for name, typ in vim.fs.dir(continuity_dir) do
+  local function mv_session(dir, name, old, new)
+    local src, tgt = util.path.join(dir, old), util.path.join(dir, new)
+    if util.path.exists(tgt) then
+      table.insert(ret.errors, {
+        type = "session_migration",
+        root = dir,
+        old_file = old,
+        new_file = new,
+        msg = "Target session exists",
+      })
+      return
+    end
+    local ok, msg
+    if not opts.dry_run then
+      ok, msg = pcall(os.rename, src, tgt)
+    end
+    if opts.dry_run or ok then
+      res = true
+      ret.migrated[#ret.migrated].sessions = ret.migrated[#ret.migrated].sessions or {}
+      ret.migrated[#ret.migrated].sessions[#ret.migrated[#ret.migrated].sessions + 1] =
+        { name = name, old = old, new = new }
+    else
+      table.insert(ret.errors, {
+        type = "session_migration",
+        root = dir,
+        old_file = old,
+        new_file = new,
+        msg = msg,
+      })
+    end
+  end
+
+  for name, typ in vim.fs.dir(opts.old_root) do
     if typ == "directory" then
-      local project_dir = util.path.join(continuity_dir, name)
-      local save_file = vim.fs.find(function(fname)
-        return fname:match(".*%.json$")
-      end, { limit = 1, path = project_dir })
-      if save_file[1] then
-        local save_contents = util.path.load_json_file(save_file[1])
+      local project_dir = util.path.join(opts.old_root, name)
+      local save_files = util.path.ls(project_dir, function(entry, _)
+        if entry.type ~= "file" then
+          return
+        end
+        local serialized_name = entry.name:match("^(.*)%.json$")
+        if not serialized_name then
+          return
+        end
+        local deserialized_name = serialized_name:gsub("^([a-z]+_)", function(v)
+          return vim.tbl_contains({ "feat_", "fix_", "renovate_" }, v) and (v:gsub("_$", "/")) or v
+        end)
+        return {
+          deserialized_name,
+          serialized_name .. ".json",
+          util.path.escape(deserialized_name) .. ".json",
+        }
+      end)
+      if #save_files == 1 and save_files[1][1] == "" then
+        save_files = {}
+      end
+      if save_files[1] then
+        local save_contents =
+          util.path.load_json_file(util.path.join(project_dir, save_files[1][2]))
         local cwd = save_contents.global.cwd
         if not cwd or cwd == "" or vim.fn.isabsolutepath(cwd) == 0 then
           rm(project_dir, "broken", cwd)
         elseif util.path.exists(cwd) then
-          local ctx = Config.autosession.spec(cwd)
+          local ctx = get_ctx(cwd)
           if ctx then
-            if not ctx.project.data_dir:find(name, nil, true) then
-              local new_dir = util.path.join(continuity_dir, util.auto.hash(ctx.project.name))
-              mv(project_dir, new_dir, cwd, ctx.project.name)
+            if ctx.project.data_dir ~= project_dir then
+              if mv(project_dir, ctx.project.data_dir, cwd, ctx.project.name) then
+                for _, session in ipairs(save_files) do
+                  if session[2] ~= session[3] then
+                    mv_session(
+                      opts.dry_run and project_dir or ctx.project.data_dir,
+                      unpack(session)
+                    )
+                  elseif session[1] == "" then
+                    rm(
+                      util.path.join(opts.dry_run and project_dir or ctx.project.data_dir, ".json"),
+                      "broken",
+                      cwd
+                    )
+                  end
+                end
+              end
             else
               table.insert(ret.skipped, { root = cwd, name = ctx.project.name })
             end
@@ -588,6 +706,8 @@ function M.migrate_projects()
         else
           rm(project_dir, "missing", cwd)
         end
+      else
+        rm(project_dir, "empty")
       end
     end
   end
@@ -613,7 +733,7 @@ function M.info(opts)
     autosession_config = cur.meta.autosession
     autosession_data = opts.with_snapshot
       and util.path.load_json_file(
-        util.path.get_session_file(cur.name, autosession_config.project.data_dir)
+        util.path.get_autosession_file(cur.name, autosession_config.project.data_dir)
       )
   end
   ---@type ActiveAutosessionInfo

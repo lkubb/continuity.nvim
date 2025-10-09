@@ -3,6 +3,7 @@ local M = {}
 
 ---@diagnostic disable-next-line: deprecated
 local uv = vim.uv or vim.loop
+local tohex = require("bit").tohex
 
 ---@type boolean
 M.is_windows = uv.os_uname().version:match("Windows")
@@ -268,19 +269,12 @@ function M.get_session_dir(dirname)
   return M.get_stdpath_filename("data", dirname)
 end
 
---- Ensure the session name can be used as a file name.
----@param name string The name of the session
----@return string
-local function serialize_session_name(name)
-  local serialized = name:gsub(M.sep, "_"):gsub(":", "_")
-  return serialized
-end
 --- Get the path to the file that stores a saved session.
 ---@param name string The name of the session
 ---@param dirname string The name of the session directory
 ---@return string session_file
 function M.get_session_file(name, dirname)
-  local filename = string.format("%s.json", serialize_session_name(name))
+  local filename = string.format("%s.json", M.escape(name))
   return M.join(M.get_session_dir(dirname), filename)
 end
 
@@ -290,7 +284,7 @@ end
 ---@param dirname string The name of the session directory
 ---@return string state_dir
 function M.get_session_state_dir(name, dirname)
-  return M.join(M.get_session_dir(dirname), serialize_session_name(name))
+  return M.join(M.get_session_dir(dirname), M.escape(name))
 end
 
 --- Get both session-related paths (session data filename and state directory) in one swoop.
@@ -299,10 +293,71 @@ end
 ---@return string session_file
 ---@return string state_dir
 function M.get_session_paths(name, dirname)
-  local session_name = serialize_session_name(name)
+  local session_name = M.escape(name)
   local session_dir = M.get_session_dir(dirname)
   local filename = string.format("%s.json", session_name)
   return M.join(session_dir, filename), M.join(session_dir, session_name)
+end
+
+--- Get the path to the file that stores a saved autosession.
+---@param name string The name of the session
+---@param dir string The absolute path of the directory to save sessions in
+---@return string session_file
+function M.get_autosession_file(name, dir)
+  local filename = string.format("%s.json", M.escape(name))
+  return M.join(M.get_session_dir(dir), filename)
+end
+
+--- Get both session-related paths (session data filename and state directory) in one swoop.
+---@param name string The name of the session
+---@param dir string The absolute path of the directory to save sessions in
+---@return string session_file
+---@return string state_dir
+function M.get_autosession_paths(name, dir)
+  local session_name = M.escape(name)
+  local filename = string.format("%s.json", session_name)
+  return M.join(dir, filename), M.join(dir, session_name)
+end
+
+---@param char string The single-byte (!) single character to turn into its hexadecimal representation
+---@return string %XX-encoded representation of `char`
+local function char_to_percent(char)
+  return "%" .. tohex(char:byte(), 2):upper()
+end
+
+-- By default, escape / (Unix pathsep), all characters forbidden on Windows,
+-- the `%` itself (necessary for the encoding to be reversible), all control characters
+-- to avoid filename display issues, the tilde to not make the impression of
+-- being a special/backup file and somewhat arbitrarily the backtick, single quote,
+-- whitespace and plus sign as well as all control characters.
+local escape_chars = [[/\|<>:*?"%%~`' +%c]]
+
+--- Escape select characters in a string by percent-encoding their hex value.
+--- If the first character is a dot, always encodes it to avoid creating hidden files.
+--- Important: Only supports single-byte characters for substitution. Does not normalize CR/LF.
+---@param str string String to escape
+---@param chrs string? Inner content of a Lua character group. Matches are escaped by percent-encoding them. Defaults to ``/\|<>:*?"%%'` +~%c``.
+---@return string escaped
+function M.escape(str, chrs)
+  local first = ""
+  if str:sub(1, 1) == "." then
+    first = "%2E"
+    str = str:sub(2)
+  end
+  return first .. (str:gsub("([" .. (chrs or escape_chars) .. "])", char_to_percent))
+end
+
+---@param hex string Byte in hexadecimal notation to turn into a raw character
+---@return string char
+local function hex_to_char(hex)
+  return string.char((assert(tonumber(hex, 16), ("Failed decoding hex value of '%s'"):format(hex))))
+end
+
+--- Decode a `%XX`-encoded string into its original form.
+---@param str string The encoded string
+---@return string raw
+function M.unescape(str)
+  return (str:gsub("%%([A-F0-9][A-F0-9])", hex_to_char))
 end
 
 return M

@@ -29,6 +29,10 @@ local funcs = {
   },
   migrate_projects = {
     func = Continuity.migrate_projects,
+    kwargs = {
+      dry_run = { "true", "false" },
+      old_root = {},
+    },
   },
   load = {
     func = Continuity.load,
@@ -170,8 +174,12 @@ function M.complete(_, line)
         if type(completions) == "function" then
           completions = completions()
         end
-        for _, val in ipairs(completions) do
-          matches[#matches + 1] = ("%s=%s"):format(kwarg, val)
+        if #completions == 0 then
+          matches[#matches + 1] = ("%s="):format(kwarg)
+        else
+          for _, val in ipairs(completions) do
+            matches[#matches + 1] = ("%s=%s"):format(kwarg, val)
+          end
         end
       end
     end

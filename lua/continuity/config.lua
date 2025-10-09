@@ -17,7 +17,7 @@ local M = {}
 ---@class UserConfig.autosession
 ---@field config? core.Session.InitOpts Save/load configuration for autosessions
 ---@field dir? string The name of the directory to store autosessions in
----@field spec fun(cwd: string): auto.AutosessionConfig? This function implements the logic that goes from path to autosession spec. It calls `workspace`, `project_name`, `session_name`, `enabled` and `load_opts` to render it. You can implement a custom logic here, but mind that the other functions have no effect then.
+---@field spec fun(cwd: string): AutosessionSpec? This function implements the logic that goes from path to autosession spec. It calls `workspace`, `project_name`, `session_name`, `enabled` and `load_opts` to render it. You can implement a custom logic here, but mind that the other functions have no effect then.
 ---@field workspace? fun(cwd: string): [string, boolean] A function that receives the effective nvim cwd and returns the workspace root dir and whether it's a git-tracked dir
 ---@field project_name? fun(workspace: string, git_info: auto.AutosessionSpec.GitInfo?): string A function that receives the workspace root dir and whether it's git-tracked and returns the project-specific session directory name.
 ---@field session_name? fun(meta: {cwd: string, workspace: string, project_name: string, git_info: auto.AutosessionSpec.GitInfo?}): string A function that receives the effective nvim cwd, the workspace root, the project name and cwd git info and generates a session name.
@@ -52,7 +52,7 @@ local M = {}
 ---@class Config.autosession
 ---@field config core.Session.InitOpts
 ---@field dir string
----@field spec fun(cwd: string): auto.AutosessionConfig?
+---@field spec fun(cwd: string): auto.AutosessionSpec?
 ---@field workspace fun(cwd: string): string, boolean
 ---@field project_name fun(workspace: string, git_info: auto.AutosessionSpec.GitInfo?): string
 ---@field session_name fun(meta: {cwd: string, workspace: string, project_name: string, git_info: auto.AutosessionSpec.GitInfo?}): string
@@ -107,7 +107,7 @@ end
 ---Renders autosession metadata for a specific directory.
 ---Returns nil when autosessions are disabled for this directory.
 ---@param cwd string The working directory the autosession should be rendered for.
----@return auto.AutosessionConfig?
+---@return auto.AutosessionSpec?
 local function render_autosession_context(cwd)
   local workspace, is_git = M.autosession.workspace(cwd)
   -- normalize workspace dir, ensure trailing /
@@ -134,10 +134,8 @@ local function render_autosession_context(cwd)
   then
     return nil
   end
-  local project_dir = util.auto.hash(project_name)
   ---@type continuity.auto.AutosessionSpec
   local ret = {
-    cwd = cwd,
     config = M.autosession.load_opts({
       cwd = cwd,
       git_info = git_info,
@@ -149,7 +147,10 @@ local function render_autosession_context(cwd)
     root = workspace,
     project = {
       name = project_name,
-      data_dir = util.path.join(M.autosession.dir, project_dir),
+      data_dir = util.path.join(
+        util.path.get_session_dir(M.autosession.dir),
+        util.path.escape(project_name)
+      ),
       repo = git_info,
     },
   }

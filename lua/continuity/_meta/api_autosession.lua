@@ -14,8 +14,12 @@
 ---@class ResetOpts: Notify & Reset & SilenceErrors
 ---@field reload? boolean Attempt to restart a new autosession after reset. Defaults to true.
 
+---@class MigrateProjectsOpts
+---@field dry_run? boolean Don't execute the migration, only show what would have happened. Defaults to true, meaning you need to explicitly set this to `false` to have an effect.
+---@field old_root? string If the value of `autosession.dir` has changed, the old value. Defaults to `autosession.dir`.
+
 ---@class ActiveAutosession<T: Session.Target>: ActiveSession<T>
----@field meta {autosession: AutosessionConfig}
+---@field meta {autosession: AutosessionContext}
 
 --- A function that is called during Neovim startup. It receives information
 --- about the current process initialization context and decides whether to
@@ -46,12 +50,12 @@
 
 ---@class AutosessionSpec
 ---@field project AutosessionSpec.ProjectInfo Information about the project the session belongs to
----@field root string The top level directory for this session. Usually equals the project root, but can be different when git worktrees are used.
+---@field root string The top level directory for this session (workspace root). Usually equals the project root, but can be different when git worktrees are used.
 ---@field name string The name of the session
 ---@field config LoadOpts Session-specific load/autosave options.
 
 ---@class AutosessionSpec.ProjectInfo
----@field data_dir string The path of the directory that is used to save autosession data related to this project
+---@field data_dir? string The path of the directory that is used to save autosession data related to this project. If unspecified or empty, defaults to `<nvim data stdpath>/<autosession.dir config>/<escaped project name>`. Relative paths are made absolute to `<nvim data stdpath>/<autosession.dir config>`.
 ---@field name string The name of the project
 ---@field repo AutosessionSpec.GitInfo? When the project is defined as a git repository, meta info
 
@@ -62,10 +66,14 @@
 ---@field branch? string The branch the worktree has checked out
 ---@field default_branch? string The name of the default branch
 
----@class AutosessionConfig: AutosessionSpec
+---@class AutosessionContext: AutosessionSpec
 ---@field cwd string The effective working directory that was determined when loading this auto-session
+---@field project AutosessionConfig.ProjectInfo
+
+---@class AutosessionConfig.ProjectInfo: AutosessionSpec.ProjectInfo
+---@field data_dir string The path of the directory that is used to save autosession data related to this project.
 
 ---@class ActiveAutosessionInfo: ActiveSessionInfo
 ---@field is_autosession boolean Whether this is an autosession or a manual one
----@field autosession_config? AutosessionConfig WHen this is an autosession, the internal configuration that was rendered.
+---@field autosession_config? AutosessionContext WHen this is an autosession, the internal configuration that was rendered.
 ---@field autosession_data? Snapshot The most recent snapshotted state of this named autosession
