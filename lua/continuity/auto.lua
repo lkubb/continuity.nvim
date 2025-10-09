@@ -1,14 +1,5 @@
 -- Setup autoloading and autosaving of sessions per project.
 
--- TODO: Improve usability, a lot. I'm currently mapping project names
--- to directories by just hashing them, which hinders discoverability.
--- Consider something like https://github.com/jedrzejboczar/possession.nvim/pull/55
--- or use the registry implementation as a light database.
--- Note that (neo)vim saves undo files with just the pathsep replaced by %,
--- which makes sense since they have to be valid file paths, but we cannot
--- assume project_name is equivalent to a valid path, hence we need some kind
--- of encoding.
-
 -- TODO: Write tests
 
 -- TODO: Better swapfile handling, see https://github.com/neovim/neovim/issues/5086

@@ -22,6 +22,9 @@ end
 --- Otherwise, return false. This means we shouldn't load or monitor at all.
 ---@return string|false
 function M.cwd_init()
+  if os.getenv("NO_SESSION") then
+    return false
+  end
   -- Don't enable when commands are run at startup
   if vim.tbl_contains(vim.v.argv, "-c") then
     return false
@@ -36,6 +39,9 @@ function M.cwd_init()
   end
   local arg_1 = argv[1]
   ---@cast arg_1 -nil
+  if arg_1 == "." then
+    return false
+  end
   return vim.fn.isdirectory(arg_1) == 1 and vim.fn.fnamemodify(arg_1, ":p")
 end
 
