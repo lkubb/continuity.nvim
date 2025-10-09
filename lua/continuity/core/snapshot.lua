@@ -40,9 +40,10 @@ end
 --- Note: Does not handle modified buffer contents, which requires a path to save to.
 ---@param target_tabpage? TabNr
 ---@param opts? CreateOpts
+---@param snapshot_ctx? snapshot.Context
 ---@return Snapshot
 ---@return BufContext[] List of included buffers
-local function create(target_tabpage, opts)
+local function create(target_tabpage, opts, snapshot_ctx)
   ---@type CreateOpts
   opts = opts or {}
   ---@type Snapshot
@@ -137,9 +138,10 @@ local function create(target_tabpage, opts)
     for ext_name, ext_config in pairs(Config.extensions) do
       local extmod = Ext.get(ext_name)
       if extmod and extmod.on_save and (ext_config.enable_in_tab or not target_tabpage) then
-        local ok, ext_data = pcall(extmod.on_save, {
-          tabpage = target_tabpage,
-        })
+        local ok, ext_data = pcall(
+          extmod.on_save,
+          vim.tbl_extend("error", { tabpage = target_tabpage }, snapshot_ctx or {})
+        )
         if ok then
           data[ext_name] = ext_data
         else
@@ -158,14 +160,15 @@ end
 --- Note: Does not handle modified buffer contents, which requires a path to save to.
 ---@param target_tabpage? TabNr Limit the session to this tab. If unspecified, saves global state.
 ---@param opts? CreateOpts Influence which buffers and options are persisted (overrides global default config).
+---@param snapshot_ctx? snapshot.Context Snapshot meta information, for creating snapshot-associated files in extensions that cannot (easily) be included in the snapshot table.
 ---@return Snapshot?
 ---@return BufContext[] List of included buffers
-function M.create(target_tabpage, opts)
+function M.create(target_tabpage, opts, snapshot_ctx)
   if _is_loading then
     log.warn("Save triggered while still loading session. Skipping save.")
     return nil, {}
   end
-  return create(target_tabpage, opts)
+  return create(target_tabpage, opts, snapshot_ctx)
 end
 
 --- Save the current global or tabpage state to a path.
@@ -175,9 +178,10 @@ end
 ---@param target_tabpage? TabNr Instead of saving everything, only save the current tabpage
 ---@param session_file string The path to write the session to.
 ---@param state_dir string The path to write the session-associated data to (modified buffers).
+---@param context_dir string A shared path for all sessions in this context (`dir` for manual sessions, project dir for autosessions)
 ---@return Snapshot?
 ---@return BufContext[] List of included buffers
-function M.save_as(name, opts, target_tabpage, session_file, state_dir)
+function M.save_as(name, opts, target_tabpage, session_file, state_dir, context_dir)
   if _is_loading then
     log.warn("Save triggered while still loading session. Skipping save.")
     return nil, {}
@@ -189,7 +193,8 @@ function M.save_as(name, opts, target_tabpage, session_file, state_dir)
     opts
   )
   -- Ensure all hooks receive these two params
-  opts.session_file, opts.state_dir = opts.session_file or session_file, opts.state_dir or state_dir
+  opts.session_file, opts.state_dir, opts.context_dir =
+    opts.session_file or session_file, opts.state_dir or state_dir, opts.context_dir or context_dir
   if opts.modified == nil then
     opts.modified = Config.session.modified
   end
@@ -203,7 +208,7 @@ function M.save_as(name, opts, target_tabpage, session_file, state_dir)
     options = opts.options,
     tab_buf_filter = opts.tab_buf_filter,
     modified = opts.modified,
-  })
+  }, { name = name, state_dir = state_dir, context_dir = context_dir })
   if opts.modified then
     snapshot.modified = Buf.save_modified(state_dir, included_bufs)
   else
@@ -219,7 +224,8 @@ end
 
 ---@param snapshot Snapshot
 ---@param opts snapshot.RestoreOpts
-function M.restore(snapshot, opts)
+---@param snapshot_ctx snapshot.Context
+function M.restore(snapshot, opts, snapshot_ctx)
   if opts.modified == nil then
     opts.modified = Config.session.modified
   end
@@ -233,7 +239,7 @@ function M.restore(snapshot, opts)
   else
     layout.open_clean_tab()
   end
-  if opts.modified and not opts.state_dir then
+  if opts.modified and not snapshot_ctx.state_dir then
     log.warn(
       "Requested to restore modified buffers, but state_dir was not passed. Skipping restoration of buffer modifications."
     )
@@ -264,7 +270,7 @@ function M.restore(snapshot, opts)
       util.opts.restore_global(snapshot.global.options)
     end
 
-    Ext.call("on_pre_load", snapshot)
+    Ext.call("on_pre_load", snapshot, snapshot_ctx)
 
     local scale = {
       vim.o.columns / snapshot.global.width,
@@ -277,7 +283,7 @@ function M.restore(snapshot, opts)
       if buf.in_win == false then
         buffers_later[#buffers_later + 1] = buf
       else
-        last_bufnr = Buf.restore(buf, snapshot, opts.state_dir)
+        last_bufnr = Buf.restore(buf, snapshot, snapshot_ctx.state_dir)
       end
       -- TODO: Restore buffer preview cursor
       -- Cannot restore m" here because unsaved restoration can increase
@@ -328,7 +334,7 @@ function M.restore(snapshot, opts)
       vim.cmd("buffer " .. last_bufnr)
     end
 
-    Ext.call("on_post_load", snapshot)
+    Ext.call("on_post_load", snapshot, snapshot_ctx)
   end)
 
   -- Trigger the BufEnter event manually for the current buffer.
@@ -347,7 +353,7 @@ function M.restore(snapshot, opts)
     -- Ignore all messages (including swapfile messages) during buffer restoration
     util.opts.with({ eventignore = "all", shortmess = "aAF" }, function()
       for _, buf in ipairs(buffers_later) do
-        Buf.restore(buf, snapshot, opts.state_dir)
+        Buf.restore(buf, snapshot, snapshot_ctx.state_dir)
       end
       Ext.call("on_post_bufinit", snapshot, false)
     end)
@@ -368,7 +374,7 @@ end
 --- Restore a saved snapshot. Also handles hooks.
 ---@param name string The name of the target session. Only used for hooks.
 ---@param snapshot Snapshot The snapshot contents
----@param opts snapshot.RestoreOpts & PassthroughOpts
+---@param opts snapshot.RestoreOpts & snapshot.Context & PassthroughOpts
 ---@return TabNr?
 function M.restore_as(name, snapshot, opts)
   if opts.modified == nil then
@@ -378,7 +384,11 @@ function M.restore_as(name, snapshot, opts)
     opts.modified = not not snapshot.modified
   end
   Ext.dispatch("pre_load", name, opts --[[@as ext.HookOpts]])
-  M.restore(snapshot, { modified = opts.modified, state_dir = opts.state_dir, reset = opts.reset })
+  M.restore(
+    snapshot,
+    { modified = opts.modified, reset = opts.reset },
+    { name = name, state_dir = opts.state_dir, context_dir = opts.context_dir }
+  )
   Ext.dispatch("post_load", name, opts --[[@as ext.HookOpts]])
   if snapshot.tab_scoped then
     return vim.api.nvim_get_current_tabpage()

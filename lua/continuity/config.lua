@@ -17,7 +17,7 @@ local M = {}
 ---@class UserConfig.autosession
 ---@field config? core.Session.InitOpts Save/load configuration for autosessions
 ---@field dir? string The name of the directory to store autosessions in
----@field spec fun(cwd: string): AutosessionSpec? This function implements the logic that goes from path to autosession spec. It calls `workspace`, `project_name`, `session_name`, `enabled` and `load_opts` to render it. You can implement a custom logic here, but mind that the other functions have no effect then.
+---@field spec fun(cwd: string): auto.AutosessionSpec? This function implements the logic that goes from path to autosession spec. It calls `workspace`, `project_name`, `session_name`, `enabled` and `load_opts` to render it. You can implement a custom logic here, but mind that the other functions have no effect then.
 ---@field workspace? fun(cwd: string): [string, boolean] A function that receives the effective nvim cwd and returns the workspace root dir and whether it's a git-tracked dir
 ---@field project_name? fun(workspace: string, git_info: auto.AutosessionSpec.GitInfo?): string A function that receives the workspace root dir and whether it's git-tracked and returns the project-specific session directory name.
 ---@field session_name? fun(meta: {cwd: string, workspace: string, project_name: string, git_info: auto.AutosessionSpec.GitInfo?}): string A function that receives the effective nvim cwd, the workspace root, the project name and cwd git info and generates a session name.

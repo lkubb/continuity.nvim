@@ -11,7 +11,12 @@
 ---@class snapshot.RestoreOpts
 ---@field reset? boolean Close everything in this neovim instance. If unset/false, loads the snapshot into one or several clean tabs.
 ---@field modified? boolean|"auto" If the snapshot contains unsaved buffer modifications, restore them.
----@field state_dir? string Directory session-associated data like unsaved buffer modifications are stored in. Required for `modified` loading.
+
+--- Snapshot meta information, for creating snapshot-associated files that cannot (easily) be included in the snapshot table.
+---@class snapshot.Context
+---@field name? string Name of the snapshot being saved/restored
+---@field state_dir? string Directory session-associated data like unsaved buffer modifications are stored in. Required for `modified` saving/loading.
+---@field context_dir? string Shared state directory for all snapshots in this snapshot's context. Note: Derived from `dir` for manual sessions or the project directory for autosessions. Intended for shared project state such as shada.
 
 --- A snapshot of nvim's state.
 ---@class Snapshot

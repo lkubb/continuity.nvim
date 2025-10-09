@@ -4,6 +4,7 @@
 ---@class Session.Init.Paths
 ---@field session_file string The path to the session file
 ---@field state_dir string The path to the directory holding session-associated data
+---@field context_dir string A directory for shared state between all sessions in the same context (`dir` for manual sessions, project dir for autosessions)
 
 ---@class Session.Init.Autosave
 ---@field autosave_enabled? boolean When this session is attached, automatically save it in intervals. Defaults to false.
@@ -107,41 +108,46 @@ local Session = {}
 ---@param name string
 ---@param session_file string
 ---@param state_dir string
+---@param context_dir string
 ---@param opts Session.InitOptsWithMeta
 ---@return IdleSession<Session.GlobalTarget>
-function Session.new(name, session_file, state_dir, opts) end
+function Session.new(name, session_file, state_dir, context_dir, opts) end
 ---@param name string
 ---@param session_file string
 ---@param state_dir string
+---@param context_dir string
 ---@param opts Session.InitOptsWithMeta
 ---@param tabnr TabNr
 ---@return IdleSession<Session.TabTarget>
-function Session.new(name, session_file, state_dir, opts, tabnr) end
+function Session.new(name, session_file, state_dir, context_dir, opts, tabnr) end
 ---@param name string
 ---@param session_file string
 ---@param state_dir string
+---@param context_dir string
 ---@param opts Session.InitOptsWithMeta
 ---@param tabnr nil
 ---@param needs_restore true
 ---@return PendingSession<Session.GlobalTarget>
-function Session.new(name, session_file, state_dir, opts, tabnr, needs_restore) end
+function Session.new(name, session_file, state_dir, context_dir, opts, tabnr, needs_restore) end
 ---@param name string
 ---@param session_file string
 ---@param state_dir string
+---@param context_dir string
 ---@param opts Session.InitOptsWithMeta
 ---@param tabnr true
 ---@param needs_restore true
 ---@return PendingSession<Session.TabTarget>
-function Session.new(name, session_file, state_dir, opts, tabnr, needs_restore) end
+function Session.new(name, session_file, state_dir, context_dir, opts, tabnr, needs_restore) end
 
 --- Create a new session by loading a snapshot, which you need to restore explicitly.
 ---@param name string
 ---@param session_file string
 ---@param state_dir string
+---@param context_dir string
 ---@param opts Session.InitOptsWithMeta & continuity.SideEffects.SilenceErrors
 ---@return PendingSession<T>? loaded_session The session object, if it could be loaded
 ---@return Snapshot? snapshot The snapshot data, if it could be loaded
-function Session.from_snapshot(name, session_file, state_dir, opts) end
+function Session.from_snapshot(name, session_file, state_dir, context_dir, opts) end
 
 --- Add hooks to attach/detach events for this session.
 ---@param event "attach"

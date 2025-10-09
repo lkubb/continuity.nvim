@@ -47,7 +47,7 @@ local IdleSession = {} ---@diagnostic disable-line: assign-type-mismatch,missing
 local ActiveSession = {} ---@diagnostic disable-line: assign-type-mismatch,missing-fields
 
 ---@generic T: Session.Target
-function Session.new(name, session_file, state_dir, opts, tabnr, needs_restore)
+function Session.new(name, session_file, state_dir, context_dir, opts, tabnr, needs_restore)
   local autosave_enabled = opts.autosave_enabled
   -- "ternary" expression does not work when false is a valid value, need to pre-define for below
   if autosave_enabled == nil then
@@ -62,6 +62,7 @@ function Session.new(name, session_file, state_dir, opts, tabnr, needs_restore)
     -- Session.Config native part
     session_file = session_file,
     state_dir = state_dir,
+    context_dir = context_dir,
     -- We need to query defaults for these values during load since we cannot
     -- dynamically reconfigure them easily
     autosave_enabled = autosave_enabled,
@@ -109,7 +110,7 @@ function Session.new(name, session_file, state_dir, opts, tabnr, needs_restore)
   return self
 end
 
-function Session.from_snapshot(name, session_file, state_dir, opts)
+function Session.from_snapshot(name, session_file, state_dir, context_dir, opts)
   local snapshot = load_snapshot(session_file, opts.silence_errors)
   if not snapshot then
     return
@@ -129,9 +130,10 @@ function Session.from_snapshot(name, session_file, state_dir, opts)
   }
   -- `snapshot.tab_scoped or nil` tripped up emmylua
   if snapshot.tab_scoped then
-    return Session.new(name, session_file, state_dir, session_opts, true, true), snapshot
+    return Session.new(name, session_file, state_dir, context_dir, session_opts, true, true),
+      snapshot
   end
-  return Session.new(name, session_file, state_dir, session_opts, nil, true), snapshot
+  return Session.new(name, session_file, state_dir, context_dir, session_opts, nil, true), snapshot
 end
 
 function Session:add_hook(event, hook)
@@ -231,6 +233,7 @@ function Session:opts()
     meta = self.meta,
     session_file = self.session_file,
     state_dir = self.state_dir,
+    context_dir = self.context_dir,
   }
 end
 
@@ -252,6 +255,7 @@ function Session:info()
     meta = self.meta,
     session_file = self.session_file,
     state_dir = self.state_dir,
+    context_dir = self.context_dir,
   }
 end
 
@@ -333,7 +337,8 @@ function IdleSession:save(opts)
       save_opts,
       self.tabnr,
       save_opts.session_file,
-      save_opts.state_dir
+      save_opts.state_dir,
+      save_opts.context_dir
     )
   then
     return false
@@ -540,32 +545,34 @@ local function detach_named(name, reason, opts)
 end
 
 ---@generic T: Session.Target
----@overload fun(name: string, session_file: string, state_dir: string, opts: Session.InitOptsWithMeta): IdleSession<Session.GlobalTarget>
----@overload fun(name: string, session_file: string, state_dir: string, opts: Session.InitOptsWithMeta, tabnr: nil): IdleSession<Session.GlobalTarget>
----@overload fun(name: string, session_file: string, state_dir: string, opts: Session.InitOptsWithMeta, tabnr: TabNr): IdleSession<Session.TabTarget>
+---@overload fun(name: string, session_file: string, state_dir: string, context_dir: string, opts: Session.InitOptsWithMeta): IdleSession<Session.GlobalTarget>
+---@overload fun(name: string, session_file: string, state_dir: string, context_dir: string, opts: Session.InitOptsWithMeta, tabnr: nil): IdleSession<Session.GlobalTarget>
+---@overload fun(name: string, session_file: string, state_dir: string, context_dir: string, opts: Session.InitOptsWithMeta, tabnr: TabNr): IdleSession<Session.TabTarget>
 ---@param name string
 ---@param session_file string
 ---@param state_dir string
+---@param context_dir string
 ---@param opts Session.InitOptsWithMeta
 ---@param tabnr TabNr?
 ---@return IdleSession<T>
-function M.create_new(name, session_file, state_dir, opts, tabnr)
+function M.create_new(name, session_file, state_dir, context_dir, opts, tabnr)
   -- help emmylua resolve to the proper type with this conditional
   if tabnr then
-    return Session.new(name, session_file, state_dir, opts, tabnr)
+    return Session.new(name, session_file, state_dir, context_dir, opts, tabnr)
   end
-  return Session.new(name, session_file, state_dir, opts)
+  return Session.new(name, session_file, state_dir, context_dir, opts)
 end
 
 ---@generic T: Session.Target
 ---@param name string
 ---@param session_file string
 ---@param state_dir string
+---@param context_dir string
 ---@param opts Session.InitOptsWithMeta & continuity.SideEffects.SilenceErrors
 ---@return PendingSession<T>?
 ---@return Snapshot?
-function M.from_snapshot(name, session_file, state_dir, opts)
-  return Session.from_snapshot(name, session_file, state_dir, opts)
+function M.from_snapshot(name, session_file, state_dir, context_dir, opts)
+  return Session.from_snapshot(name, session_file, state_dir, context_dir, opts)
 end
 
 ---@generic T: Session.Target

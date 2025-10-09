@@ -293,11 +293,14 @@ end
 ---@param dirname string The name of the session directory
 ---@return string session_file
 ---@return string state_dir
+---@return string context_dir
 function M.get_session_paths(name, dirname)
   local session_name = M.escape(name)
   local session_dir = M.get_session_dir(dirname)
   local filename = string.format("%s.json", session_name)
-  return M.join(session_dir, filename), M.join(session_dir, session_name)
+  return M.join(session_dir, filename),
+    M.join(session_dir, session_name),
+    M.join(session_dir, "__state")
 end
 
 --- Get the path to the file that stores a saved autosession.
@@ -317,15 +320,16 @@ function M.get_autosession_project_dir(project_name, dir)
   return M.join(M.get_session_dir(dir), M.escape(project_name))
 end
 
---- Get both session-related paths (session data filename and state directory) in one swoop.
+--- Get all session-related paths (session data filename, state directory and project state dir) in one swoop.
 ---@param name string The name of the session
 ---@param dir string The absolute path of the directory to save sessions in
 ---@return string session_file
 ---@return string state_dir
+---@return string context_dir
 function M.get_autosession_paths(name, dir)
   local session_name = M.escape(name)
   local filename = string.format("%s.json", session_name)
-  return M.join(dir, filename), M.join(dir, session_name)
+  return M.join(dir, filename), M.join(dir, session_name), M.join(dir, "__state")
 end
 
 ---@param char string The single-byte (!) single character to turn into its hexadecimal representation

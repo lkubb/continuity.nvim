@@ -151,13 +151,14 @@ function M.load(autosession, opts)
     autosession
   )
 
-  local session_file, state_dir =
+  local session_file, state_dir, context_dir =
     util.path.get_autosession_paths(autosession.name, autosession.project.data_dir)
 
   local session
   if util.path.exists(session_file) then
     local snapshot
-    session, snapshot = Session.from_snapshot(autosession.name, session_file, state_dir, load_opts)
+    session, snapshot =
+      Session.from_snapshot(autosession.name, session_file, state_dir, context_dir, load_opts)
     if not session or not snapshot then
       -- This is an edge case, we made sure the file existed and the call above would usually error
       log.fmt_error(
@@ -196,7 +197,7 @@ function M.load(autosession, opts)
     -- The session did not exist, need to save to initialize an empty one.
     -- First, change cwd to workspace root since we're saving/restoring cwd.
     vim.api.nvim_set_current_dir(autosession.root)
-    session = Session.create_new(autosession.name, session_file, state_dir, {
+    session = Session.create_new(autosession.name, session_file, state_dir, context_dir, {
       autosave_enabled = load_opts.autosave_enabled,
       autosave_interval = load_opts.autosave_interval,
       autosave_notify = load_opts.autosave_notify,
@@ -515,7 +516,7 @@ function M.list_projects(opts)
   opts = opts or {}
   local projects_dir = util.path.get_stdpath_filename("data", Config.autosession.dir)
   local res = util.path.ls(projects_dir, function(entry, dir)
-    if entry.type ~= "directory" then
+    if entry.type ~= "directory" or entry.name == "__state" then
       return
     end
     local project_name = util.path.unescape(entry.name)

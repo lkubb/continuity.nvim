@@ -33,28 +33,31 @@ end
 
 --- Check if a session with this configuration is already attached and return it if so
 ---@generic T: Session.Target
----@overload fun(name: string, opts: DirParam, tabnr: TabNr, session_file: string?, state_dir: string?): ActiveSession<Session.TabTarget>?
----@overload fun(name: string, opts: DirParam, tabnr: true, session_file: string?, state_dir: string?): ActiveSession<Session.TabTarget>?
----@overload fun(name: string, opts: DirParam, tabnr: false, session_file: string?, state_dir: string?): ActiveSession<T>?
----@overload fun(name: string, opts: DirParam, tabnr: nil, session_file: string?, state_dir: string?): ActiveSession<Session.GlobalTarget>?
+---@overload fun(name: string, opts: DirParam, tabnr: TabNr, session_file: string?, state_dir: string?, context_dir: string?): ActiveSession<Session.TabTarget>?
+---@overload fun(name: string, opts: DirParam, tabnr: true, session_file: string?, state_dir: string?, context_dir: string?): ActiveSession<Session.TabTarget>?
+---@overload fun(name: string, opts: DirParam, tabnr: false, session_file: string?, state_dir: string?, context_dir: string?): ActiveSession<T>?
+---@overload fun(name: string, opts: DirParam, tabnr: nil, session_file: string?, state_dir: string?, context_dir: string?): ActiveSession<Session.GlobalTarget>?
 ---@param name string Name of the session to find
 ---@param opts DirParam Dir override
 ---@param tabnr? TabNr|false Pass expected tabnr or `true` to filter for a tab session. Pass `nil` for a global session. Pass `false` for either.
 ---@param session_file string?
 ---@param state_dir string?
+---@param context_dir string?
 ---@return ActiveSession<T>?
-local function find_attached(name, opts, tabnr, session_file, state_dir)
+local function find_attached(name, opts, tabnr, session_file, state_dir, context_dir)
   local attached = Session.get_named(name)
   if not attached then
     return
   end
-  if not (session_file and state_dir) then
-    session_file, state_dir = util.path.get_session_paths(name, opts.dir or Config.session.dir)
+  if not (session_file and state_dir and context_dir) then
+    session_file, state_dir, context_dir =
+      util.path.get_session_paths(name, opts.dir or Config.session.dir)
   end
   if
     (tabnr == false or (tabnr == true and not not attached.tabnr) or attached.tabnr == tabnr)
     and attached.session_file == session_file
     and attached.state_dir == state_dir
+    and attached.context_dir == context_dir
   then
     return attached
   end
@@ -73,7 +76,8 @@ end
 ---@return TypeGuard<ActiveSession<T>> attached Whether we referenced an already attached session.
 -- Note: TypeGuard does not work this way! It's only applied to the first *argument*.
 local function get_session(name, opts, tabnr)
-  local session_file, state_dir = util.path.get_session_paths(name, opts.dir or Config.session.dir)
+  local session_file, state_dir, context_dir =
+    util.path.get_session_paths(name, opts.dir or Config.session.dir)
   ---@type Session.InitOptsWithMeta
   local session_opts = {
     autosave_enabled = opts.autosave_enabled,
@@ -92,7 +96,7 @@ local function get_session(name, opts, tabnr)
     attached:update(session_opts)
     return attached, true
   end
-  return Session.create_new(name, session_file, state_dir, session_opts, tabnr), false
+  return Session.create_new(name, session_file, state_dir, context_dir, session_opts, tabnr), false
 end
 
 --- Save the current global or tabpage state to a named session.
@@ -209,8 +213,9 @@ function M.load(name, opts)
   if not name then
     return
   end
-  local session_file, state_dir = util.path.get_session_paths(name, opts.dir or Config.session.dir)
-  local session, snapshot = Session.from_snapshot(name, session_file, state_dir, opts)
+  local session_file, state_dir, context_dir =
+    util.path.get_session_paths(name, opts.dir or Config.session.dir)
+  local session, snapshot = Session.from_snapshot(name, session_file, state_dir, context_dir, opts)
   if not session then
     return
   end
@@ -311,9 +316,9 @@ function M.delete(name, opts)
   if session then
     session:detach("delete", opts)
   else
-    local session_file, state_dir =
+    local session_file, state_dir, context_dir =
       util.path.get_session_paths(name, opts.dir or Config.session.dir)
-    session = Session.create_new(name, session_file, state_dir, {}, nil)
+    session = Session.create_new(name, session_file, state_dir, context_dir, {}, nil)
   end
   session:delete({ notify = opts.notify, silence_errors = opts.silence_errors })
 end
