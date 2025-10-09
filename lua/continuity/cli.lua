@@ -21,11 +21,16 @@ local funcs = {
   list = {
     func = Continuity.list,
     kwargs = {
-      cwd = Continuity.list_projects,
+      cwd = {},
+      project_dir = {},
+      project_name = Continuity.list_projects,
     },
   },
   list_projects = {
     func = Continuity.list_projects,
+    kwargs = {
+      with_sessions = { "true", "false" },
+    },
   },
   migrate_projects = {
     func = Continuity.migrate_projects,

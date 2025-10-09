@@ -145,21 +145,22 @@ end
 
 ---@generic T
 ---@param dir string The directory to list
----@param predicate (fun(entry: uv.fs_readdir.entry, dir: string): T?, boolean?)? Function to map list results to return value. If unspecified, returns a list of file names.
+---@param predicate (fun(entry: uv.fs_readdir.entry, dir: string, depth: integer): T?, boolean?)? Function to map list results to return value. If unspecified, returns a list of file names.
 ---@param order_by ("filename"|"creation_time"|"modification_time"|fun(a: [string, T], b: [string, T]): boolean)? Order the returned list in some fashion. If a function is passed, it receives a tuple of [full_path, predicate_return].
 ---@return T[]
 function M.ls(dir, predicate, order_by)
-  predicate = predicate or function(entry, _)
-    return entry.type == "file" and entry.name
-  end
+  predicate = predicate
+    or function(entry, _, _)
+      return entry.type == "file" and entry.name
+    end
   ---@type "filename"|"creation_time"|"modification_time"|fun(a: [string, T], b: [string, T]): boolean
   order_by = order_by or "filename"
 
-  local dirs = { dir } ---@type string[]
+  local dirs = { { dir, 0 } } ---@type [string, integer][]
   local visited = {} ---@type table<string, true?>
   local ret = {} ---@type [string, T][]
 
-  local function ls_inner(dir_inner)
+  local function ls_inner(dir_inner, depth)
     visited[dir_inner] = true
     ---@diagnostic disable-next-line: param-type-mismatch, param-type-not-match, unnecessary-assert
     local fd = assert(uv.fs_opendir(dir_inner, nil, 256))
@@ -168,14 +169,14 @@ function M.ls(dir, predicate, order_by)
     local entries = uv.fs_readdir(fd)
     while entries do
       for _, entry in ipairs(entries) do
-        local res, recurse = predicate(entry, dir_inner)
+        local res, recurse = predicate(entry, dir_inner, depth)
         if res then
           ret[#ret + 1] = { M.join(dir_inner, entry.name), res }
         end
         if entry.type == "directory" and recurse then
           local dir_path = M.join(dir_inner, entry.name)
           if not visited[dir_path] then
-            dirs[#dirs + 1] = dir_path
+            dirs[#dirs + 1] = { dir_path, depth + 1 }
           end
         end
       end
@@ -186,7 +187,7 @@ function M.ls(dir, predicate, order_by)
 
   while #dirs > 0 do
     for i, idir in ipairs(dirs) do
-      ls_inner(idir)
+      ls_inner(unpack(idir))
       dirs[i] = nil
     end
   end
@@ -306,6 +307,14 @@ end
 function M.get_autosession_file(name, dir)
   local filename = string.format("%s.json", M.escape(name))
   return M.join(M.get_session_dir(dir), filename)
+end
+
+--- Get the path to the project sessions dir
+---@param project_name string The name of the project
+---@param dir string The absolute path of the directory to save projects in
+---@return string project_dir
+function M.get_autosession_project_dir(project_name, dir)
+  return M.join(M.get_session_dir(dir), M.escape(project_name))
 end
 
 --- Get both session-related paths (session data filename and state directory) in one swoop.

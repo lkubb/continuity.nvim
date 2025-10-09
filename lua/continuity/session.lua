@@ -271,7 +271,11 @@ function M.list(opts)
     return {}
   end
   return util.path.ls(session_dir, function(entry)
-    return entry.type == "file" and entry.name:match("^(.+)%.json$")
+    if entry.type ~= "file" then
+      return
+    end
+    local encoded = entry.name:match("^(.+)%.json$")
+    return encoded and util.path.unescape(encoded) or nil
   end, Config.load.order)
 end
 

@@ -475,57 +475,59 @@ function M.reset_project(opts)
 end
 
 ---List autosessions associated with a project.
----@param opts? {cwd?: string} Specify the project to list. If unspecified, lists active project, if available.
+---@param opts? {cwd?: string, project_dir?: string, project_name?: string} Specify the project to list. If unspecified, lists active project, if available.
 ---@return string[]
 function M.list(opts)
   opts = opts or {}
-  local session_dir
-  if not opts.cwd then
+  local project_dir = opts.project_dir
+  if not project_dir and opts.project_name then
+    project_dir = util.path.get_autosession_project_dir(opts.project_name, Config.autosession.dir)
+  end
+  if not (project_dir or opts.cwd) then
     local _, cur = current_autosession()
     if cur then
-      session_dir = cur.project.data_dir
+      project_dir = cur.project.data_dir
     end
   end
-  if not session_dir then
+  if not project_dir then
     local rendered = get_ctx(opts.cwd or util.auto.cwd())
     if not rendered then
       return {}
     end
-    session_dir = rendered.project.data_dir
+    project_dir = rendered.project.data_dir
   end
-  if not util.path.exists(session_dir) then
+  if not util.path.exists(project_dir) then
     return {}
   end
-  return util.path.ls(session_dir, function(entry)
-    return entry.type == "file" and entry.name:match("^(.+)%.json$")
+  return util.path.ls(project_dir, function(entry)
+    if entry.type ~= "file" then
+      return
+    end
+    local encoded = entry.name:match("^(.+)%.json$")
+    return encoded and util.path.unescape(encoded) or nil
   end, Config.load.order)
 end
 
 ---List all known projects.
+---@param opts? {with_sessions?: boolean} Optionally list all known sessions for all known projects as well.
 ---@return string[]
-function M.list_projects()
-  --TODO: This is quite inefficient and could benefit from an inventory somewhere.
-  local projects = {}
-
-  local continuity_dir = util.path.get_session_dir(Config.autosession.dir)
-  for name, typ in vim.fs.dir(continuity_dir) do
-    if typ == "directory" then
-      local save_file = vim.fs.find(function(fname)
-        return fname:match(".*%.json$")
-      end, { limit = 1, path = util.path.join(continuity_dir, name) })
-      if save_file[1] then
-        local save_contents = util.path.load_json_file(save_file[1])
-        local cwd = save_contents.global.cwd
-        if util.path.exists(cwd) then
-          local ctx = get_ctx(cwd)
-          if ctx then
-            projects[#projects + 1] = ctx.project.name
-          end
-        end
-      end
+function M.list_projects(opts)
+  opts = opts or {}
+  local projects_dir = util.path.get_stdpath_filename("data", Config.autosession.dir)
+  local res = util.path.ls(projects_dir, function(entry, dir)
+    if entry.type ~= "directory" then
+      return
     end
+    local project_name = util.path.unescape(entry.name)
+    return opts.with_sessions and { project_name, util.path.join(dir, entry.name) } or project_name
+  end, Config.load.order)
+  if opts.with_sessions then
+    return vim.iter(res):fold({}, function(acc, v)
+      acc[v[1]] = M.list({ project_dir = v[2] })
+      return acc
+    end)
   end
-  return projects
+  return res
 end
 
 ---Dev helper currently (beware: unstable/inefficient).
