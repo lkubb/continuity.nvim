@@ -36,6 +36,112 @@ local function include_buf(tabpage, bufnr, tabpage_bufs, opts)
     or (opts.tab_buf_filter or Config.session.tab_buf_filter)(tabpage, bufnr, opts)
 end
 
+--- Get all global marks, excluding read-only ones (0-9).
+--- Note: Marks 0-9 are not actually read-only (vim.api.nvim_buf_set_mark works),
+--- but they might need special consideration if included here. (TODO)
+---@return table<string, FileMark?> global_marks
+local function get_global_marks()
+  return vim
+    .iter(vim.fn.getmarklist())
+    :filter(function(mark)
+      return not mark.mark:find("%d$")
+    end)
+    :fold({}, function(acc, mark)
+      acc[mark.mark:sub(2, 2)] = { mark.file, mark.pos[2], mark.pos[3] }
+      return acc
+    end)
+end
+
+local hist_map = {
+  search_history = "/",
+  command_history = ":",
+  input_history = "@",
+  expr_history = "=",
+  debug_history = ">",
+}
+
+--- Get session-specific ShaDa file. Used for history persistence.
+---@param snapshot_ctx snapshot.Context
+---@param op "save"|"restore"
+---@return string?
+local function get_shada_file(snapshot_ctx, op)
+  if not snapshot_ctx.state_dir then
+    log.fmt_warn(
+      "Cannot handle shada, missing state_dir/context_dir. "
+        .. "Ensure you use continuity.core.snapshot.%s_as.",
+      op
+    )
+    return
+  end
+  return util.path.join(snapshot_ctx.state_dir, "shada")
+end
+
+--- Write history entries to ShaDa. Only available in global sessions.
+---@param opts snapshot.CreateOpts
+---@param snapshot_ctx? snapshot.Context
+---@param snapshot Snapshot
+---@return Snapshot modified
+local function wshada_hist(opts, snapshot_ctx, snapshot)
+  local shada_file = get_shada_file(snapshot_ctx or {}, "save")
+  if not shada_file then
+    return snapshot
+  end
+  local shada_opt = vim
+    .iter(pairs(hist_map))
+    :map(function(conf, char)
+      local should_skip = conf == "expr_history" or conf == "debug_history"
+      if opts[conf] then
+        snapshot["global"][conf] = true
+        if conf == "expr_history" or conf == "debug_history" then
+          -- These cannot be handled separately when writing.
+          return
+        end
+        return not should_skip and (char .. tostring(opts[conf] ~= true or vim.go.history)) or nil
+      end
+      return not should_skip and (char .. "0") or nil
+    end)
+    :join(",")
+  util.opts.with({ shada = shada_opt .. ",'0", shadafile = shada_file }, function()
+    -- Try to merge with existing shada file
+    vim.cmd("wshada " .. vim.fn.fnameescape(shada_file))
+  end)
+  return snapshot
+end
+
+--- Reset histories that are saved in the session and load them from the session ShaDa.
+--- Only available in global sessions.
+---@param opts snapshot.RestoreOpts
+---@param snapshot_ctx? snapshot.Context
+local function rshada_hist(opts, snapshot_ctx)
+  local shada_file = get_shada_file(snapshot_ctx, "restore")
+  if not shada_file then
+    return
+  end
+  for conf, char in pairs(hist_map) do
+    if opts[conf] then
+      -- We always want to clear history when loading to start fresh
+      vim.fn.histdel(char)
+    end
+  end
+  if not require("continuity.util.path").exists(shada_file) then
+    return
+  end
+  -- Only pull the history entries that should be loaded. Might be relevant
+  -- when the config has been switched before regenerating the ShaDa. Also (afaict),
+  -- we cannot influence expr/debug histories otherwise. This could be overkill though,
+  -- TODO: Reconsider if filtering and thus writing a temp file is necessary here
+  util.shada
+    .from_file(shada_file)
+    :select({ "history" }, {
+      opts.command_history and "cmd" or nil,
+      opts.debug_history and "debug" or nil,
+      opts.expr_history and "expr" or nil,
+      opts.input_history and "input" or nil,
+      opts.search_history and "search" or nil,
+    })
+    :read()
+end
+
 --- Create a snapshot and return the data.
 --- Note: Does not handle modified buffer contents, which requires a path to save to.
 ---@param target_tabpage? TabNr
@@ -44,6 +150,14 @@ end
 ---@return Snapshot
 ---@return BufContext[] List of included buffers
 local function create(target_tabpage, opts, snapshot_ctx)
+  local hist_opts = {
+    command_history = util.opts.coalesce_auto("command_history", false, opts, Config.session),
+    search_history = util.opts.coalesce_auto("search_history", false, opts, Config.session),
+    input_history = util.opts.coalesce_auto("input_history", false, opts, Config.session),
+    expr_history = util.opts.coalesce_auto("expr_history", false, opts, Config.session),
+    debug_history = util.opts.coalesce_auto("debug_history", false, opts, Config.session),
+  }
+
   ---@type CreateOpts
   opts = opts or {}
   ---@type Snapshot
@@ -56,10 +170,26 @@ local function create(target_tabpage, opts, snapshot_ctx)
       height = vim.o.lines - vim.o.cmdheight,
       width = vim.o.columns,
       -- Don't save global options for tab-scoped session
-      options = target_tabpage and {}
-        or util.opts.get_global(opts.options or Config.session.options),
+      options = not target_tabpage and util.opts.get_global(opts.options or Config.session.options)
+        or {},
+      marks = not target_tabpage and opts.global_marks and get_global_marks() or nil,
     },
   }
+
+  --- Process history export to shada, if enabled
+  if
+    not target_tabpage
+    and (
+      hist_opts.command_history
+      or hist_opts.search_history
+      or hist_opts.input_history
+      or hist_opts.expr_history
+      or hist_opts.debug_history
+    )
+  then
+    data = wshada_hist(hist_opts, snapshot_ctx, data)
+  end
+
   local included_bufs = {}
   util.opts.with({ eventignore = "all" }, function()
     ---@type WinID
@@ -86,9 +216,13 @@ local function create(target_tabpage, opts, snapshot_ctx)
           loaded = is_unexpected_exit or vim.api.nvim_buf_is_loaded(bufnr),
           options = util.opts.get_buf(bufnr, opts.options or Config.session.options),
           last_pos = (ctx.restore_last_pos and ctx.last_buffer_pos)
-            or vim.api.nvim_buf_get_mark(bufnr, '"'),
+            or vim.api.nvim_buf_get_mark(bufnr, '"') --[[@as AnonymousMark]],
           in_win = in_win > 0,
           uuid = ctx.uuid,
+          changelist = util.opts.coalesce_auto("changelist", false, opts, Config.session)
+            and Buf.parse_changelist(ctx),
+          marks = util.opts.coalesce_auto("local_marks", false, opts, Config.session)
+            and Buf.get_marks(ctx),
         }
         data.buffers[#data.buffers + 1] = buf
         included_bufs[#included_bufs + 1] = ctx
@@ -195,12 +329,7 @@ function M.save_as(name, opts, target_tabpage, session_file, state_dir, context_
   -- Ensure all hooks receive these two params
   opts.session_file, opts.state_dir, opts.context_dir =
     opts.session_file or session_file, opts.state_dir or state_dir, opts.context_dir or context_dir
-  if opts.modified == nil then
-    opts.modified = Config.session.modified
-  end
-  if opts.modified == "auto" then
-    opts.modified = false
-  end
+  opts.modified = util.opts.coalesce_auto("modified", false, opts, Config.session)
   -- Most API opts and custom ones passed by the user are passed through for the hooks.
   Ext.dispatch("pre_save", name, opts --[[@as ext.HookOpts]], target_tabpage)
   local snapshot, included_bufs = create(target_tabpage, {
@@ -208,6 +337,15 @@ function M.save_as(name, opts, target_tabpage, session_file, state_dir, context_
     options = opts.options,
     tab_buf_filter = opts.tab_buf_filter,
     modified = opts.modified,
+    jumps = opts.jumps,
+    local_marks = opts.local_marks,
+    global_marks = opts.global_marks,
+    changelist = opts.changelist,
+    command_history = opts.command_history,
+    search_history = opts.search_history,
+    input_history = opts.input_history,
+    expr_history = opts.expr_history,
+    debug_history = opts.debug_history,
   }, { name = name, state_dir = state_dir, context_dir = context_dir })
   if opts.modified then
     snapshot.modified = Buf.save_modified(state_dir, included_bufs)
@@ -226,27 +364,43 @@ end
 ---@param opts snapshot.RestoreOpts
 ---@param snapshot_ctx snapshot.Context
 function M.restore(snapshot, opts, snapshot_ctx)
-  if opts.modified == nil then
-    opts.modified = Config.session.modified
+  opts.modified =
+    util.opts.coalesce_auto("modified", not not snapshot.modified, opts, Config.session)
+  for hist_conf, _ in pairs(hist_map) do
+    opts[hist_conf] =
+      util.opts.coalesce_auto(hist_conf, snapshot.global[hist_conf], opts, Config.session)
   end
-  if opts.modified == "auto" then
-    opts.modified = not not snapshot.modified
-  end
+  local load_hist = vim
+    .iter(hist_map)
+    :map(function(v)
+      return opts[v]
+    end)
+    :any(function(v)
+      return v
+    end)
+
   _is_loading = true
-  layout = require("continuity.core.layout")
+
+  local layout = require("continuity.core.layout")
   if opts.reset then
     layout.close_everything()
   else
     layout.open_clean_tab()
   end
-  if opts.modified and not snapshot_ctx.state_dir then
+  if (opts.modified or load_hist) and not snapshot_ctx.state_dir then
     log.warn(
-      "Requested to restore modified buffers, but state_dir was not passed. Skipping restoration of buffer modifications."
+      "Requested to restore modified buffers or history, but state_dir was not passed. Skipping restoration of buffer modifications/history."
     )
     opts.modified = false
+    opts.command_history = false
+    opts.search_history = false
+    opts.input_history = false
+    opts.expr_history = false
+    opts.debug_history = false
   end
 
   if not opts.modified and snapshot.modified then
+    log.debug("Not restoring modified buffers persisted in session, opts.modified is false")
     local shallow_snapshot_copy = {}
     for key, val in pairs(snapshot) do
       if key ~= "modified" then
@@ -268,9 +422,36 @@ function M.restore(snapshot, opts, snapshot_ctx)
     if not snapshot.tab_scoped then
       -- Set the options immediately
       util.opts.restore_global(snapshot.global.options)
+      -- and restore histories
+      if load_hist then
+        log.fmt_debug("Clearing + restoring histories. Config: %s", load_hist)
+        rshada_hist(opts, snapshot_ctx)
+      end
     end
 
     Ext.call("on_pre_load", snapshot, snapshot_ctx)
+
+    if not snapshot.tab_scoped and opts.global_marks ~= false and snapshot.global.marks then
+      log.debug("Restoring global marks")
+      -- Let's set the global marks via ShaDa to avoid performance impact + interference because
+      -- there's only nvim_buf_set_mark, which requires loading the files into bufs and verifies the validity.
+      -- We can still clear all unwanted global marks after.
+      local gmark_shada = util.shada.new()
+      for mark, data in pairs(snapshot.global.marks) do
+        gmark_shada:add_gmark(mark, data[1], data[2], data[3])
+      end
+      gmark_shada:read()
+      -- Clear all global marks that were not defined in the session
+      vim
+        .iter(vim.fn.getmarklist())
+        :map(function(mark)
+          return mark.mark:sub(2, 2)
+        end)
+        :filter(function(name)
+          return not snapshot.global.marks[name]
+        end)
+        :each(vim.api.nvim_del_mark)
+    end
 
     local scale = {
       vim.o.columns / snapshot.global.width,
@@ -377,18 +558,26 @@ end
 ---@param opts snapshot.RestoreOpts & snapshot.Context & PassthroughOpts
 ---@return TabNr?
 function M.restore_as(name, snapshot, opts)
-  if opts.modified == nil then
-    opts.modified = Config.session.modified
-  end
-  if opts.modified == "auto" then
-    opts.modified = not not snapshot.modified
+  opts.modified =
+    util.opts.coalesce_auto("modified", not not snapshot.modified, opts, Config.session)
+  for hist_conf, _ in pairs(hist_map) do
+    opts[hist_conf] =
+      util.opts.coalesce_auto(hist_conf, snapshot.global[hist_conf], opts, Config.session)
   end
   Ext.dispatch("pre_load", name, opts --[[@as ext.HookOpts]])
-  M.restore(
-    snapshot,
-    { modified = opts.modified, reset = opts.reset },
-    { name = name, state_dir = opts.state_dir, context_dir = opts.context_dir }
-  )
+  M.restore(snapshot, {
+    modified = opts.modified,
+    reset = opts.reset,
+    changelist = opts.changelist,
+    jumps = opts.jumps,
+    local_marks = opts.local_marks,
+    global_marks = opts.global_marks,
+    search_history = opts.search_history,
+    command_history = opts.command_history,
+    input_history = opts.input_history,
+    expr_history = opts.expr_history,
+    debug_history = opts.debug_history,
+  }, { name = name, state_dir = opts.state_dir, context_dir = opts.context_dir })
   Ext.dispatch("post_load", name, opts --[[@as ext.HookOpts]])
   if snapshot.tab_scoped then
     return vim.api.nvim_get_current_tabpage()

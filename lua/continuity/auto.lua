@@ -162,7 +162,7 @@ function M.load(autosession, opts)
     if not session or not snapshot then
       -- This is an edge case, we made sure the file existed and the call above would usually error
       log.fmt_error(
-        "Failed loading autosession {} in project {}. Consider deleting the saved snapshot at {}.",
+        "Failed loading autosession %s in project %s. Consider deleting the saved snapshot at %s.",
         autosession.name,
         autosession.project.name,
         session_file
@@ -180,7 +180,7 @@ function M.load(autosession, opts)
       -- The autosession is used to setup a default view instead of session persistence,
       -- but the referenced session does not exist.
       log.fmt_error(
-        "Could not find autosession {} in project {}, cannot start a new one because attach was set to false. "
+        "Could not find autosession %s in project %s, cannot start a new one because attach was set to false. "
           .. "Ensure the session file exists if you configure autloading sessions without attaching after.",
         autosession.name,
         autosession.project.name
@@ -208,6 +208,15 @@ function M.load(autosession, opts)
       options = load_opts.options,
       tab_buf_filter = load_opts.tab_buf_filter,
       meta = load_opts.meta,
+      jumps = load_opts.jumps,
+      changelist = load_opts.changelist,
+      local_marks = load_opts.local_marks,
+      global_marks = load_opts.global_marks,
+      command_history = load_opts.command_history,
+      search_history = load_opts.search_history,
+      input_history = load_opts.input_history,
+      expr_history = load_opts.expr_history,
+      debug_history = load_opts.debug_history,
     })
   end
   session = session:attach()

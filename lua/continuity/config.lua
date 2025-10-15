@@ -79,6 +79,15 @@ local M = {}
 ---@field autosave_notify boolean
 ---@field on_attach? core.Session.AttachHook
 ---@field on_detach? core.Session.DetachHook
+---@field changelist boolean|"auto"
+---@field jumps boolean|"auto"
+---@field local_marks boolean|"auto"
+---@field global_marks boolean|"auto"
+---@field command_history boolean|"auto"
+---@field search_history boolean|"auto"
+---@field input_history boolean|"auto"
+---@field expr_history boolean|"auto"
+---@field debug_history boolean|"auto"
 
 local util = require("continuity.util")
 
@@ -214,6 +223,15 @@ local defaults = {
     autosave_enabled = false,
     autosave_interval = 60,
     autosave_notify = true,
+    command_history = "auto",
+    search_history = "auto",
+    input_history = "auto",
+    expr_history = "auto",
+    debug_history = "auto",
+    jumps = "auto",
+    changelist = "auto",
+    global_marks = "auto",
+    local_marks = "auto",
   },
 }
 

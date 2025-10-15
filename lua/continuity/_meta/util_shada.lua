@@ -7,7 +7,7 @@
 
 --- Many ShaDa entries are marks. This is the basic type without reference to a file path.
 ---@class EntryData.BaseMark
----@field f string file name
+---@field f string - "" file name
 ---@field l integer? line count, defaults to 1
 ---@field c integer? column count, defaults to 0
 

@@ -7,16 +7,27 @@
 ---@alias BufNr integer Nvim buffer number
 ---@alias TabNr integer Nvim tab number
 
+---@class AnonymousMark: integer[]
+---@field [1] integer Line number
+---@field [2] integer Column number
+
+---@class FileMark
+---@field [1] string - "" Absolute path to file this mark references
+---@field [2] integer Line number
+---@field [3] integer Column number
+
 --- Continuity needs to remember buffer-specific data, which it does via `vim.b`.
 --- This class offers a simplified interface to that context.
 ---@class BufContext
 ---@field bufnr BufNr The buffer number of the buffer this context references
 ---@field name string The name of the buffer this context references. Usually the path of the loaded file or the empty string for untitled ones.
 ---@field uuid BufUUID A UUID to track buffers across session restorations
----@field last_buffer_pos? [integer, integer] cursor position when last exiting the buffer
----@field last_win_pos? table<string, [integer, integer]> Window (ID as string)-specific cursor positions
+---@field last_buffer_pos? AnonymousMark cursor position when last exiting the buffer
+---@field last_win_pos? table<string, AnonymousMark> Window (ID as string)-specific cursor positions
 ---@field need_edit? boolean Indicates the buffer needs :edit to be initialized correctly (autocmds are suppressed during session load)
----@field needs_restore? boolean Indicates the buffer has been loaded during session load, but has not been initialized completely because it never has been accessed
+---@field needs_restore? boolean Only used for buffers with unsaved modifications. Indicates the buffer has been loaded during session load, but has not been initialized completely because it never has been accessed
+---@field initialized? boolean Unset when buffer has not been restored. Set to false when a buffer restoration is pending. Set to true when a loaded buffer has been restored completely from the snapshot, meaning its `BufEnter` event has been triggered and finished. Before this, save operations need to consider yet to apply data.
+---@field snapshot_data? Snapshot.BufData Set while `initialized` is `false`. Contains all data concerning this buffer from the partially restored snapshot. Removed when restoration is finished by loading the buffer into a focused window.
 ---@field restore_last_pos? boolean Indicates the buffer cursor needs to be restored. Handled during initial session loading e.g. for previews and again in buffer initialization when loaded into a window.
 ---@field state_dir? string The directory to save session-associated state in. Used for modification persistence.
 ---@field swapfile? string The path to the buffer's swapfile if it had one when loaded.

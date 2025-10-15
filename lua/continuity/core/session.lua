@@ -48,11 +48,6 @@ local ActiveSession = {} ---@diagnostic disable-line: assign-type-mismatch,missi
 
 ---@generic T: Session.Target
 function Session.new(name, session_file, state_dir, context_dir, opts, tabnr, needs_restore)
-  local autosave_enabled = opts.autosave_enabled
-  -- "ternary" expression does not work when false is a valid value, need to pre-define for below
-  if autosave_enabled == nil then
-    autosave_enabled = Config.session.autosave_enabled
-  end
   if tabnr == true then
     ---@diagnostic disable-next-line: unnecessary-assert
     assert(needs_restore, "tabnr must not be `true` unless needs_restore is set as well")
@@ -65,7 +60,7 @@ function Session.new(name, session_file, state_dir, context_dir, opts, tabnr, ne
     context_dir = context_dir,
     -- We need to query defaults for these values during load since we cannot
     -- dynamically reconfigure them easily
-    autosave_enabled = autosave_enabled,
+    autosave_enabled = util.opts.coalesce("autosave_enabled", false, opts, Config.session),
     autosave_interval = opts.autosave_interval or Config.session.autosave_interval,
     autosave_notify = opts.autosave_notify,
     meta = opts.meta,
@@ -76,6 +71,15 @@ function Session.new(name, session_file, state_dir, context_dir, opts, tabnr, ne
     options = opts.options,
     buf_filter = opts.buf_filter,
     tab_buf_filter = opts.tab_buf_filter,
+    changelist = opts.changelist,
+    jumps = opts.jumps,
+    global_marks = opts.global_marks,
+    local_marks = opts.local_marks,
+    command_history = opts.command_history,
+    search_history = opts.search_history,
+    input_history = opts.input_history,
+    expr_history = opts.expr_history,
+    debug_history = opts.debug_history,
     -- internals
     name = name,
     tabnr = tabnr ~= true and tabnr or nil,
@@ -127,6 +131,15 @@ function Session.from_snapshot(name, session_file, state_dir, context_dir, opts)
     options = opts.options,
     tab_buf_filter = opts.tab_buf_filter,
     meta = opts.meta,
+    changelist = opts.changelist,
+    jumps = opts.jumps,
+    global_marks = opts.global_marks,
+    local_marks = opts.local_marks,
+    command_history = opts.command_history,
+    search_history = opts.search_history,
+    input_history = opts.input_history,
+    expr_history = opts.expr_history,
+    debug_history = opts.debug_history,
   }
   -- `snapshot.tab_scoped or nil` tripped up emmylua
   if snapshot.tab_scoped then
@@ -154,6 +167,16 @@ function Session:update(opts)
       "options",
       "buf_filter",
       "tab_buf_filter",
+      "changelist",
+      "jumps",
+      "global_marks",
+      "local_marks",
+      "history",
+      "command_history",
+      "search_history",
+      "input_history",
+      "expr_history",
+      "debug_history",
     })
     :each(function(attr)
       if opts[attr] ~= nil and self[attr] ~= opts[attr] then
@@ -224,6 +247,15 @@ function Session:opts()
     options = self.options,
     buf_filter = self.buf_filter,
     tab_buf_filter = self.tab_buf_filter,
+    changelist = self.changelist,
+    jumps = self.jumps,
+    global_marks = self.global_marks,
+    local_marks = self.local_marks,
+    command_history = self.command_history,
+    search_history = self.search_history,
+    input_history = self.input_history,
+    expr_history = self.expr_history,
+    debug_history = self.debug_history,
     -- Information for hooks
     --   1. Session handling info
     autosave_enabled = self.autosave_enabled,
@@ -244,6 +276,15 @@ function Session:info()
     options = self.options,
     buf_filter = self.buf_filter,
     tab_buf_filter = self.tab_buf_filter,
+    changelist = self.changelist,
+    jumps = self.jumps,
+    global_marks = self.global_marks,
+    local_marks = self.local_marks,
+    command_history = self.command_history,
+    search_history = self.search_history,
+    input_history = self.input_history,
+    expr_history = self.expr_history,
+    debug_history = self.debug_history,
     -- Session handling
     autosave_enabled = self.autosave_enabled,
     autosave_interval = self.autosave_interval,
@@ -354,13 +395,14 @@ function ActiveSession:autosave(opts, force)
     return
   end
   opts = opts or {}
-  local notify = opts.notify
-  if notify == nil then
-    notify = self.autosave_notify
-    if notify == nil then
-      notify = Config.session.autosave_notify
-    end
-  end
+  local notify = util.opts.coalesce(
+    "autosave_notify",
+    true,
+    { autosave_notify = opts.notify },
+    opts,
+    self,
+    Config.session
+  )
   local save_opts = vim.tbl_extend("keep", { notify = notify }, opts)
   self:save(save_opts)
 end

@@ -129,15 +129,45 @@ function M.with(overrides, inner)
     bak[opt] = vim.o[opt]
     vim.o[opt] = ovrr
   end
-  local ok, ret = pcall(inner)
-  for opt, init in pairs(bak) do
-    vim.o[opt] = init
+  return require("continuity.util").try_finally(inner, function()
+    for opt, init in pairs(bak) do
+      vim.o[opt] = init
+    end
+  end)
+end
+
+--- Search through tables in descending priority for a non-nil key or return default.
+--- Note: This being in the `opts` namespace does not carry any semantic meaning, it does not
+--- operate on neovim options.
+---@generic Opts: table, Key, Default
+---@param name std.ConstTpl<Key>
+---@param default Default
+---@param ... Opts...
+---@return std.RawGet<Opts, Key>|Default
+function M.coalesce(name, default, ...)
+  for _, src in ipairs({ ... }) do
+    if src[name] ~= nil then
+      return src[name]
+    end
   end
-  if not ok then
-    error(ret)
+  return default
+end
+
+--- Search through tables in descending priority for a non-nil key. If the result is `auto`,
+--- treats it the same as a missing key and returns the default.
+--- Note: This being in the `opts` namespace does not carry any semantic meaning, it does not
+--- operate on neovim options.
+---@generic Opts: table, Key, Default, AutoMapped
+---@param name std.ConstTpl<Key>
+---@param default AutoMapped
+---@param ... Opts...
+---@return std.RawGet<Opts, Key>|AutoMapped
+function M.coalesce_auto(name, default, ...)
+  local res = M.coalesce(name, "auto", ...)
+  if res == "auto" then
+    return default
   end
-  ---@cast ret -string
-  return ret
+  return res
 end
 
 return M

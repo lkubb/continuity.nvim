@@ -211,7 +211,7 @@ end
 
 --- Add a global mark entry.
 ---@param name string Single-char name of mark
----@param file string Absolute path of the file the global mark points to
+---@param file string - "" Absolute path of the file the global mark points to
 ---@param line? integer Line number. Defaults to 1.
 ---@param col? integer Column number. Defaults to 0.
 ---@param timestamp? integer Timestamp of entry, defaults to now
@@ -223,7 +223,7 @@ function Shada:add_gmark(name, file, line, col, timestamp)
 end
 
 --- Add a jumplist entry.
----@param file string Absolute path of the file the jumplist entry points to
+---@param file string - "" Absolute path of the file the jumplist entry points to. Must not be the empty string.
 ---@param line? integer Line number. Defaults to 1.
 ---@param col? integer Column number. Defaults to 0.
 ---@param timestamp? integer Timestamp of entry, defaults to now
@@ -236,7 +236,7 @@ end
 
 --- Add a buffer-specific local mark entry.
 ---@param name string Single-char name of mark
----@param file string Absolute path of the file the mark applies to
+---@param file string - "" Absolute path of the file the mark applies to
 ---@param line? integer Line number. Defaults to 1.
 ---@param col? integer Column number. Defaults to 0.
 ---@param timestamp? integer Timestamp of entry, defaults to now
@@ -248,7 +248,7 @@ function Shada:add_lmark(name, file, line, col, timestamp)
 end
 
 --- Add a changelist entry.
----@param file string Absolute path of the file the changelist entry points to
+---@param file string - "" Absolute path of the file the changelist entry points to
 ---@param line? integer Line number. Defaults to 1.
 ---@param col? integer Column number. Defaults to 0.
 ---@param timestamp? integer Timestamp of entry, defaults to now

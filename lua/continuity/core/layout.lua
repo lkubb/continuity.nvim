@@ -12,6 +12,42 @@ local M = {}
 ---@namespace continuity.core.layout
 ---@using continuity.core
 
+--- Parse the window-local jumplist into a format that can be saved.
+---@param winid WinID The window ID of the window to query
+---@return [WinInfo.JumplistEntry[], integer] jumps_backtrack
+local function parse_jumplist(winid)
+  if vim.w[winid].continuity_jumplist then
+    --- If we're in a restored session that has enabled jumplist restoration and the window
+    --- has never been focused, its jumplist has not been restored yet and is available
+    --- in `w:continuity_jumplist`. Remember this value. If we enabled saving jumplists
+    --- only after the session has been loaded, just fall through and remember whatever nvim gives us.
+    return vim.w[winid].continuity_jumplist
+  end
+  local jumplist = vim.fn.getjumplist(winid)
+  local jumps, current_pos = jumplist[1], jumplist[2]
+  ---@type WinInfo.JumplistEntry[]
+  local parsed = {}
+  local filtered_before = 0
+  for i, jump in ipairs(jumps) do
+    local bufname = vim.api.nvim_buf_get_name(jump.bufnr)
+    if bufname ~= "" then
+      parsed[#parsed + 1] = {
+        vim.fn.fnamemodify(bufname, ":p"),
+        jump.lnum,
+        jump.col,
+      }
+    elseif i < current_pos then
+      filtered_before = filtered_before + 1
+    end
+  end
+  -- If we filter steps in between because we can't restore jump entries for unnamed buffers,
+  -- we need to reduce our backtracking so that another C-o gets to the correct position
+  -- Note: The list is 0-indexed. If it has 2 items and we're at item 2, current_pos is 1.
+  --       If it has 2 items and we're at another position, current_pos is 2.
+  local corrected_pos = current_pos - filtered_before
+  return { parsed, math.max(0, #parsed - corrected_pos - 1) }
+end
+
 --- Check if a window should be saved. If so, return relevant information.
 --- Only exposed for testing purposes
 ---@private
@@ -60,6 +96,7 @@ function M.get_win_info(tabnr, winid, current_win, opts)
     width = vim.api.nvim_win_get_width(winid),
     height = vim.api.nvim_win_get_height(winid),
     options = util.opts.get_win(winid, opts.options or Config.session.options),
+    jumps = util.opts.coalesce_auto("jumps", false, opts, Config.session) and parse_jumplist(winid),
   })
   ---@cast win WinInfo
   local winnr = vim.api.nvim_win_get_number(winid)
@@ -130,9 +167,9 @@ local function set_winlayout(layout)
     for i in ipairs(layout[2]) do
       if i > 1 then
         if typ == "row" then
-          vim.cmd("vsplit")
+          vim.cmd("keepjumps keepalt vsplit")
         else
-          vim.cmd("split")
+          vim.cmd("keepjumps keepalt split")
         end
       end
       winids[#winids + 1] = vim.api.nvim_get_current_win()
@@ -233,6 +270,12 @@ local function set_winlayout_data(layout, scale_factor, visit_data)
         err
       )
     end
+    if win.jumps then
+      -- Restore jumplist later when the window is actually entered for the first time.
+      -- Other restoration steps could otherwise cause modifications of the restored data.
+      vim.w[win.winid].continuity_jumplist = win.jumps
+      vim.w[win.winid].continuity_win_cursor = win.cursor
+    end
     if win.current then
       visit_data.winid = win.winid
     end
@@ -243,6 +286,92 @@ local function set_winlayout_data(layout, scale_factor, visit_data)
   end
   -- Make it somewhat explicit that we're modifying dicts in-place
   return layout, visit_data
+end
+
+--- Hackityhack jumplist restoration by abusing ShaDa in the absence
+--- of a proper API. Does not allow entries referring to unnamed buffers.
+--- Needs to be called in buffer restore logic, preferably as the absolute last step,
+--- after the active buffer has finished restoring, to avoid interference.
+---@param winid? WinID The ID of the window to restore. Defaults to current one.
+function M.restore_jumplist(winid)
+  winid = winid or vim.api.nvim_get_current_win()
+  log.fmt_trace("Restore jumplist called for winid %d", winid)
+
+  if vim.w[winid].continuity_jumplist then
+    ---@type [WinInfo.JumplistEntry[], integer]
+    local jumplist = vim.w[winid].continuity_jumplist
+    local jumps, backtrack = jumplist[1], jumplist[2]
+    local cursor = vim.w[winid].continuity_win_cursor
+    log.fmt_debug("Restoring jumplist for win %s", winid)
+
+    util.opts.with({ eventignore = "all" }, function()
+      -- This is the buf the window should display (the current one). We might need
+      -- to perform a switcheroo to properly restore the jumplist in the intended order.
+      local correct_buf ---@type integer?
+      if backtrack > 0 then
+        -- The position that we are trying to restore needs to be filled by the last item
+        -- in the jumplist since it's going to be pushed up top.
+        ---@type WinInfo.JumplistEntry
+        local last_item = assert(jumps[#jumps])
+        table.insert(jumps, #jumps - backtrack, jumps[#jumps])
+        jumps[#jumps] = nil
+        correct_buf = vim.api.nvim_win_get_buf(winid)
+        if vim.api.nvim_buf_get_name(correct_buf) ~= last_item[1] then
+          log.debug(
+            "Need to jump back to non-final jumplist entry, which is in a different buffer than the currently displayed one"
+          )
+          -- Restoration should still work, right?
+          local bufnr = vim.fn.bufadd(last_item[1] --[[@as string]])
+          if not vim.api.nvim_buf_is_loaded(bufnr) then
+            vim.fn.bufload(bufnr)
+          end
+          vim.api.nvim_win_set_buf(winid, bufnr)
+        else
+          log.debug(
+            "Need to jump back to non-final jumplist entry, which is in the same buffer as the currently displayed one"
+          )
+          correct_buf = nil
+        end
+        -- Before restoring shada, ensure vim thinks we're at the last entry of the new jumplist
+        -- Note: It can happen that the last entry is removed from the jumplist
+        -- if we're right on it for some reason.
+        local ok, err = pcall(
+          vim.api.nvim_win_set_cursor,
+          winid --[[@as integer]],
+          { last_item[2] or 1, last_item[3] or 0 }
+        )
+        if not ok then
+          log.fmt_warn(
+            "Failed to faithfully reproduce jumplist (%s), some positions might be off",
+            err
+          )
+        end
+      end
+      local shaja = util.shada.new()
+      local now = os.time() - #jumps
+      -- local bufs = {}
+      vim.iter(ipairs(jumps)):each(function(i, jump)
+        ---@cast jump WinInfo.JumplistEntry
+        shaja:add_jump(jump[1], jump[2], jump[3], now + i)
+        -- bufs[i] = jump[1]
+      end)
+      -- Ensure all items are actually restored by adding all necessary buffers (?)
+      -- vim.iter(bufs):each(vim.fn.bufadd)
+      vim.cmd.clearjumps()
+      shaja:read()
+      if backtrack > 0 then
+        vim.cmd('exe "norm! ' .. tostring(backtrack) .. '\\<C-o>"')
+      end
+      if correct_buf then
+        vim.api.nvim_win_set_buf(winid, correct_buf)
+      end
+      local ok, err = pcall(vim.api.nvim_win_set_cursor, winid --[[@as integer]], cursor)
+      if not ok then
+        log.fmt_warn("Failed to reset win cursor to wanted, its position might be off: %s", err)
+      end
+    end)
+    vim.w[winid].continuity_jumplist = nil
+  end
 end
 
 ---@param layout WinLayout|false|nil

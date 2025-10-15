@@ -16,6 +16,22 @@ local uuid_v4_template = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx"
 
 local restore_group = vim.api.nvim_create_augroup("ContinuityBufferRestore", { clear = true })
 
+--- Lookup table for marks to ignore when saving/restoring buffer-local marks.
+--- Most of these depend on the window (cursor) state, not the buffer (marked as WIN).
+--- Some cannot be set from outside (RO).
+--- Note: `[`, `<`, `>` and `]` can be set and are buffer-local.
+---@type table<string, true?>
+local IGNORE_LOCAL_MARKS = {
+  ["'"] = true, -- previous context [WIN]
+  ["`"] = true, -- previous context [WIN]
+  ["{"] = true, -- move to start of current paragraph [WIN]
+  ["}"] = true, -- move to end of current paragraph [WIN]
+  ["("] = true, -- move to start of current sentence [WIN]
+  [")"] = true, -- move to end of current sentence [WIN]
+  ["."] = true, -- last change location [RO]
+  ["^"] = true, -- last insert mode exit location [RO]
+}
+
 --- Generate a UUID for a buffer.
 --- They are used to keep track of unnamed buffers between sessions
 --- and as a general identifier when preserving unwritten changes.
@@ -31,6 +47,84 @@ local function generate_uuid()
     return string.format("%x", v)
   end)
   return uuid
+end
+
+--- Get a mapping of all buffer-local marks that can be restored.
+--- Note: Ignores marks that depend on the window (like `'` and `}`) and read-only ones (`.`, `^`)
+---@param ctx BufContext Buffer context to get local marks for
+---@return table<string, AnonymousMark?> local_marks
+function M.get_marks(ctx)
+  if ctx.initialized == false then
+    if not ctx.snapshot_data then
+      log.fmt_error(
+        "Internal error: Buffer %s (%s, %s) not marked as initialized, but missing snapshot data.",
+        ctx.name,
+        ctx.bufnr,
+        ctx.uuid
+      )
+    elseif ctx.snapshot_data.marks then
+      -- We didn't restore the marks yet because the buffer was never focused in this session, so remember the data from last time
+      return ctx.snapshot_data.marks
+    end
+    log.fmt_debug(
+      "Buffer %s (%s, %s) not yet initialized, but did not remember marks",
+      ctx.name,
+      ctx.bufnr,
+      ctx.uuid
+    )
+  end
+  return vim.iter(vim.fn.getmarklist(ctx.bufnr)):fold({}, function(acc, mark)
+    local n = mark.mark:sub(2, 2)
+    -- Cannot restore last change location mark, so filter it out.
+    if not IGNORE_LOCAL_MARKS[n] then
+      acc[mark.mark:sub(2, 2)] = { mark.pos[2], mark.pos[3] }
+    end
+    return acc
+  end)
+end
+
+--- Get a list of changelist entries and the current changelist position (from most recent back).
+--- Note that the changelist position can only be queried for buffers that are visible in a window.
+---@param ctx BufContext Buffer context to get changelist for
+---@return [Snapshot.BufData.ChangelistItem[], integer] changes_backtrack
+function M.parse_changelist(ctx)
+  if ctx.initialized == false then
+    if not ctx.snapshot_data then
+      log.fmt_error(
+        "Internal error: Buffer %s (%s, %s) not marked as initialized, but missing snapshot data.",
+        ctx.name,
+        ctx.bufnr,
+        ctx.uuid
+      )
+    elseif ctx.snapshot_data.changelist then
+      -- We didn't restore the changelist yet because the buffer was never focused in this session, so remember the data from last time
+      return ctx.snapshot_data.changelist
+    end
+    log.fmt_debug(
+      "Buffer %s (%s, %s) not yet initialized, but did not remember changelist",
+      ctx.name,
+      ctx.bufnr,
+      ctx.uuid
+    )
+  end
+  local changelist
+  vim.api.nvim_buf_call(ctx.bufnr, function()
+    -- Only current buffer has correct changelist position, for others getchangelist returns the length of the list.
+    -- Additionally, the current buffer needs to be displayed in the current window. I think the window change
+    -- happens automatically if the buffer is displayed in a window in the current tabpage (?).
+    -- Effectively, this means that the current changelist position is only correctly preserved for visible buffers,
+    -- others get reset to the most recent entry.
+    -- TODO: Consider BufWinLeave AutoCmd to save this info if deemed relevant enough...
+    changelist = vim.fn.getchangelist(ctx.bufnr)
+  end)
+  assert(#changelist == 2, "Internal error: requested changelist for nonexistent buffer")
+  ---@cast changelist [[], integer]
+  local changes, current_pos = changelist[1], changelist[2]
+  local parsed = {}
+  for _, change in ipairs(changes) do
+    parsed[#parsed + 1] = { change.lnum or 1, change.col or 0 }
+  end
+  return { parsed, math.max(0, #parsed - current_pos - 1) }
 end
 
 local BufContext = {}
@@ -192,7 +286,7 @@ local function restore_buf_cursor(ctx, win_only)
   local cline, ccol = unpack(vim.api.nvim_win_get_cursor(current_win))
   if cline ~= 1 or ccol ~= 0 then
     -- TODO: Consider adding the saved position one step ahead of the current
-    -- position of the jumplist via vim.fn.getjumplist/vim.fn.setjumplist.
+    -- position of the jumplist
     log.fmt_debug(
       "Not restoring cursor for buffer %s in window %s at %s because it has already been moved to (%s|%s)",
       ctx.bufnr,
@@ -324,6 +418,51 @@ local function finish_restore_buf(ctx, buf, data)
     restore_modified(ctx)
   end
 
+  local marks_cleared ---@type boolean?
+
+  if ctx.name ~= "" and buf.changelist then
+    local now = os.time() - #buf.changelist
+    local change_shada = util.shada.new()
+    vim.iter(ipairs(buf.changelist[1])):each(function(i, change)
+      change_shada:add_change(ctx.name, change[1], change[2], now + i)
+    end)
+    -- There's no `:clearchanges`, need to clear all buffer-local marks.
+    -- TODO: Restore them after
+    _, marks_cleared = vim.cmd.delmarks({ bang = true }), true
+    change_shada:read()
+    if buf.changelist[2] > 0 then
+      local prev = vim.api.nvim_win_get_cursor(0)
+      vim.cmd("keepjumps norm! " .. tostring(buf.changelist[2] + 1) .. "g;")
+      -- Need to keep position the same as before call, cannot rely on restore_last_pos logic
+      -- because it intentionally skips setting the cursor if it's anywhere other than (1, 0)
+      vim.api.nvim_win_set_cursor(0, prev)
+      ctx.restore_last_pos = true
+    end
+  end
+
+  if buf.marks then
+    if not marks_cleared then
+      -- Cannot do delmarks!, which also clears jumplist (that isn't tracked/restored since we're here)
+      for _, mark in ipairs(vim.fn.getmarklist(ctx.bufnr)) do
+        -- TODO: Really clear all marks?
+        vim.api.nvim_buf_del_mark(ctx.bufnr, mark.mark:sub(2, 2))
+      end
+    end
+    for mark, pos in pairs(buf.marks) do
+      if not IGNORE_LOCAL_MARKS[mark] then
+        util.try_log(
+          vim.api.nvim_buf_set_mark,
+          { "Failed setting mark %s for buf %s: %s", mark, ctx.bufnr },
+          ctx.bufnr,
+          mark,
+          pos[1],
+          pos[2],
+          {}
+        )
+      end
+    end
+  end
+
   log.fmt_debug("Calling on_buf_load extensions")
   Ext.call("on_buf_load", data, ctx.bufnr)
 
@@ -334,6 +473,11 @@ local function finish_restore_buf(ctx, buf, data)
     -- to restore from mark.
     vim.schedule(function()
       restore_buf_cursor(ctx)
+      ctx.initialized, ctx.snapshot_data = true, nil
+    end)
+  else
+    vim.schedule(function()
+      ctx.initialized, ctx.snapshot_data = true, nil
     end)
   end
 end
@@ -391,7 +535,17 @@ local function restore_buf(ctx, buf, data)
       if not ok then
         log.fmt_trace("Failed deleting swapcheck autocmd for buf %s: %s", args.buf, res)
       end
-      finish_restore_buf(ctx, buf, data)
+      util.try_log(
+        finish_restore_buf,
+        { "Failed final buffer restoration for buf %s! Error: %s", args.buf },
+        ctx,
+        buf,
+        data
+      )
+      -- Should be called last. Avoid overhead by pre-checking if the logic needs to run at all.
+      if vim.w.continuity_jumplist then
+        require("continuity.core.layout").restore_jumplist()
+      end
     end,
     buffer = ctx.bufnr,
     once = true,
@@ -414,7 +568,8 @@ local function restore_buf(ctx, buf, data)
       plan_restore(ctx, buf, data)
       return
     end
-    local ok, err = pcall(vim.cmd.edit, { mods = { emsg_silent = true } })
+    -- We need to `keepjumps`, otherwise we reset our jumplist position here/add/move an entry
+    local ok, err = pcall(vim.cmd.edit, { mods = { emsg_silent = true, keepjumps = true } })
     if not ok then
       log.fmt_error("Failed :edit-ing buf %s: %s", ctx.bufnr, err)
     end
@@ -480,7 +635,7 @@ local function restore_modified_preview(ctx, state_dir)
     if ctx.name ~= "" then
       vim.bo[ctx.bufnr].modified = false
     end
-    -- Ensure the buffer is remembered as modified if it is never loaded until the next save
+    -- Ensure the buffer is remembered as only partially restored if it is never loaded until the next save
     ctx.needs_restore = true
     -- Remember the state dir for restore_modified, which is called after a buffer has been re-edited
     ctx.state_dir = state_dir
@@ -489,17 +644,28 @@ end
 
 --- Ensure a saved buffer exists in the same state as it was saved.
 --- Extracted from the loading logic to keep DRY.
---- This should be called when events are suppressed.
+--- This should be called while events are suppressed.
 ---@param buf Snapshot.BufData The saved buffer metadata for the buffer
 ---@param data Snapshot The complete session data
 ---@param state_dir? string The directory where unsaved buffers are persisted to
 ---@return BufNr
 function M.restore(buf, data, state_dir)
   local ctx = M.added(buf.name, buf.uuid)
+  if ctx.initialized ~= nil then
+    -- TODO: Consider the effect of multiple snapshots referencing the same buffer without `reset`
+    log.fmt_warn(
+      "core.buf.restore called more than once for buffer %s (%s), ignoring.",
+      buf,
+      ctx.bufnr
+    )
+    return ctx.bufnr
+  end
 
+  ctx.initialized = not buf.loaded -- unloaded bufs don't need any further initialization
   if buf.loaded then
     vim.fn.bufload(ctx.bufnr)
     ctx.restore_last_pos = true
+    ctx.snapshot_data = buf -- this can be a large table when changelists are stored, problem?
     -- FIXME: All autocmds are added to the same, global augroup. When detaching a session with reset,
     --        the corresponding aucmds (and maybe continuity context) should likely be cleared though.
     plan_restore(ctx, buf, data)
