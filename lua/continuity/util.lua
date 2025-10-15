@@ -6,6 +6,7 @@ local Config
 ---@field git continuity.util.git
 ---@field opts continuity.util.opts
 ---@field path continuity.util.path
+---@field shada continuity.util.shada
 local M = {}
 
 --- Declare a require eagerly, but only load a module when it's first accessed.
