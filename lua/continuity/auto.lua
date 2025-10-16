@@ -61,7 +61,7 @@ end
 ---@param cur ActiveAutosession|AutosessionContext Autosession to operate on
 ---@param defaults? T Call-specific defaults
 ---@param forced? table<string, any> Call-specific forced params
----@return T - nil
+---@return T - nil merged Merged opts
 local function core_opts(opts, cur, defaults, forced)
   cur = (cur.meta and cur.meta.autosession) or cur
   return vim.tbl_extend(
@@ -75,8 +75,9 @@ local function core_opts(opts, cur, defaults, forced)
   )
 end
 
----@param cwd string
----@return AutosessionContext?
+--- Use configured builders to derive the autosession spec.
+---@param cwd string CWD the context is derived for
+---@return AutosessionContext? ctx Autosession spec
 local function get_ctx(cwd)
   local spec = Config.autosession.spec(cwd)
   if not spec then
@@ -99,7 +100,7 @@ end
 ---@type fun(autosession: AutosessionContext?)
 local monitor
 
----Save the currently active autosession.
+--- Save the currently active autosession.
 ---@param opts? SaveOpts & PassthroughOpts
 function M.save(opts)
   local cur = current_autosession()
@@ -118,8 +119,8 @@ function M.save(opts)
 end
 
 --- Detach from the currently active autosession.
---- If autosave is enabled, save it. Optionally closes everything.
----@param opts? Session.DetachOpts & PassthroughOpts Parameters for continuity.core.session.detach
+--- If autosave is enabled, save it. Optionally close **everything**.
+---@param opts? Session.DetachOpts & PassthroughOpts
 function M.detach(opts)
   local cur = current_autosession()
   if not cur then
@@ -128,8 +129,9 @@ function M.detach(opts)
   cur:detach("request", opts or {})
 end
 
----Load an autosession.
----@param autosession? AutosessionContext|string The autosession table as rendered by render_autosession_context or cwd to pass to it
+--- Load an autosession.
+---@param autosession? AutosessionContext|string #
+---   The autosession table as rendered by `get_ctx` or cwd to pass to it
 ---@param opts? LoadOpts
 function M.load(autosession, opts)
   if type(autosession) == "string" then
@@ -222,7 +224,8 @@ function M.load(autosession, opts)
   session = session:attach()
 end
 
----If an autosession is active, save it and detach. Then try to start a new one.
+--- If an autosession is active, save it and detach.
+--- Then try to start a new one.
 function M.reload()
   log.fmt_trace("Reload called. Checking if we need to reload")
   local effective_cwd = util.auto.cwd()
@@ -256,7 +259,7 @@ function M.reload()
   M.load(autosession)
 end
 
----Remove all monitoring hooks.
+--- Remove all monitoring hooks.
 local function stop_monitoring()
   if monitor_group then
     vim.api.nvim_clear_autocmds({ group = monitor_group })
@@ -266,10 +269,11 @@ local function stop_monitoring()
   -- TODO: Should we remove buffer-local variables like _continuity_needs_restore?
 end
 
--- Create hooks that:
----1. When the session is associated with a git repo and gitsigns is available, save/detach/reload active autosession on branch changes.
----2. When the global CWD changes, save/detach/reload active autosession.
----@param autosession? AutosessionContext The active autosession that should be monitored
+--- Create hooks that:
+--- 1. When the session is associated with a git repo and gitsigns is available,
+---    save/detach/reload active autosession on branch changes.
+--- 2. When the global CWD changes, save/detach/reload active autosession.
+---@param autosession? AutosessionContext Active autosession that should be monitored
 function monitor(autosession)
   monitor_group = vim.api.nvim_create_augroup("ContinuityHooks", { clear = true })
 
@@ -403,25 +407,29 @@ function monitor(autosession)
   })
 end
 
----Start Continuity:
----1. If the current working directory has an associated project and session, closes everything and loads that session.
----2. In any case, start monitoring for directory or branch changes.
----@param cwd? string The working directory to switch to before starting autosession. Defaults to nvim's process' cwd.
+--- Start Continuity:
+--- 1. If the current working directory has an associated project and session,
+---    closes everything and loads that session.
+--- 2. In any case, start monitoring for directory or branch changes.
+---@param cwd? string #
+---   Working directory to switch to before starting autosession. Defaults to nvim's process' cwd.
 ---@param opts? LoadOpts
 function M.start(cwd, opts)
   M.load(cwd or util.auto.cwd(), opts)
 end
 
----Stop Continuity:
----1. If we're inside an active autosession, save it and detach. Does not close everything by default.
----2. In any case, stop monitoring for directory or branch changes.
+--- Stop Continuity:
+--- 1. If we're inside an active autosession, save it and detach.
+---    Keep buffers/windows/tabs etc. by default.
+--- 2. In any case, stop monitoring for directory or branch changes.
 function M.stop()
   stop_monitoring()
   M.detach({ reset = false })
 end
 
----Reset the currently active autosession. Closes everything.
----@param opts? ResetOpts Options to influence execution
+--- Delete the currently active autosession. Close **everything**.
+--- Attempt to start a new autosession (optionally).
+---@param opts? ResetOpts
 function M.reset(opts)
   local cur = current_autosession()
   if not cur then
@@ -435,9 +443,9 @@ function M.reset(opts)
   end
 end
 
----Remove all autosessions associated with a project.
----If the target is the active project, resets current session as well and closes everything.
----@param opts? {name?: string, force?: boolean} Specify the project to reset. If unspecified, resets active project, if available.
+--- Remove all autosessions associated with a project.
+--- If the target is the active project, reset current session as well and close **everything**.
+---@param opts? ResetProjectOpts
 function M.reset_project(opts)
   opts = opts or {}
   local name = opts.name
@@ -484,9 +492,12 @@ function M.reset_project(opts)
   end
 end
 
----List autosessions associated with a project.
----@param opts? {cwd?: string, project_dir?: string, project_name?: string} Specify the project to list. If unspecified, lists active project, if available.
----@return string[]
+--- List autosessions associated with a project.
+---@param opts? ListOpts #
+---   Specify the project to list.
+---   If unspecified, lists active project, if available.
+---@return string[] session_names #
+---   List of known sessions associated with project
 function M.list(opts)
   opts = opts or {}
   local project_dir = opts.project_dir
@@ -518,8 +529,8 @@ function M.list(opts)
   end, Config.load.order)
 end
 
----List all known projects.
----@param opts? {with_sessions?: boolean} Optionally list all known sessions for all known projects as well.
+--- List all known projects.
+---@param opts? ListProjectOpts
 ---@return string[]
 function M.list_projects(opts)
   opts = opts or {}
@@ -540,14 +551,16 @@ function M.list_projects(opts)
   return res
 end
 
----Dev helper currently (beware: unstable/inefficient).
----When changing the mapping from workspace to project name, all previously
----saved states would be lost. This tries to migrate state data to the new mapping,
----cleans projects whose cwd does not exist anymore or which are disabled
----Caution! This does not account for projects with multiple associated directories/sessions!
----Checks the first session's cwd/enabled state only!
----@param opts MigrateProjectsOpts? Options for migration. You need to pass `{dry_run = false}` for this function to have an effect.
----@return table<"broken"|"missing"|"skipped"|"migrated"|"deactivated"|"duplicate"|"empty"|"errors", table[]>
+--- Dev helper currently (beware: unstable/inefficient).
+--- When changing the mapping from workspace to project name, all previously
+--- saved states would be lost. This tries to migrate state data to the new mapping,
+--- cleans projects whose cwd does not exist anymore or which are disabled
+--- Caution! This does not account for projects with multiple associated directories/sessions!
+--- Checks the first session's cwd/enabled state only!
+---@param opts? MigrateProjectsOpts #
+---   Options for migration. You need to pass `{dry_run = false}`
+---   for this function to have an effect.
+---@return table<"broken"|"missing"|"skipped"|"migrated"|"deactivated"|"duplicate"|"empty"|"errors", table[]> migration_result #
 function M.migrate_projects(opts)
   opts = opts or {}
   opts.dry_run = opts.dry_run ~= false
@@ -720,7 +733,11 @@ end
 --- Return information about the currently active session.
 --- Includes autosession information, if it is an autosession.
 ---@param opts {with_snapshot?: boolean}?
----@return ActiveAutosessionInfo?
+---@return ActiveAutosessionInfo? active_info #
+---   Information about the active session, even if not an autosession.
+---   Always includes snapshot configuration, session meta config and
+---   whether it is an autosession. For autosessions, also includes
+---   autosession config.
 function M.info(opts)
   local cur = Session.get_global()
   if not cur then

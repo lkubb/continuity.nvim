@@ -38,7 +38,7 @@ local hook_to_event = {
 local has_setup = false
 
 --- Trigger a `User` event
----@param name string The event name to be emitted
+---@param name string Event name to be emitted
 local function event(name)
   local emit_event = function()
     vim.api.nvim_exec_autocmds("User", { pattern = name, modeline = false })
@@ -61,15 +61,15 @@ function M.setup()
 end
 
 --- Add a callback that runs at a specific time
----@param name Hook
----@param callback LoadHook|SaveHook
+---@param name Hook Name of the hook event to attach to
+---@param callback LoadHook|SaveHook Hook to attach to hook event
 function M.add_hook(name, callback)
   hooks[name][#hooks[name] + 1] = callback
 end
 
 --- Remove a hook callback
----@param name Hook
----@param callback LoadHook|SaveHook
+---@param name Hook Name of the hook event the hook is attached to
+---@param callback LoadHook|SaveHook Hook to remove
 function M.remove_hook(name, callback)
   local cbs = hooks[name]
   for i, cb in ipairs(cbs) do
@@ -105,8 +105,8 @@ end
 local ext_cache = {}
 
 --- Attempt to load an extension.
----@param name string The name of the extension to fetch.
----@return Extension?
+---@param name string Name of the extension to fetch.
+---@return Extension? extension Loaded extension module, if found
 function M.get(name)
   if ext_cache[name] then
     return ext_cache[name]

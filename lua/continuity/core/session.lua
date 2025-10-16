@@ -18,7 +18,7 @@ local tab_sessions = {} ---@type table<TabNr, string?>
 local sessions = {} ---@type table<string, ActiveSession<Session.TabTarget>|ActiveSession<Session.GlobalTarget>?>
 
 ---@param session_file string
----@param silence_errors boolean?
+---@param silence_errors? boolean
 ---@return Snapshot?
 local function load_snapshot(session_file, silence_errors)
   local snapshot = util.path.load_json_file(session_file)
@@ -484,8 +484,8 @@ end
 
 ---@overload fun(by_name: true): table<string,TabNr?>
 ---@overload fun(by_name: false?): table<TabNr,string?>
----@param by_name? boolean
----@return table<string,TabNr?>|table<TabNr,string?>
+---@param by_name? boolean Index returned mapping by session name instead of tab number
+---@return table<string,TabNr?>|table<TabNr,string?> active_tab_sessions #
 local function list_active_tabpage_sessions(by_name)
   -- First prune tab-scoped sessions for closed tabs
   -- Note: Shouldn't usually be necessary because we're auto-detaching on TabClosed
@@ -504,9 +504,9 @@ local function list_active_tabpage_sessions(by_name)
   end)
 end
 
----@param reason Session.DetachReason A reason to pass to detach handlers.
+---@param reason Session.DetachReason Reason to pass to detach handlers.
 ---@param opts Session.DetachOpts & PassthroughOpts
----@return boolean
+---@return boolean detached Whether we detached from any session
 local function detach_global(reason, opts)
   if not current_session then
     return false
@@ -519,10 +519,12 @@ local function detach_global(reason, opts)
 end
 
 --- Detach a tabpage-scoped session, either by its name or tabnr
----@param target? (string|TabNr|(string|TabNr)[]) Target a tabpage session by name or associated tabpage. Defaults to current tabpage. Also takes a list.
----@param reason Session.DetachReason A reason to pass to detach handlers.
+---@param target? (string|TabNr|(string|TabNr)[]) #
+---   Target a tabpage session by name or associated tabpage.
+---   Defaults to current tabpage. Also takes a list.
+---@param reason Session.DetachReason Reason to pass to detach handlers.
 ---@param opts Session.DetachOpts & PassthroughOpts
----@return boolean
+---@return boolean detached Whether we detached from any session
 local function detach_tabpage(target, reason, opts)
   if type(target) == "table" then
     local had_effect = false
@@ -549,9 +551,9 @@ local function detach_tabpage(target, reason, opts)
 end
 
 --- Detach all sessions (global + tab-scoped).
----@param reason Session.DetachReason A reason to pass to detach handlers.
+---@param reason Session.DetachReason Reason to pass to detach handlers.
 ---@param opts Session.DetachOpts & PassthroughOpts
----@return boolean
+---@return boolean detached Whether we detached from any session
 function M.detach_all(reason, opts)
   local detached_global = detach_global(reason, opts)
   local detached_tabpage =
@@ -575,10 +577,10 @@ function M.detach_all(reason, opts)
 end
 
 --- Detach a session by name.
----@param name string
----@param reason Session.DetachReason A reason to pass to detach handlers.
+---@param name string Name of the session to detach
+---@param reason Session.DetachReason Reason to pass to detach handlers.
 ---@param opts Session.DetachOpts & PassthroughOpts
----@return boolean
+---@return boolean detached Whether we detached from any session
 local function detach_named(name, reason, opts)
   if current_session and current_session == name then
     return detach_global(reason, opts)
@@ -595,7 +597,7 @@ end
 ---@param state_dir string
 ---@param context_dir string
 ---@param opts Session.InitOptsWithMeta
----@param tabnr TabNr?
+---@param tabnr? TabNr
 ---@return IdleSession<T>
 function M.create_new(name, session_file, state_dir, context_dir, opts, tabnr)
   -- help emmylua resolve to the proper type with this conditional
@@ -644,7 +646,8 @@ function M.get_named(name)
   return sessions[name]
 end
 
----@param tabnr? TabNr The tabnr the session is associated with. Empty for current tab.
+---@param tabnr? TabNr #
+---    Tab number the session is associated with. Empty for current tab.
 ---@return ActiveSession<Session.TabTarget>?
 function M.get_tabnr(tabnr)
   ---@type string?
@@ -659,7 +662,7 @@ function M.get_tabnr(tabnr)
     or nil
 end
 
----@return ActiveSession<Session.GlobalTarget>?
+---@return ActiveSession<Session.GlobalTarget>? global_session #
 function M.get_global()
   return current_session
       and assert(
@@ -671,7 +674,7 @@ function M.get_global()
 end
 
 ---@generic T: Session.Target
----@return ActiveSession<T>?
+---@return ActiveSession<T>? active_session #
 function M.get_active()
   local name = M.get_current()
   return name and assert(sessions[name], "Current session not known, this is likely a bug") or nil
@@ -707,14 +710,14 @@ function M.save_all(opts)
 end
 
 --- Get the name of the current session
----@return string?
+---@return string? current_name #
 function M.get_current()
   local tabpage = vim.api.nvim_get_current_tabpage()
   return tab_sessions[tabpage] or current_session
 end
 
 --- Get data/config remembered from attaching the currently active session
----@return ActiveSessionInfo?
+---@return ActiveSessionInfo? info #
 function M.get_current_data()
   local current = M.get_current()
   if not current then
@@ -725,10 +728,12 @@ function M.get_current_data()
 end
 
 --- Detach from the session that contains the target (or all active sessions if unspecified).
----@param target? ("__global"|"__active"|"__active_tab"|"__all_tabs"|string|integer|(string|integer)[]) The scope/session name/tabnr to detach from. If unspecified, detaches all sessions.
----@param reason? Session.DetachReason Pass a custom reason to detach handlers. Defaults to `request`.
+---@param target? ("__global"|"__active"|"__active_tab"|"__all_tabs"|string|integer|(string|integer)[]) #
+---   The scope/session name/tabnr to detach from. If unspecified, detaches all sessions.
+---@param reason? Session.DetachReason #
+---   Pass a custom reason to detach handlers. Defaults to `request`.
 ---@param opts? Session.DetachOpts & PassthroughOpts
----@return boolean Whether we detached from any session
+---@return boolean detached Whether we detached from any session
 function M.detach(target, reason, opts)
   reason = reason or "request"
   opts = opts or {}

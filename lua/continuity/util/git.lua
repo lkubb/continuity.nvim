@@ -1,21 +1,24 @@
 ---@class continuity.util.git
 local M = {}
 
+--- Influence how the `git` binary is called
 ---@class continuity.util.GitOpts
 ---@field cwd? string Override the working directory of the git process
 ---@field gitdir? string A gitdir path to pass to Git explicitly.
 ---@field worktree? string A worktree path to pass to Git explicitly.
 
+--- Influence how the `git` binary is called
+--- and how its returns are handled
 ---@class continuity.util.GitCmdOpts: vim.SystemOpts, continuity.util.GitOpts
 ---@field ignore_error? boolean Don't raise errors when the command fails.
 ---@field trim_empty_lines? boolean When splitting stdout, remove empty elements of the array. Defaults to false.
 
----Wrapper for vim.system for git commands. Raises errors by default.
----@param cmd string[] The command to run
----@param opts? continuity.util.GitCmdOpts Modifiers for vim.system and additional ignore_errors option.
----@return string[] stdout_lines
----@return string? stderr
----@return integer exitcode
+--- Wrapper for vim.system for git commands. Raises errors by default.
+---@param cmd string[] Git subcommand + options/parameters to run.
+---@param opts? continuity.util.GitCmdOpts Modifiers for `vim.system` and additional ignore_errors option.
+---@return string[] stdout_lines #
+---@return string? stderr #
+---@return integer exitcode #
 local function git_cmd(cmd, opts)
   local sysopts = vim.tbl_extend("force", { text = true }, opts or {})
   local gitcmd = {
@@ -52,10 +55,10 @@ local function git_cmd(cmd, opts)
   return lines, res.stderr, res.code
 end
 
----Run `git` commands with varargs. Returns nil on error.
+--- Run `git` commands using varargs. Returns nil on error.
 ---@param opts? continuity.util.GitOpts Override cwd/gitdir/worktree of the git process
----@param ... string The subcommand + options/params to run
----@return string[]?
+---@param ... string Git subcommand + options/params to run
+---@return string[]? stdout_lines #
 local function git(opts, ...)
   local git_opts = opts or {} --[[@as continuity.util.GitOpts]]
   ---@type continuity.util.GitCmdOpts
@@ -74,16 +77,16 @@ local function git(opts, ...)
   return stdout
 end
 
----List all locally existing branches
+--- List all locally existing branches
 ---@param opts? continuity.util.GitOpts Override cwd/gitdir/worktree of the git process
----@return string[]?
+---@return string[]? branches #
 function M.list_branches(opts)
   return git(opts, "branch", "--list", "--format=%(refname:short)")
 end
 
----Get the checked out branch of a git repository.
+--- Get the checked out branch of a git repository.
 ---@param opts? continuity.util.GitOpts Override cwd/gitdir/worktree of the git process
----@return string?
+---@return string? current_branch #
 function M.current_branch(opts)
   local res = git(opts, "branch", "--show-current")
   if res and res[1] and res[1] ~= "" then
@@ -106,8 +109,9 @@ function M.current_branch(opts)
   end
 end
 
+--- Collect information about a git working directory, useful for project/session mapping
 ---@param opts? continuity.util.GitOpts Override cwd/gitdir/worktree of the git process
----@return continuity.auto.AutosessionSpec.GitInfo?
+---@return continuity.auto.AutosessionSpec.GitInfo? git_info #
 function M.git_info(opts)
   opts = opts or {}
   local stdout, stderr, code = git_cmd({
@@ -168,10 +172,10 @@ function M.git_info(opts)
   }
 end
 
----Get the "default branch" of a git repository.
----This is not really a git core concept.
+--- Get the "default branch" of a git repository.
+--- This is not really a git core concept.
 ---@param opts? continuity.util.GitOpts Override cwd/gitdir/worktree of the git process
----@return string?
+---@return string? default_branch #
 function M.default_branch(opts)
   local res = git(opts, "rev-parse", "--abbrev-ref", "origin/HEAD")
   if res then
@@ -192,11 +196,11 @@ function M.default_branch(opts)
   return nil
 end
 
----If `path` is part of a git repository, return the workspace root path, otherwise `path` itself.
----Note: Does not account for git submodules. You can call git rev-parse --show-superproject-working-tree
----to resolve a submodule to its parent project in a custom implementation of this function.
----@param path string The effective cwd of the current scope
----@return string root The workspace root path or `path` itself
+--- If `path` is part of a git repository, return the workspace root path, otherwise `path` itself.
+--- Note: Does not account for git submodules. You can call git rev-parse --show-superproject-working-tree
+--- to resolve a submodule to its parent project in a custom implementation of this function.
+---@param path string Effective cwd of the current scope
+---@return string root_or_path Workspace root path or `path` itself
 ---@return boolean is_repo Whether `path` is in a git repo
 function M.find_workspace_root(path)
   local root = vim.fs.root(path, ".git")
@@ -206,10 +210,10 @@ function M.find_workspace_root(path)
   return path, false
 end
 
----If `path` is part of a git repository, return the parent of the path that contains the gitdir.
----This accounts for git worktrees.
----@param path string The effective cwd of the current scope
----@return string
+--- If `path` is part of a git repository, return the parent of the path that contains the gitdir.
+--- This accounts for git worktrees.
+---@param path string Effective cwd of the current scope
+---@return string gitdir_or_path #
 function M.find_git_dir(path)
   local res = git({ cwd = path }, "rev-parse", "--absolute-git-dir")
   if not res then

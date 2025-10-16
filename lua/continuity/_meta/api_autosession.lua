@@ -14,9 +14,31 @@
 ---@class ResetOpts: Notify & Reset & SilenceErrors
 ---@field reload? boolean Attempt to restart a new autosession after reset. Defaults to true.
 
+---@class ResetProjectOpts
+---@field name? string #
+---   Specify the project to reset. If unspecified, resets active project, if available.
+---@field force? boolean #
+---   Force recursive deletion of project dir outside of configured root
+
+--- Options for listing autosessions in a project.
+--- `cwd`, `project_dir` and `project_name` are different ways of referencing
+--- a project and only one of them is respected.
+---@class ListOpts
+---@field cwd? string Path to a directory associated with the project to list
+---@field project_dir? string Path to the project session dir
+---@field project_name? string Name of the project
+
+---@class ListProjectOpts
+---@field with_sessions? boolean #
+---   Additionally list all known sessions for each listed project. Defaults to false.
+
 ---@class MigrateProjectsOpts
----@field dry_run? boolean Don't execute the migration, only show what would have happened. Defaults to true, meaning you need to explicitly set this to `false` to have an effect.
----@field old_root? string If the value of `autosession.dir` has changed, the old value. Defaults to `autosession.dir`.
+---@field dry_run? boolean #
+---   Don't execute the migration, only show what would have happened.
+---   Defaults to true, meaning you need to explicitly set this to `false` to have an effect.
+---@field old_root? string #
+---   If the value of `autosession.dir` has changed, the old value.
+---   Defaults to `autosession.dir`.
 
 ---@class ActiveAutosession<T: Session.Target>: ActiveSession<T>
 ---@field meta {autosession: AutosessionContext}
@@ -50,28 +72,38 @@
 
 ---@class AutosessionSpec
 ---@field project AutosessionSpec.ProjectInfo Information about the project the session belongs to
----@field root string The top level directory for this session (workspace root). Usually equals the project root, but can be different when git worktrees are used.
+---@field root string #
+---   The top level directory for this session (workspace root).
+---   Usually equals the project root, but can be different when git worktrees are used.
 ---@field name string The name of the session
 ---@field config LoadOpts Session-specific load/autosave options.
 
 ---@class AutosessionSpec.ProjectInfo
----@field data_dir? string The path of the directory that is used to save autosession data related to this project. If unspecified or empty, defaults to `<nvim data stdpath>/<autosession.dir config>/<escaped project name>`. Relative paths are made absolute to `<nvim data stdpath>/<autosession.dir config>`.
+---@field data_dir? string #
+---   The path of the directory that is used to save autosession data related to this project.
+---   If unspecified or empty, defaults to `<nvim data stdpath>/<autosession.dir config>/<escaped project name>`.
+---   Relative paths are made absolute to `<nvim data stdpath>/<autosession.dir config>`.
 ---@field name string The name of the project
 ---@field repo AutosessionSpec.GitInfo? When the project is defined as a git repository, meta info
 
 ---@class AutosessionSpec.GitInfo
----@field commongitdir string The common git dir, usually equal to gitdir, unless the worktree is not the default workdir (e.g. in worktree checkuots of bare repos). Then it's the actual repo root and gitdir is <git_common_dir>/worktrees/<worktree_name>
+---@field commongitdir string #
+---   The common git dir, usually equal to gitdir, unless the worktree is not the default workdir
+---   (e.g. in worktree checkuots of bare repos).
+---   Then it's the actual repo root and gitdir is <git_common_dir>/worktrees/<worktree_name>
 ---@field gitdir string The repository (or worktree) data path
 ---@field toplevel string The path of the checked out worktree
 ---@field branch? string The branch the worktree has checked out
 ---@field default_branch? string The name of the default branch
 
 ---@class AutosessionContext: AutosessionSpec
----@field cwd string The effective working directory that was determined when loading this auto-session
+---@field cwd string #
+---   The effective working directory that was determined when loading this auto-session
 ---@field project AutosessionConfig.ProjectInfo
 
 ---@class AutosessionConfig.ProjectInfo: AutosessionSpec.ProjectInfo
----@field data_dir string The path of the directory that is used to save autosession data related to this project.
+---@field data_dir string #
+---   The path of the directory that is used to save autosession data related to this project.
 
 ---@class ActiveAutosessionInfo: ActiveSessionInfo
 ---@field is_autosession boolean Whether this is an autosession or a manual one

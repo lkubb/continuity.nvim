@@ -52,7 +52,8 @@ end
 --- Get a mapping of all buffer-local marks that can be restored.
 --- Note: Ignores marks that depend on the window (like `'` and `}`) and read-only ones (`.`, `^`)
 ---@param ctx BufContext Buffer context to get local marks for
----@return table<string, AnonymousMark?> local_marks
+---@return table<string, AnonymousMark?> local_marks #
+---   Mapping of mark name to (line, col) tuple, (1, 0)-indexed
 function M.get_marks(ctx)
   if ctx.initialized == false then
     if not ctx.snapshot_data then
@@ -86,7 +87,7 @@ end
 --- Get a list of changelist entries and the current changelist position (from most recent back).
 --- Note that the changelist position can only be queried for buffers that are visible in a window.
 ---@param ctx BufContext Buffer context to get changelist for
----@return [Snapshot.BufData.ChangelistItem[], integer] changes_backtrack
+---@return [Snapshot.BufData.ChangelistItem[], integer] changes_backtrack #
 function M.parse_changelist(ctx)
   if ctx.initialized == false then
     if not ctx.snapshot_data then
@@ -129,8 +130,8 @@ end
 
 local BufContext = {}
 
----@param bufnr? BufNr
----@return BufContext
+---@param bufnr? BufNr Buffer number
+---@return BufContext ctx #
 function BufContext.new(bufnr)
   return setmetatable({ bufnr = bufnr }, BufContext)
 end
@@ -153,10 +154,13 @@ function BufContext.__newindex(self, key, value)
   vim.b[self.bufnr].continuity_ctx = cur
 end
 
---- Get continuity buffer context for a buffer (~ proxy to vim.b.continuity_ctx). Keys can be updated in-place.
----@param bufnr? BufNr The buffer to get the context for. Defaults to the current buffer
----@param init? BufUUID Optionally enforce a specific buffer UUID. Errors if it's already set to something else.
----@return BufContext
+--- Get continuity buffer context for a buffer (~ proxy to vim.b.continuity_ctx).
+--- Keys can be updated in-place.
+---@param bufnr? BufNr #
+---   Buffer to get the context for. Defaults to the current buffer
+---@param init? BufUUID #
+---   Optionally enforce a specific buffer UUID. Errors if it's already set to something else.
+---@return BufContext ctx #
 function M.ctx(bufnr, init)
   local ctx = BufContext.new(bufnr or vim.api.nvim_get_current_buf())
   local current_uuid = ctx.uuid
@@ -190,9 +194,12 @@ end
 --- When `name` is the empty string and `uuid` is given, searches untitled buffers for this UUID. If not found, adds an empty one.
 --- Always ensures a buffer has a UUID. If `uuid` is given, the returned buffer is ensured to match it.
 --- If `name` is not empty and the buffer already has another UUID, errors.
----@param name string The path of the buffer or the empty string ("") for unnamed buffers.
----@param uuid? BufUUID The UUID the buffer should have.
----@return BufContext The buffer context of the specified buffer.
+---@param name string #
+---   Path of the buffer or the empty string ("") for unnamed buffers.
+---@param uuid? BufUUID
+---   UUID the buffer should have.
+---@return BufContext ctx #
+---   Buffer context of the specified buffer.
 function M.added(name, uuid)
   local bufnr
   if name == "" and uuid then
@@ -218,8 +225,11 @@ end
 --- or when on_buf_load plugins have changed the buffer contents dramatically
 --- after the reload triggered by :edit, otherwise the cursor is already restored
 --- in core.layout.set_winlayout_data.
----@param ctx BufContext The buffer context for the buffer in the currently active window.
----@param win_only? boolean Only restore window-specific cursor positions of the buffer (multiple windows, first one is already recovered)
+---@param ctx BufContext #
+---   Buffer context for the buffer in the currently active window.
+---@param win_only? boolean #
+---   Only restore window-specific cursor positions of the buffer
+---   (multiple windows, first one is already recovered)
 local function restore_buf_cursor(ctx, win_only)
   local last_pos
   local current_win
@@ -327,8 +337,8 @@ local function restore_buf_cursor(ctx, win_only)
   ctx.last_buffer_pos = nil
 end
 
----Restore a single modified buffer when it is first focused in a window.
----@param ctx BufContext The buffer context for the buffer to restore.
+--- Restore a single modified buffer when it is first focused in a window.
+---@param ctx BufContext Buffer context for the buffer to restore.
 local function restore_modified(ctx)
   log.fmt_trace("Restoring modified buffer %s", ctx.bufnr)
   if not ctx.uuid then
@@ -403,9 +413,9 @@ end
 --- Last step of buffer restoration, should be triggered by the final BufEnter event (:edit)
 --- for regular buffers or be called directly for non-:editable buffers (unnamed ones).
 --- Allows extensions to modify the final buffer contents and restores the cursor position (again).
----@param ctx BufContext The buffer context for the buffer to restore
----@param buf Snapshot.BufData The saved buffer information
----@param data Snapshot The complete session data
+---@param ctx BufContext Buffer context for the buffer to restore
+---@param buf Snapshot.BufData Saved buffer information
+---@param data Snapshot Complete session data
 local function finish_restore_buf(ctx, buf, data)
   -- Save the last position of the cursor for buf_load plugins
   -- that change the buffer text, which can reset cursor position.
@@ -490,9 +500,9 @@ local plan_restore
 --- the buffer in some way (e.g. recover unsaved changes) and finally initiates recovery
 --- of the last cursor position when a) the buffer was not inside a window when saving or
 --- b) on_buf_load plugins reenabled recovery after altering the contents.
----@param ctx BufContext The buffer context for the buffer to restore
----@param buf Snapshot.BufData The saved buffer metadata of the buffer to restore
----@param data Snapshot The complete session data
+---@param ctx BufContext Buffer context for the buffer to restore
+---@param buf Snapshot.BufData Saved buffer metadata of the buffer to restore
+---@param data Snapshot Complete session data
 local function restore_buf(ctx, buf, data)
   if not ctx.need_edit then
     -- prevent recursion in nvim <0.11: https://github.com/neovim/neovim/pull/29544
@@ -578,9 +588,9 @@ end
 
 --- Create the autocommand that re-:edits a buffer when it's first entered.
 --- Required since events were suppressed when loading it initially, which breaks many extensions.
----@param ctx BufContext The buffer context for the buffer to schedule restoration for
----@param buf Snapshot.BufData The saved buffer metadata of the buffer to schedule restoration for
----@param data Snapshot The complete session data
+---@param ctx BufContext Buffer context for the buffer to schedule restoration for
+---@param buf Snapshot.BufData Saved buffer metadata of the buffer to schedule restoration for
+---@param data Snapshot Complete session data
 function plan_restore(ctx, buf, data)
   ctx.need_edit = true
   vim.api.nvim_create_autocmd("BufEnter", {
@@ -615,8 +625,10 @@ function plan_restore(ctx, buf, data)
   })
 end
 
----@param ctx BufContext
----@param state_dir string
+--- Called for buffers with persisted unsaved modifications.
+--- Ensures buffer previews (like in pickers) show the correct text.
+---@param ctx BufContext Buffer context for the buffer to restore modifications for
+---@param state_dir string Directory unwritten buffer modifications are persisted to
 local function restore_modified_preview(ctx, state_dir)
   local save_file = vim.fs.joinpath(state_dir, "modified_buffers", ctx.uuid .. ".buffer")
   local ok, file_lines = pcall(util.path.read_lines, save_file)
@@ -645,10 +657,10 @@ end
 --- Ensure a saved buffer exists in the same state as it was saved.
 --- Extracted from the loading logic to keep DRY.
 --- This should be called while events are suppressed.
----@param buf Snapshot.BufData The saved buffer metadata for the buffer
----@param data Snapshot The complete session data
----@param state_dir? string The directory where unsaved buffers are persisted to
----@return BufNr
+---@param buf Snapshot.BufData Saved buffer metadata for the buffer
+---@param data Snapshot Complete session data
+---@param state_dir? string Directory unwritten buffer modifications are persisted to
+---@return BufNr bufnr Buffer number of the restored buffer
 function M.restore(buf, data, state_dir)
   local ctx = M.added(buf.name, buf.uuid)
   if ctx.initialized ~= nil then
@@ -678,10 +690,12 @@ function M.restore(buf, data, state_dir)
   return ctx.bufnr
 end
 
----Remove previously saved buffers and their undo history when they are
----no longer part of Continuity's state (most likely have been written).
----@param state_dir string The path to the modified_buffers directory of the session represented by `data`.
----@param keep table<BufUUID, true?> Buffers to keep saved modifications for
+--- Remove previously saved buffers and their undo history when they are
+--- no longer part of Continuity's state (most likely have been written).
+---@param state_dir string #
+---   Path to the modified_buffers directory of the session represented by `data`.
+---@param keep table<BufUUID, true?> #
+---   Buffers to keep saved modifications for
 function M.clean_modified(state_dir, keep)
   local remembered_buffers =
     vim.fn.glob(vim.fs.joinpath(state_dir, "modified_buffers", "*.buffer"), true, true)
@@ -694,11 +708,12 @@ function M.clean_modified(state_dir, keep)
   end
 end
 
----Iterate over modified buffers, save them and their undo history
----and return session data.
----@param state_dir string
+--- Iterate over modified buffers, save them and their undo history
+--- and return session data.
+---@param state_dir string Directory unwritten buffer modifications are persisted to
 ---@param bufs BufContext[] List of buffers to check for modifications.
----@return table<BufUUID, true?>?
+---@return table<BufUUID, true?>? #
+---   Lookup table of Buffer UUID for modification status
 function M.save_modified(state_dir, bufs)
   local modified_buffers = vim.tbl_filter(function(buf)
     -- Ensure buffers with pending modifications (never focused after a session was restored)

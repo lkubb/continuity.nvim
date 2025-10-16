@@ -14,8 +14,8 @@ local M = {}
 
 local _is_loading = false
 
---- Returns true if a session is currently being loaded
----@return boolean
+--- Returns true if a session is currently being restored.
+---@return boolean is_loading
 function M.is_loading()
   return _is_loading
 end
@@ -23,8 +23,9 @@ end
 --- Decide whether to include a buffer.
 ---@param tabpage? TabNr When saving a tab-scoped session, the tab number.
 ---@param bufnr BufNr The buffer to check for inclusion
----@param tabpage_bufs table<BufNr, true?> When saving a tab-scoped session, the list of buffers that are displayed in the tabpage.
----@param opts CreateOpts
+---@param tabpage_bufs table<BufNr, true?> #
+---   When saving a tab-scoped session, the list of buffers that are displayed in the tabpage.
+---@param opts CreateOpts Snapshot creation options
 local function include_buf(tabpage, bufnr, tabpage_bufs, opts)
   if not (opts.buf_filter or Config.session.buf_filter)(bufnr, opts) then
     return false
@@ -39,7 +40,7 @@ end
 --- Get all global marks, excluding read-only ones (0-9).
 --- Note: Marks 0-9 are not actually read-only (vim.api.nvim_buf_set_mark works),
 --- but they might need special consideration if included here. (TODO)
----@return table<string, FileMark?> global_marks
+---@return table<string, FileMark?> global_marks #
 local function get_global_marks()
   return vim
     .iter(vim.fn.getmarklist())
@@ -61,9 +62,9 @@ local hist_map = {
 }
 
 --- Get session-specific ShaDa file. Used for history persistence.
----@param snapshot_ctx snapshot.Context
----@param op "save"|"restore"
----@return string?
+---@param snapshot_ctx snapshot.Context Contextual information about the loading session (name, paths)
+---@param op "save"|"restore" Operation being beformed, for error log
+---@return string? shada_path #
 local function get_shada_file(snapshot_ctx, op)
   if not snapshot_ctx.state_dir then
     log.fmt_warn(
@@ -77,10 +78,10 @@ local function get_shada_file(snapshot_ctx, op)
 end
 
 --- Write history entries to ShaDa. Only available in global sessions.
----@param opts snapshot.CreateOpts
----@param snapshot_ctx? snapshot.Context
----@param snapshot Snapshot
----@return Snapshot modified
+---@param opts snapshot.CreateOpts Snapshot creation options
+---@param snapshot_ctx? snapshot.Context Contextual information about the loading session (name, paths)
+---@param snapshot Snapshot Snapshot data being restored
+---@return Snapshot modified #
 local function wshada_hist(opts, snapshot_ctx, snapshot)
   local shada_file = get_shada_file(snapshot_ctx or {}, "save")
   if not shada_file then
@@ -110,10 +111,10 @@ end
 
 --- Reset histories that are saved in the session and load them from the session ShaDa.
 --- Only available in global sessions.
----@param opts snapshot.RestoreOpts
----@param snapshot_ctx? snapshot.Context
+---@param opts snapshot.RestoreOpts Snapshot restoration options
+---@param snapshot_ctx? snapshot.Context Contextual information about the loading session (name, paths)
 local function rshada_hist(opts, snapshot_ctx)
-  local shada_file = get_shada_file(snapshot_ctx, "restore")
+  local shada_file = get_shada_file(snapshot_ctx or {}, "restore")
   if not shada_file then
     return
   end
@@ -144,11 +145,11 @@ end
 
 --- Create a snapshot and return the data.
 --- Note: Does not handle modified buffer contents, which requires a path to save to.
----@param target_tabpage? TabNr
----@param opts? CreateOpts
----@param snapshot_ctx? snapshot.Context
----@return Snapshot
----@return BufContext[] List of included buffers
+---@param target_tabpage? TabNr For tab snapshots, tab number of the tab to snapshot
+---@param opts? CreateOpts Snapshot creation options
+---@param snapshot_ctx? snapshot.Context Contextual information about the loading session (name, paths)
+---@return Snapshot snapshot Snapshot data
+---@return BufContext[] included_bufs List of included buffers
 local function create(target_tabpage, opts, snapshot_ctx)
   local hist_opts = {
     command_history = util.opts.coalesce_auto("command_history", false, opts, Config.session),
@@ -292,11 +293,15 @@ end
 
 --- Create a snapshot and return the data.
 --- Note: Does not handle modified buffer contents, which requires a path to save to.
----@param target_tabpage? TabNr Limit the session to this tab. If unspecified, saves global state.
----@param opts? CreateOpts Influence which buffers and options are persisted (overrides global default config).
----@param snapshot_ctx? snapshot.Context Snapshot meta information, for creating snapshot-associated files in extensions that cannot (easily) be included in the snapshot table.
----@return Snapshot?
----@return BufContext[] List of included buffers
+---@param target_tabpage? TabNr #
+---   Limit the session to this tab. If unspecified, saves global state.
+---@param opts? CreateOpts #
+---   Influence which buffers and options are persisted (overrides global default config).
+---@param snapshot_ctx snapshot.Context #
+---   Snapshot meta information, for creating snapshot-associated files
+---   in extensions that cannot (easily) be included in the snapshot table.
+---@return Snapshot? snapshot Snapshot data
+---@return BufContext[] included_bufs List of included buffers
 function M.create(target_tabpage, opts, snapshot_ctx)
   if _is_loading then
     log.warn("Save triggered while still loading session. Skipping save.")
@@ -307,14 +312,14 @@ end
 
 --- Save the current global or tabpage state to a path.
 --- Also handles changed buffer contents.
----@param name string The name of the session
+---@param name string Name of the session
 ---@param opts CreateOpts & PassthroughOpts Influence which data is included. Note: Passed through to hooks, is allowed to contain more fields.
 ---@param target_tabpage? TabNr Instead of saving everything, only save the current tabpage
----@param session_file string The path to write the session to.
----@param state_dir string The path to write the session-associated data to (modified buffers).
+---@param session_file string Path to write the session to.
+---@param state_dir string Path to write session-associated data to (modified buffers).
 ---@param context_dir string A shared path for all sessions in this context (`dir` for manual sessions, project dir for autosessions)
----@return Snapshot?
----@return BufContext[] List of included buffers
+---@return Snapshot? snapshot Snapshot data
+---@return BufContext[] included_bufs List of included buffers
 function M.save_as(name, opts, target_tabpage, session_file, state_dir, context_dir)
   if _is_loading then
     log.warn("Save triggered while still loading session. Skipping save.")
@@ -360,9 +365,12 @@ function M.save_as(name, opts, target_tabpage, session_file, state_dir, context_
   return snapshot, included_bufs
 end
 
----@param snapshot Snapshot
----@param opts snapshot.RestoreOpts
----@param snapshot_ctx snapshot.Context
+--- Restore a buffer. Ignores hooks (use `restore_as` instead).
+---@param snapshot Snapshot Snapshot data to restore
+---@param opts snapshot.RestoreOpts Restoration options
+---@param snapshot_ctx snapshot.Context #
+---   Snapshot meta information, for creating snapshot-associated files
+---   in extensions that cannot (easily) be included in the snapshot table.
 function M.restore(snapshot, opts, snapshot_ctx)
   opts.modified =
     util.opts.coalesce_auto("modified", not not snapshot.modified, opts, Config.session)
@@ -553,10 +561,11 @@ function M.restore(snapshot, opts, snapshot_ctx)
 end
 
 --- Restore a saved snapshot. Also handles hooks.
----@param name string The name of the target session. Only used for hooks.
----@param snapshot Snapshot The snapshot contents
+---@param name string Name of the target session. Only used for hooks.
+---@param snapshot Snapshot Snapshot data to restore
 ---@param opts snapshot.RestoreOpts & snapshot.Context & PassthroughOpts
----@return TabNr?
+---@return TabNr? target_tab #
+---   Tab number of the restored tab, if snapshot was tab-scoped.
 function M.restore_as(name, snapshot, opts)
   opts.modified =
     util.opts.coalesce_auto("modified", not not snapshot.modified, opts, Config.session)

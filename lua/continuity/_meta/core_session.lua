@@ -2,26 +2,38 @@
 ---@namespace continuity.core
 
 ---@class Session.Init.Paths
----@field session_file string The path to the session file
----@field state_dir string The path to the directory holding session-associated data
----@field context_dir string A directory for shared state between all sessions in the same context (`dir` for manual sessions, project dir for autosessions)
+---@field session_file string #
+---   Path to the session file
+---@field state_dir string #
+---   Path to the directory holding session-associated data
+---@field context_dir string #
+---   Directory for shared state between all sessions in the same context
+---   (`dir` for manual sessions, project dir for autosessions)
 
 ---@class Session.Init.Autosave
----@field autosave_enabled? boolean When this session is attached, automatically save it in intervals. Defaults to false.
----@field autosave_interval? integer Seconds between autosaves of this session, if enabled. Defaults to 60.
----@field autosave_notify? boolean Trigger a notification when autosaving this session. Defaults to true.
+---@field autosave_enabled? boolean #
+---   When this session is attached, automatically save it in intervals. Defaults to false.
+---@field autosave_interval? integer #
+---   Seconds between autosaves of this session, if enabled. Defaults to 60.
+---@field autosave_notify? boolean #
+---   Trigger a notification when autosaving this session. Defaults to true.
 
 --- Autosave configuration after initializing the session, needs to resolve actual values.
 ---@class Session.Init.Autosave.Rendered: Session.Init.Autosave
----@field autosave_enabled boolean When this session is attached, automatically save it in intervals. Defaults to false.
----@field autosave_interval integer Seconds between autosaves of this session, if enabled. Defaults to 60.
+---@field autosave_enabled boolean #
+---   When this session is attached, automatically save it in intervals. Defaults to false.
+---@field autosave_interval integer #
+---   Seconds between autosaves of this session, if enabled. Defaults to 60.
 
 ---@class Session.Init.Hooks
----@field on_attach? Session.AttachHook A function that's called when attaching to this session. No global default.
----@field on_detach? Session.DetachHook A function that's called when detaching from this session. No global default.
+---@field on_attach? Session.AttachHook #
+---   A function that's called when attaching to this session. No global default.
+---@field on_detach? Session.DetachHook #
+---   A function that's called when detaching from this session. No global default.
 
 ---@class Session.Init.Meta
----@field meta? table External data remembered in association with this session. Useful to build on top of the core API.
+---@field meta? table #
+---   External data remembered in association with this session. Useful to build on top of the core API.
 
 --- Options to influence how an attached session is handled.
 ---@alias Session.InitOpts Session.Init.Autosave & Session.Init.Hooks & snapshot.CreateOpts
@@ -35,7 +47,8 @@
 --- Compatibility with resession-style hooks from the `continuity.session` API
 ---@alias Session.KnownHookOpts.Dir continuity.session.DirParam
 
---- Tell hooks about what happens next. This is the only form that's supported in `core.session`. `reset` being `auto` should be handled before.
+--- Tell hooks about what happens next. This is the only form that's supported in `core.session`.
+--- `reset` being `auto` should be handled before.
 ---@alias Session.KnownHookOpts.SideEffects continuity.SideEffects.Attach & continuity.SideEffects.Reset
 
 --- All internally known hook params that should be passed to pre/post save/load hooks if possible.
@@ -70,9 +83,13 @@
 
 --- Represents the complete internal state of a session
 ---@class ActiveSessionInfo: Session.Config
----@field name string The name of the session
----@field tabnr (TabNr|true)? The tab the session is attached to, if any. Can be `true`, which indicates it's a tab-scoped session that has not been restored yet - although not when requesting via the API
----@field tab_scoped boolean Whether the session is tab-scoped
+---@field name string #
+---   Name of the session
+---@field tabnr (TabNr|true)? #
+---   Tab number the session is attached to, if any. Can be `true`, which indicates it's a
+---   tab-scoped session that has not been restored yet - although not when requesting via the API
+---@field tab_scoped boolean #
+---   Whether the session is tab-scoped
 
 -- The following type definitions are quite painful at the moment. I'm unsure how to type this
 -- properly/whether emmylua just misses the functionality.
@@ -98,7 +115,7 @@
 ---@class Session<T: Session.Target>: T, Session.Config
 ---@field name string
 ---@field tab_scoped boolean
----@field tabnr TabNr?
+---@field tabnr? TabNr
 ---@field _on_attach Session.AttachHook[]
 ---@field _on_detach Session.DetachHook[]
 local Session = {}
@@ -140,13 +157,15 @@ function Session.new(name, session_file, state_dir, context_dir, opts, tabnr, ne
 function Session.new(name, session_file, state_dir, context_dir, opts, tabnr, needs_restore) end
 
 --- Create a new session by loading a snapshot, which you need to restore explicitly.
----@param name string
----@param session_file string
----@param state_dir string
----@param context_dir string
----@param opts Session.InitOptsWithMeta & continuity.SideEffects.SilenceErrors
----@return PendingSession<T>? loaded_session The session object, if it could be loaded
----@return Snapshot? snapshot The snapshot data, if it could be loaded
+---@param name string #
+---@param session_file string #
+---@param state_dir string #
+---@param context_dir string #
+---@param opts Session.InitOptsWithMeta & continuity.SideEffects.SilenceErrors #
+---@return PendingSession<T>? loaded_session #
+---   Session object, if the snapshot could be loaded
+---@return Snapshot? snapshot #
+---   Snapshot data, if it could be loaded
 function Session.from_snapshot(name, session_file, state_dir, context_dir, opts) end
 
 --- Add hooks to attach/detach events for this session.
@@ -160,15 +179,19 @@ function Session:add_hook(event, hook) end
 function Session:add_hook(event, hook) end
 
 --- Update modifiable options without attaching/detaching a session
----@param opts Session.InitOptsWithMeta
----@return boolean modified
+---@param opts Session.InitOptsWithMeta #
+---@return boolean modified #
+---   Indicates whether any config modifications occurred
 function Session:update(opts) end
 
 --- Restore a snapshot from disk or memory
----@param opts? Session.RestoreOpts & PassthroughOpts
----@param snapshot? Snapshot Snapshot to restore. If unspecified, loads from file.
----@return IdleSession<T> self The object itself, but now attachable
----@return boolean success Whether restoration was successful. Only sensible when `silence_errors` is true.
+---@param opts? Session.RestoreOpts & PassthroughOpts #
+---@param snapshot? Snapshot #
+---   Snapshot data to restore. If unspecified, loads from file.
+---@return IdleSession<T> self #
+---   The object itself, but now attachable
+---@return boolean success #
+---   Whether restoration was successful. Only sensible when `silence_errors` is true.
 function Session:restore(opts, snapshot) end
 
 --- Check whether this session is attached correctly.
@@ -185,7 +208,7 @@ function Session:opts() end
 function Session:info() end
 
 --- Delete a saved session
----@param opts? continuity.SideEffects.Notify & continuity.SideEffects.SilenceErrors
+---@param opts? continuity.SideEffects.Notify & continuity.SideEffects.SilenceErrors #
 function Session:delete(opts) end
 
 ---------------------------------------------------------------------------------------------------
@@ -195,7 +218,9 @@ function Session:delete(opts) end
 --- Represents a session that has been loaded from a snapshot and needs
 --- to be applied still before being able to attach it.
 ---@class PendingSession<T: Session.Target>: Session<T>
----@field needs_restore true
+---@field needs_restore true #
+---   Indicates this session has been loaded from a snapshot, but not restored yet.
+---   This session object cannot be attached yet, it needs to be restored first.
 local PendingSession = {}
 
 ---------------------------------------------------------------------------------------------------
@@ -216,8 +241,9 @@ function IdleSession:attach() end
 --- Note: Any save configuration must be applied via `Session.update(opts)` before
 --- callig this method since all session-specific options that might be contained
 --- in `opts` are overridded with ones configured for the session.
----@param opts? Session.AutosaveOpts & Session.KnownHookOpts & PassthroughOpts Success notification setting plus options that need to be passed through to pre_save/post_save hooks.
----@return boolean success
+---@param opts? Session.AutosaveOpts & Session.KnownHookOpts & PassthroughOpts #
+---   Success notification setting plus options that need to be passed through to pre_save/post_save hooks.
+---@return boolean success #
 function IdleSession:save(opts) end
 
 ---------------------------------------------------------------------------------------------------
@@ -226,15 +252,20 @@ function IdleSession:save(opts) end
 
 --- An active (attached) session.
 ---@class ActiveSession<T: Session.Target>: IdleSession<T>
----@field autosave_enabled boolean Autosave this attached session in intervals and when detaching
----@field autosave_interval integer Seconds between autosaves of this session, if enabled.
----@field _aug integer Neovim augroup for this session
----@field _timer uv.uv_timer_t? Autosave timer, if enabled
+---@field autosave_enabled boolean #
+---   Autosave this attached session in intervals and when detaching
+---@field autosave_interval integer #
+---   Seconds between autosaves of this session, if enabled.
+---@field _aug integer #
+---   Neovim augroup for this session
+---@field _timer uv.uv_timer_t? #
+---   Autosave timer, if enabled
 ---@field private _setup_autosave fun(self: ActiveSession<T>): nil
 local ActiveSession = {}
 
----@param opts? Session.AutosaveOpts & PassthroughOpts
----@param force? boolean
+---@param opts? Session.AutosaveOpts & PassthroughOpts #
+---@param force? boolean #
+---   Force snapshot to be saved, regardless of autosave config
 function ActiveSession:autosave(opts, force) end
 
 --- Detach from this session. Ensure the session is attached before trying to detach,
@@ -242,23 +273,31 @@ function ActiveSession:autosave(opts, force) end
 --- Hint: If you are sure the session should be attached, but still receive an error,
 --- ensure that you call `detach()` on the specific session instance you called `:attach()` on before, not a copy.
 ----@param self ActiveSession<T>
----@param reason Session.DetachReason A reason for detaching, also passed to detach hooks. Only inbuilt reasons influence behavior by default.
----@param opts Session.DetachOpts & PassthroughOpts Influence side effects. `reset` removes all associated resources. `save` overrides autosave behavior.
----@return IdleSession<T>
+---@param reason Session.DetachReason #
+---   A reason for detaching, also passed to detach hooks.
+---   Only inbuilt reasons influence behavior by default.
+---@param opts Session.DetachOpts & PassthroughOpts #
+---   Influence side effects. `reset` removes all associated resources.
+---   `save` overrides autosave behavior.
+---@return IdleSession<T> idle_session #
+---   Same data table, but now representing an idle session again.
 function ActiveSession:detach(reason, opts) end
 -- Note: In unions of e.g. ActiveSession<Session.TabTarget>|ActiveSession<Session.GlobalTarget>, the return type is wrongly
 -- inferred as IdleSession<Session.TabTarget> by emmylua here ^.
 
 --- Mark a **tab** session as invalid (i.e. remembered as attached, but its tab is gone).
 --- Removes associated resources, skips autosave.
----@param self ActiveSession<Session.TabTarget>
----@return IdleSession<Session.TabTarget>
+---@param self ActiveSession<Session.TabTarget> #
+---   Active **tab** session to forget about. Errors if attempted with global sessions.
+---@return IdleSession<Session.TabTarget> idle_session #
 function ActiveSession.forget(self) end
 
 --- Restore a snapshot from disk or memory
 --- It seems emmylua does not pick up this override and infers IdleSession<T> instead.
----@param opts? Session.RestoreOpts & PassthroughOpts
----@param snapshot? Snapshot Snapshot to restore. If unspecified, loads from file.
----@return ActiveSession<T> self The object itself
+---@param opts? Session.RestoreOpts & PassthroughOpts #
+---@param snapshot? Snapshot #
+---   Snapshot to restore. If unspecified, loads from file.
+---@return ActiveSession<T> self #
+---   Same object.
 ---@return boolean success Whether restoration was successful. Only sensible when `silence_errors` is true.
 function ActiveSession:restore(opts, snapshot) end

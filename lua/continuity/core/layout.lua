@@ -13,8 +13,9 @@ local M = {}
 ---@using continuity.core
 
 --- Parse the window-local jumplist into a format that can be saved.
----@param winid WinID The window ID of the window to query
----@return [WinInfo.JumplistEntry[], integer] jumps_backtrack
+---@param winid WinID Window ID of window to query
+---@return [WinInfo.JumplistEntry[], integer] jumps_backtrack #
+---   Tuple of list of jumplist entries and jumplist position, backwards from most recent entry
 local function parse_jumplist(winid)
   if vim.w[winid].continuity_jumplist then
     --- If we're in a restored session that has enabled jumplist restoration and the window
@@ -51,11 +52,11 @@ end
 --- Check if a window should be saved. If so, return relevant information.
 --- Only exposed for testing purposes
 ---@private
----@param tabnr integer The number of the tab that contains the window
----@param winid WinID The window id of the window to query
----@param current_win integer The window id of the currently active window
----@param opts snapshot.CreateOpts
----@return WinInfo|false
+---@param tabnr integer Tab number of the tab that contains the window
+---@param winid WinID Window ID of window to query
+---@param current_win WinID Window ID of the currently active window
+---@param opts snapshot.CreateOpts Snapshot creation opts
+---@return WinInfo|false wininfo #
 function M.get_win_info(tabnr, winid, current_win, opts)
   local bufnr = vim.api.nvim_win_get_buf(winid)
   local win = {}
@@ -109,11 +110,11 @@ end
 --- Process a tabpage's window layout as returned by `vim.fn.winlayout`.
 --- Filters unsupported buffers, collapses resulting empty branches and
 --- adds necessary information to leaf nodes (windows).
----@param tabnr integer
----@param layout vim.fn.winlayout.ret
----@param current_win integer
----@param opts snapshot.CreateOpts
----@return WinLayout|false
+---@param tabnr TabNr Tab number of tab
+---@param layout vim.fn.winlayout.ret Retval of `vim.fn.winlayout()`
+---@param current_win WinID ID of current window
+---@param opts snapshot.CreateOpts Snapshot creation opts
+---@return WinLayout|false winlayout #
 function M.add_win_info_to_layout(tabnr, layout, current_win, opts)
   ---@diagnostic disable-next-line: undefined-field
   ---@type "leaf"|"col"|"row"|nil
@@ -143,8 +144,10 @@ function M.add_win_info_to_layout(tabnr, layout, current_win, opts)
 end
 
 --- Create all windows in the saved layout. Add created window ID information to leaves.
----@param layout WinLayoutLeaf|WinLayoutBranch The window layout to apply, as returned by `add_win_info_to_layout`
----@return WinLayoutRestored
+---@param layout WinLayoutLeaf|WinLayoutBranch #
+---   The window layout to apply, as returned by `add_win_info_to_layout`
+---@return WinLayoutRestored restored #
+---   Same table as `layout`, but with valid window ID(s) set
 local function set_winlayout(layout)
   local typ = layout[1]
   if typ == "leaf" then
@@ -192,10 +195,12 @@ local function scale(base, factor)
 end
 
 --- Apply saved data to restored windows. Calls extensions or loads files, then restores options and dimensions
----@param layout WinLayoutLeafRestored|WinLayoutBranchRestored
+---@param layout WinLayoutLeafRestored|WinLayoutBranchRestored Snapshot window data with valid window ID
 ---@param scale_factor [number, number] Scaling factor for [width, height]
----@return WinLayoutRestored
----@return {winid?: WinID}
+---@return WinLayoutRestored restored #
+---   Same table as `layout`, but with valid window ID(s) set
+---@return {winid?: WinID} visitor #
+---   Window ID of most recent created window, if any
 local function set_winlayout_data(layout, scale_factor, visit_data)
   local typ = layout[1]
   if typ == "leaf" then
@@ -292,7 +297,7 @@ end
 --- of a proper API. Does not allow entries referring to unnamed buffers.
 --- Needs to be called in buffer restore logic, preferably as the absolute last step,
 --- after the active buffer has finished restoring, to avoid interference.
----@param winid? WinID The ID of the window to restore. Defaults to current one.
+---@param winid? WinID ID of the window to restore. Defaults to current one.
 function M.restore_jumplist(winid)
   winid = winid or vim.api.nvim_get_current_win()
   log.fmt_trace("Restore jumplist called for winid %d", winid)
@@ -376,7 +381,7 @@ end
 
 ---@param layout WinLayout|false|nil
 ---@param scale_factor [number, number] Scaling factor for [width, height]
----@return WinID? The ID of the window that should have focus after session load
+---@return WinID? ID of the window that should have focus after session load
 function M.set_winlayout(layout, scale_factor)
   if not layout or not layout[1] then
     return

@@ -97,7 +97,8 @@ end
 --- Represents a complete file in ShaDa format.
 --- Allows to create/mutate/inspect/filter/write/apply ShaDa from Lua.
 ---@class Shada
----@field entries (integer|table)[] The raw, list-like data structure of ShaDa entries, not split into entries
+---@field entries (integer|table)[] #
+---   Raw, list-like data structure of ShaDa entries, not split into entries
 local Shada = {}
 
 --- Add any ShaDa entry.
@@ -112,10 +113,14 @@ local Shada = {}
 ---@overload fun(typ: "buffer_list", data: EntryData.BufferList, timestamp?: integer): self
 ---@overload fun(typ: "local_mark", data: EntryData.LocalMark, timestamp?: integer): self
 ---@overload fun(typ: "change", data: EntryData.Change, timestamp?: integer): self
----@param typ EntryType|EntryName Alias of entry kind (`header`|`search_pattern`|`sub_string`|`history`|`register`|`variable`|`global_mark`|`jump`|`buffer_list`|`local_mark`|`change`) or numeric identifier.
+---@param typ EntryType|EntryName #
+---   Alias of entry kind (`header`, `search_pattern`, `sub_string`,
+---   `history`, `register`, `variable`, `global_mark`, `jump`,
+---   `buffer_list`, `local_mark`, `change`)
+---   or numeric identifier.
 ---@param data EntryData Entry kind-specific data table
 ---@param timestamp? integer Timestamp of entry, defaults to now
----@return self shada
+---@return self self #
 function Shada:add(typ, data, timestamp)
   local data_packed = vim.fn.msgpackdump({ data }, "B")
   local packed_len = #data_packed
@@ -134,7 +139,7 @@ end
 ---@param is_substitution? boolean Whether this pattern is a substitution
 ---@param backwards? boolean Whether the pattern was executed in backwards direction (via `?` instead of `/`)
 ---@param timestamp? integer Timestamp of entry, defaults to now
----@return self shada
+---@return self self #
 function Shada:add_search(pattern, last_used, is_substitution, backwards, timestamp)
   ---@type EntryData.SearchPattern
   local data = { sp = pattern, su = last_used, ss = is_substitution, sb = backwards }
@@ -144,7 +149,7 @@ end
 --- Add a `:s[ubstitution]` replacement string entry. Usually only one per ShaDa file (last one).
 ---@param contents string Substitution replacement string
 ---@param timestamp? integer Timestamp of entry, defaults to now
----@return self shada
+---@return self self #
 function Shada:add_sub(contents, timestamp)
   ---@type EntryData.SubString
   local data = { contents }
@@ -153,11 +158,13 @@ end
 
 --- Add a history entry.
 ---@overload fun(typ: "search", contents: string, sep: string): self
----@param typ HistName|HistType Alias of history kind (`cmd`|`search`|`expr`|`input`|`debug`) or numeric identifier
+---@param typ HistName|HistType #
+---   Alias of history kind (`cmd`, `search`, `expr`, `input`, `debug`)
+---   or numeric identifier
 ---@param contents string History entry contents
 ---@param sep? string Single-char separator. Required when typ == search, e.g. `/`
 ---@param timestamp? integer Timestamp of entry, defaults to now
----@return self shada
+---@return self self #
 function Shada:add_hist(typ, contents, sep, timestamp)
   ---@type EntryData.History
   local data = {
@@ -181,11 +188,13 @@ end
 ---@overload fun(name: string, contents: string[], typ: "block", width: integer, timestamp: integer): self
 ---@param name string Single-char register name.
 ---@param contents string[] Array of register content lines
----@param typ? RegTypeName|RegType Alias of register type (`char`|`line`|`block`) or numeric identifier. Defaults to `char`.
+---@param typ? RegTypeName|RegType #
+---   Alias of register type (`char`, `line`, `block`)
+---   or numeric identifier. Defaults to `char`.
 ---@param unnamed? boolean Unnamed register points to this one.
 ---@param width? integer Width of block type. Only when `typ` is `block`.
 ---@param timestamp? integer Timestamp of entry, defaults to now
----@return self shada
+---@return self self #
 function Shada:add_reg(contents, name, typ, unnamed, width, timestamp)
   typ = typ or "char"
   ---@type EntryData.Register
@@ -203,7 +212,7 @@ end
 ---@param name string Global variable name
 ---@param contents any Object compatible with `msgpackdump()`/`msgpackparse()`
 ---@param timestamp? integer Timestamp of entry, defaults to now
----@return self shada
+---@return self self #
 function Shada:add_var(name, contents, timestamp)
   local data = { name, contents } ---@type EntryData.Variable
   return self:add("variable", data, timestamp)
@@ -215,7 +224,7 @@ end
 ---@param line? integer Line number. Defaults to 1.
 ---@param col? integer Column number. Defaults to 0.
 ---@param timestamp? integer Timestamp of entry, defaults to now
----@return self shada
+---@return self self #
 function Shada:add_gmark(name, file, line, col, timestamp)
   ---@type EntryData.GlobalMark
   local data = { n = name:upper():byte(), f = file, l = line, c = col }
@@ -227,7 +236,7 @@ end
 ---@param line? integer Line number. Defaults to 1.
 ---@param col? integer Column number. Defaults to 0.
 ---@param timestamp? integer Timestamp of entry, defaults to now
----@return self shada
+---@return self self #
 function Shada:add_jump(file, line, col, timestamp)
   ---@type EntryData.Jump
   local data = { f = file, l = line, c = col }
@@ -240,7 +249,7 @@ end
 ---@param line? integer Line number. Defaults to 1.
 ---@param col? integer Column number. Defaults to 0.
 ---@param timestamp? integer Timestamp of entry, defaults to now
----@return self shada
+---@return self self #
 function Shada:add_lmark(name, file, line, col, timestamp)
   ---@type EntryData.LocalMark
   local data = { n = name:lower():byte(), f = file, l = line, c = col }
@@ -252,7 +261,7 @@ end
 ---@param line? integer Line number. Defaults to 1.
 ---@param col? integer Column number. Defaults to 0.
 ---@param timestamp? integer Timestamp of entry, defaults to now
----@return self shada
+---@return self self #
 function Shada:add_change(file, line, col, timestamp)
   ---@type EntryData.Change
   local data = { f = file, l = line, c = col }
@@ -260,7 +269,7 @@ function Shada:add_change(file, line, col, timestamp)
 end
 
 --- Return a `vim.iter` iterator over the contained ShaDa entries.
----@return Iter shada_iter
+---@return Iter shada_iter #
 function Shada:iter()
   local i = 0
   local n = #self.entries
@@ -275,9 +284,15 @@ function Shada:iter()
 end
 
 --- Iterate over contained entries of specific types, including history type selection.
----@param typ EntryType|EntryName|(EntryType|EntryName)[] Entry type(s) to include. String alias (`history`) or raw type (1-11).
----@param hist_typ? HistType|HistName|(HistType|HistName)[] History entry type(s) to include, optional. String alias (`cmd`) or raw type (0-4). No additional filtering if unspecified.
----@return Iter filtered_entries An iterator over entries of the type(s) specified in `typ`/`hist_typ`
+---@param typ EntryType|EntryName|(EntryType|EntryName)[] #
+---   Entry type(s) to include.
+---   String alias (`history`) or raw type (1-11).
+---@param hist_typ? HistType|HistName|(HistType|HistName)[] #
+---   History entry type(s) to include, optional.
+---   String alias (`cmd`) or raw type (0-4).
+---   If unspecified, no additional filtering is performed.
+---@return Iter filtered_entries #
+---   An iterator over entries of the type(s) specified in `typ`/`hist_typ`
 function Shada:filter(typ, hist_typ)
   ---@type EntryType[]
   local raw_typs = ensure_raw_list(ENTRY_TYPE, typ)
@@ -300,15 +315,21 @@ function Shada:filter(typ, hist_typ)
 end
 
 --- Reduce contained ShaDa entries to specified types.
----@param typ EntryType|EntryName|(EntryType|EntryName)[] Entry type(s) to include. String alias (`history`) or raw type (1-11).
----@param hist_typ? HistType|HistName|(HistType|HistName)[] History entry type(s) to include. String alias (`cmd`) or raw type (0-4). No additional filtering if unspecified.
----@return self filtered_shada A shallow copy of this ShaDa with only the specified entry types
+---@param typ EntryType|EntryName|(EntryType|EntryName)[] #
+---   Entry type(s) to include.
+---   String alias (`history`) or raw type (1-11).
+---@param hist_typ? HistType|HistName|(HistType|HistName)[] #
+---   History entry type(s) to include.
+---   String alias (`cmd`) or raw type (0-4).
+---   If unspecified, no additional filtering is performed.
+---@return self shallow_copy_shada #
+---   A shallow copy of this ShaDa with only the specified entry types
 function Shada:select(typ, hist_typ)
   return Shada.new(vim.iter(self:filter(typ, hist_typ):totable()):flatten(1):totable())
 end
 
 --- Return information about the first header entry
----@return {time: integer, [any]: unknown}?
+---@return {time: integer, [any]: unknown}? rendered_header #
 function Shada:header()
   for header in self:filter(ENTRY_TYPE.header) do
     ---@cast header Entry.Header
@@ -318,7 +339,7 @@ function Shada:header()
 end
 
 --- Get a representative mapping of all contained marks
----@return {[string]: {time: integer, line: integer, col: integer, file: string}?}
+---@return {[string]: {time: integer, line: integer, col: integer, file: string}?} rendered_marks #
 function Shada:marks()
   return self:filter({ ENTRY_TYPE.global_mark, ENTRY_TYPE.local_mark }):fold({}, function(acc, mark)
     ---@cast mark Entry.GlobalMark|Entry.LocalMark
@@ -329,7 +350,7 @@ function Shada:marks()
 end
 
 --- Get a representative mapping of all contained registers
----@return {[string]: {time: integer, contents: string[], type: RegTypeName, unnamed: boolean?, width: integer?}?}
+---@return {[string]: {time: integer, contents: string[], type: RegTypeName, unnamed: boolean?, width: integer?}?} rendered_registers #
 function Shada:registers()
   return self:filter(ENTRY_TYPE.register):fold({}, function(acc, reg)
     ---@cast reg Entry.Register
@@ -365,7 +386,7 @@ function Shada:read(opts)
 end
 
 --- List all included entry types (as their aliases, not numeric).
----@return EntryName[]
+---@return EntryName[] contained_types #
 function Shada:types()
   local res = {} ---@type table<EntryType,true?>
   for entry in self:iter() do
@@ -380,7 +401,7 @@ function Shada:types()
 end
 
 --- List all included history entry types (as their aliases, not numeric).
----@return HistName[]
+---@return HistName[] contained_hist_types #
 function Shada:hist_types()
   local res = {} ---@type table<HistType,true?>
   for entry in self:filter(ENTRY_TYPE.history) do
@@ -397,13 +418,13 @@ end
 
 --- Create a new ShaDa object.
 --- @param init? (integer|table)[] Initial ShaDa, e.g. loaded from disk
---- @return Shada
+--- @return Shada shada #
 function Shada.new(init)
   return setmetatable({ entries = init or {} }, { __index = Shada })
 end
 
 --- Create a new ShaDa builder. `:add` entries and `:write` it to a (temp) path.
----@return Shada
+---@return Shada shada #
 function M.new()
   return Shada.new():add("header", {
     -- The header does not have any functional purpose, just for debugging
@@ -416,8 +437,12 @@ function M.new()
 end
 
 --- Create a new ShaDa builder by initializing its contents from an existing ShaDa file on disk.
---- @param path? string Path of the ShaDa file to load. Defaults to `'shadafile'` or `$XDG_STATE_HOME/$NVIM_APPNAME/shada/main.shada`. Note: **Must** exist, otherwise errors.
---- @return Shada loaded_shada A builder containing the on-disk data. Can transform it. Fails when `path` does not exist.
+--- @param path? string #
+---    Path of the ShaDa file to load.
+---    Defaults to `'shadafile'` option or `$XDG_STATE_HOME/$NVIM_APPNAME/shada/main.shada`.
+---    Note: **Must** exist, otherwise errors.
+--- @return Shada loaded_shada #
+---    A builder containing the on-disk data. Can be transformed.
 function M.from_file(path)
   local pathutil = require("continuity.util.path")
   path = vim.fn.fnamemodify(

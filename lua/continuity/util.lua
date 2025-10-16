@@ -10,7 +10,7 @@ local Config
 local M = {}
 
 --- Declare a require eagerly, but only load a module when it's first accessed.
----@param modname string The name of the mod whose loading should be deferred
+---@param modname string Name of the mod whose loading should be deferred
 ---@return unknown
 function M.lazy_require(modname)
   local mt = {}
@@ -75,6 +75,13 @@ function M.xpcall_handler(err)
   return rend
 end
 
+--- Call a function with `xpcall` and use custom handler to keep stacktrace info.
+--- Ensures arguments can be passed to the function (unsure if necessary,
+--- plain Lua 5.1 xpcall does not have varargs, but LuaJIT does afaict).
+---@generic T
+---@param fun fun(...): T... Function to run in protected mode
+---@return [boolean, T...] & {n: integer} packed_rets #
+---   Variadic returns of wrapped function packed via `vim.F.pack_len`
 local function xpc(fun, ...)
   local params = vim.F.pack_len(...)
   return vim.F.pack_len(xpcall(function()
@@ -84,8 +91,14 @@ local function xpc(fun, ...)
   end, M.xpcall_handler))
 end
 
+--- Remove xpcall result from packed variable returns and unpack the actual function returns.
+---@generic T
+---@param res [boolean, T...] & {n: integer} #
+---   Variadic returns of xpcall packed via `vim.F.pack_len`
+---@return T... #
+---   Variadic returns of wrapped function call only
 local function unpack_res(res)
-  table.remove(res, 1)
+  table.remove(res --[[@as table]], 1)
   res.n = res.n - 1
   return vim.F.unpack_len(res)
 end
@@ -93,11 +106,12 @@ end
 --- Execute an inner function in protected mode,
 --- always call another function, only then re-raise possible errors
 --- while trying to preserve as much information as possible.
----@generic Returns, Params
----@param inner fun(...: Params...): Returns...
----@param always fun()
----@param ... Params...
----@return Returns...
+---@generic Rets, Args
+---@param inner fun(...: Args...): Rets... Function to call (try)
+---@param always fun() Function to always execute after call (finally)
+---@param ... Args... Arguments for `inner`
+---@return Rets... #
+---   Variadic returns of `inner`
 function M.try_finally(inner, always, ...)
   local res = xpc(inner, ...)
   always()
@@ -110,12 +124,13 @@ end
 --- Execute an inner function in protected mode.
 --- On error, call another function with the error message.
 --- Return either the function's or the handler's return.
---- Note: Try to avoid non-nullable or differing return values to avoid typing issues.
----@generic Returns, Params
----@param inner fun(...: Params...): Returns...
----@param handler fun(err: string): Returns...
----@param ... Params...
----@return Returns...
+--- Note: Avoid differing return types between `inner` and `handler`
+---@generic Rets, Args
+---@param inner fun(...: Args...): Rets... Function to run in protected mode
+---@param handler fun(err: string): Rets... Function to call when `inner` errors
+---@param ... Args... Arguments for `inner`
+---@return Rets... #
+---   Variadic returns of either `inner` or `handler`
 function M.try_catch(inner, handler, ...)
   return M.try_catch_else(inner, handler, nil, ...)
 end
@@ -123,16 +138,20 @@ end
 --- Execute an inner function in protected mode.
 --- On error, call a handler function with the error message.
 --- On success, call yet another function with the result (unprotected).
---- Return either the second function's or the handler's return.
---- Note: Try to avoid non-nullable or differing return values to avoid typing issues.
----@generic Returns, Transformed, Params
----@overload fun(inner: fun(...: Params...): Returns..., err_handler: fun(err: string): Returns...): Returns...
----@overload fun(inner: fun(...: Params...): Returns..., err_handler: fun(err: string): Returns..., nil): Returns...
----@param inner fun(...: Params...): Returns...
----@param err_handler fun(err: string): Transformed...
----@param success_handler? fun(...: Returns...): Transformed...
----@param ... Params...
----@return Transformed...
+--- Return either the second function's (or wrapped functions, if no second function was specified)
+--- or the error handler's return.
+--- Note: Avoid differing return value types between `err_handler` and `success_handler`
+---@generic InnerRets, Rets, Args
+---@overload fun(inner: (fun(...: Args...): Rets...), err_handler: (fun(err: string): Rets...)): Rets...
+---@overload fun(inner: (fun(...: Args...): Rets...), err_handler: (fun(err: string): Rets...), success_handler: nil, ...: Args...): Rets...
+---@param inner fun(...: Args...): InnerRets... Function to run in protected mode
+---@param err_handler fun(err: string): Rets... Function to call when `inner` errors
+---@param success_handler fun(...: InnerRets...): Rets... #
+---   Function to call with `inner` returns when `inner` succeeds. Optional (use `try_catch` when omitting though)
+---@param ... Args... Arguments for `inner`
+---@return Rets... #
+---   Variadic returns of either `success_handler` (or `inner`, if no success handler was specified)
+---   or `err_handler` (in error case).
 function M.try_catch_else(inner, err_handler, success_handler, ...)
   local res = xpc(inner, ...)
   if not res[1] then
@@ -145,11 +164,13 @@ function M.try_catch_else(inner, err_handler, success_handler, ...)
 end
 
 --- Try executing a list of funcs. Return the first non-error result, if any.
---- Note: Try to avoid non-nullable or differing return values to avoid typing issues.
----@generic Returns, Params
----@param funs (fun(...: Params...): Returns...)[]
----@param ... Params...
----@return Returns...
+--- Note: Try to avoid differing return values to avoid typing issues.
+---       Returns are not resolved correctly by EmmyluaLS at the moment.
+---@generic Rets, Args
+---@param funs (fun(...: Args...): Rets...)[] List of functions to try in order
+---@param ... Args... Arguments passed to each function
+---@return Rets... #
+---   Variadic returns of first successful call
 function M.try_any(funs, ...)
   for _, fun in funs do
     local res = xpc(fun, ...)
@@ -164,16 +185,24 @@ end
 
 ---@alias TryLog.Format [string, any...] A format string and variable arguments to pass to the formatter. The format string should include a final extra `%s` for the error message.
 ---@alias TryLog TryLog.Format & TryLog.Params The config table passed to `try_log*` functions. List of formatter args, optional key/value config.
----
+
 --- Try to execute a function. If it fails, log a custom description and the message.
 --- Otherwise return the result.
 --- Note: Avoid non-nullable returns.
----@generic Returns, Params, Transformed
----@param inner fun(...: Params...): Returns...
----@param msg  TryLog
----@param success? fun(...: Returns...): Transformed...
----@param ... Params...
----@return Returns...
+---@generic InnerRets, Args, Rets
+---@overload fun(inner: (fun(...: Args...): Rets...), msg: TryLog): Rets...
+---@overload fun(inner: (fun(...: Args...): Rets...), msg: TryLog, success: nil, ...: Args...): Rets...
+---@param inner fun(...: Args...): InnerRets... Function to run in protected mode
+---@param msg  TryLog #
+---   Log configuration. Log string + arguments to log function
+---   (the error message is appended to these arguments for the log call).
+---   Optionally `level` key for log level to log the error at. Defaults to `error`.
+---@param success fun(...: InnerRets...): Rets... #
+---   Function to call with `inner` returns if `inner` succeeds. Optional (use `try_log` when omitting though).
+---@param ... Args... Arguments for `inner`
+---@return Rets... #
+---   Variadic returns of `success` (or `inner`, if no success specified),
+---   or nothing in case of error
 function M.try_log_else(inner, msg, success, ...)
   msg = msg or {}
   return M.try_catch_else(inner, function(err)
@@ -187,12 +216,16 @@ end
 
 --- Try to execute a function. If it fails, log a custom description and the message.
 --- Otherwise return the result.
---- Note: Avoid non-nullable returns.
----@generic Returns, Params
----@param inner fun(...: Params...): Returns...
----@param msg  TryLog
----@param ... Params...
----@return Returns...
+--- Note: Avoid non-nullable returns in `inner` to avoid typing issues.
+---@generic Rets, Args
+---@param inner fun(...: Args...): Rets... Function to run in protected mode
+---@param msg  TryLog #
+---   Log configuration. Log string + arguments to log function
+---   (the error message is appended to these arguments for the log call).
+---   Optionally `level` key for log level to log the error at. Defaults to `error`.
+---@param ... Args... Arguments for `inner`
+---@return Rets... #
+---   Variadic returns of `inner` or nothing in case of error
 function M.try_log(inner, msg, ...)
   return M.try_log_else(inner, msg, nil, ...)
 end

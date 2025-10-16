@@ -5,15 +5,17 @@ local Config = require("continuity.config")
 local Session = require("continuity.core.session")
 local util = require("continuity.util")
 
---- Interactive API, compatible with stevearc/resession.nvim.
+--- Interactive API, (mostly) compatible with stevearc/resession.nvim.
 ---@class continuity.session
 local M = {}
 
 ---@namespace continuity.session
 ---@using continuity.core
 
----@param tab_scoped boolean?
----@return string?
+--- Derive or ask user for session save file name
+---@param tab_scoped? boolean #
+---   Whether the saving session is a tab-scoped one. Defaults to false.
+---@return string? session_name #
 local function get_save_name(tab_scoped)
   local current
   if tab_scoped then
@@ -38,12 +40,15 @@ end
 ---@overload fun(name: string, opts: DirParam, tabnr: false, session_file: string?, state_dir: string?, context_dir: string?): ActiveSession<T>?
 ---@overload fun(name: string, opts: DirParam, tabnr: nil, session_file: string?, state_dir: string?, context_dir: string?): ActiveSession<Session.GlobalTarget>?
 ---@param name string Name of the session to find
----@param opts DirParam Dir override
----@param tabnr? TabNr|false Pass expected tabnr or `true` to filter for a tab session. Pass `nil` for a global session. Pass `false` for either.
----@param session_file string?
----@param state_dir string?
----@param context_dir string?
----@return ActiveSession<T>?
+---@param opts DirParam Session dir override
+---@param tabnr? TabNr|false
+---   Pass expected tabnr or `true` to filter for any tab session.
+---   Pass `nil` for a global session.
+---   Pass `false` for either.
+---@param session_file? string Session file (snapshot) path to match against
+---@param state_dir? string Session-associated data path to match against
+---@param context_dir? string Context-associated data path to match against
+---@return ActiveSession<T>? matching_active_session #
 local function find_attached(name, opts, tabnr, session_file, state_dir, context_dir)
   local attached = Session.get_named(name)
   if not attached then
@@ -69,11 +74,11 @@ end
 ---@generic T: Session.Target
 ---@overload fun(name: string, opts: Session.InitOptsWithMeta & DirParam, tabnr: nil): IdleSession<Session.GlobalTarget>|ActiveSession<Session.GlobalTarget>, TypeGuard<ActiveSession<Session.GlobalTarget>>
 ---@overload fun(name: string, opts: Session.InitOptsWithMeta & DirParam, tabnr: TabNr): IdleSession<Session.TabTarget>|ActiveSession<Session.TabTarget>, TypeGuard<ActiveSession<Session.TabTarget>>
----@param name string
+---@param name string Name of session to get/create
 ---@param opts Session.InitOptsWithMeta & DirParam
----@param tabnr? TabNr
+---@param tabnr? TabNr Target tab number of session, if any
 ---@return IdleSession<T>|ActiveSession<T> session
----@return TypeGuard<ActiveSession<T>> attached Whether we referenced an already attached session.
+---@return TypeGuard<ActiveSession<T>> is_attached Whether we referenced an already attached session.
 -- Note: TypeGuard does not work this way! It's only applied to the first *argument*.
 local function get_session(name, opts, tabnr)
   local session_file, state_dir, context_dir =
@@ -100,9 +105,9 @@ local function get_session(name, opts, tabnr)
 end
 
 --- Save the current global or tabpage state to a named session.
----@param name string The name of the session
+---@param name string Name of the session
 ---@param opts? SaveOpts & PassthroughOpts
----@param target_tabpage? TabNr Instead of saving everything, only save the current tabpage
+---@param target_tabpage? TabNr Only save this tabpage (instead of everything)
 local function save(name, opts, target_tabpage)
   ---@type SaveOpts & PassthroughOpts
   opts = vim.tbl_extend("keep", opts --[[@as table]] or {}, {
@@ -136,7 +141,9 @@ local function save(name, opts, target_tabpage)
 end
 
 --- Save the current global state to disk
----@param name? string Name of the session
+---@param name? string #
+---   Name of the global session to save.
+---   If not provided, takes name of attached one or prompts user.
 ---@param opts? SaveOpts & PassthroughOpts
 function M.save(name, opts)
   name = name or get_save_name(false)
@@ -147,7 +154,9 @@ function M.save(name, opts)
 end
 
 --- Save the state of the current tabpage to disk
----@param name? string Name of the tabpage session. If not provided, will prompt user for session name
+---@param name? string #
+---   Name of the tabpage session to save.
+---   If not provided, takes name of attached one in current tabpage or prompts user.
 ---@param opts? SaveOpts & PassthroughOpts
 function M.save_tab(name, opts)
   name = name or get_save_name(true)
@@ -159,7 +168,9 @@ end
 
 M.save_all = Session.save_all
 
+--- Prompt user for name of session to load from session dir
 ---@param opts? DirParam
+---@return string?
 local function get_load_name(opts)
   local sessions = M.list({ dir = opts and opts.dir or nil })
   if vim.tbl_isempty(sessions) then
@@ -196,13 +207,15 @@ local function get_load_name(opts)
   return name
 end
 
---- Load a session
----@param name? string
----@param opts? LoadOpts & PassthroughOpts
----    attach? boolean Stay attached to session after loading (default true)
----    reset? boolean|"auto" Close everything before loading the session (default "auto")
----    silence_errors? boolean Don't error when trying to load a missing session
----    dir? string Name of directory to load from (overrides config.dir)
+--- Load a session from disk
+---@param name? string #
+---   Name of the session to load from session dir.
+---   If not provided, prompts user.
+---@param opts? LoadOpts & PassthroughOpts #
+---   attach? boolean Stay attached to session after loading (default true)
+---   reset? boolean|"auto" Close everything before loading the session (default "auto")
+---   silence_errors? boolean Don't error when trying to load a missing session
+---   dir? string Name of directory to load from (overrides config.dir)
 ---@note
 --- The default value of `reset = "auto"` will reset when loading a normal session, but _not_ when
 --- loading a tab-scoped session.
@@ -265,9 +278,9 @@ end
 -- M.get_current_data = Manager.get_current_data
 M.detach = Session.detach
 
---- List all available saved sessions
+--- List all available saved sessions in session dir
 ---@param opts? ListOpts
----@return string[]
+---@return string[] sessions_in_dir #
 function M.list(opts)
   ---@type ListOpts
   opts = opts or {}
@@ -284,8 +297,11 @@ function M.list(opts)
   end, Config.load.order)
 end
 
+--- Ask user for session name to delete
+---@param opts DirParam
+---@return string? session_name #
 local function get_delete_name(opts)
-  local sessions = M.list({ dir = opts and opts.dir })
+  local sessions = M.list({ dir = opts.dir })
   if vim.tbl_isempty(sessions) then
     vim.notify("No saved sessions", vim.log.levels.WARN)
     return
@@ -301,14 +317,14 @@ local function get_delete_name(opts)
   )
 end
 
----@generic T: Session.Target
---- Delete a saved session
----@param name? string Name of the session. If not provided, prompt for session to delete
+--- Delete a saved session from session dir
+---@param name? string #
+---   Name of the session. If not provided, prompts user
 ---@param opts? DeleteOpts & PassthroughOpts
 function M.delete(name, opts)
   ---@type DeleteOpts & PassthroughOpts
   opts = opts or {}
-  name = name or get_delete_name(opts)
+  name = name or get_delete_name({ dir = opts.dir })
   if not name then
     return
   end
