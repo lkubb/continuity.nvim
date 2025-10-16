@@ -12,6 +12,24 @@ local M = {}
 ---@namespace continuity.core.layout
 ---@using continuity.core
 
+--- Get the alternate file for a window.
+---@param winid WinID Window ID to get alternate file for
+---@param opts snapshot.CreateOpts Snapshot creation opts
+---@return string? alternate_file #
+---   Absolute path to alternate file
+local function get_alternate_file(winid, opts)
+  local bufnr = vim.api.nvim_win_call(winid or 0, function()
+    return vim.fn.bufnr("#")
+  end)
+  if bufnr > 0 then
+    -- NOTE: This doesn't respect tab_buf_filter, issue?
+    local file = vim.api.nvim_buf_get_name(bufnr)
+    if file ~= "" and (opts.buf_filter or Config.session.buf_filter)(bufnr, opts) then
+      return vim.fn.fnamemodify(file, ":p")
+    end
+  end
+end
+
 --- Parse the window-local jumplist into a format that can be saved.
 ---@param winid WinID Window ID of window to query
 ---@return [WinInfo.JumplistEntry[], integer] jumps_backtrack #
@@ -98,6 +116,7 @@ function M.get_win_info(tabnr, winid, current_win, opts)
     height = vim.api.nvim_win_get_height(winid),
     options = util.opts.get_win(winid, opts.options or Config.session.options),
     jumps = util.opts.coalesce_auto("jumps", false, opts, Config.session) and parse_jumplist(winid),
+    alt = get_alternate_file(winid, opts),
   })
   ---@cast win WinInfo
   local winnr = vim.api.nvim_win_get_number(winid)
@@ -235,6 +254,9 @@ local function set_winlayout_data(layout, scale_factor, visit_data)
       local ctx = Buf.added(win.bufname, win.bufuuid)
       log.fmt_debug("Loading buffer %s (uuid: %s) in win %s", win.bufname, win.bufuuid, win.winid)
       vim.api.nvim_win_set_buf(win.winid, ctx.bufnr)
+      if win.alt then
+        vim.cmd.balt({ vim.fn.fnameescape(win.alt) })
+      end
       -- After setting the buffer into the window, manually set the filetype to trigger syntax highlighting
       log.fmt_trace("Triggering filetype from winlayout for buf %s", ctx.bufnr)
       util.opts.with({ eventignore = "" }, function()

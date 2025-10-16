@@ -15,6 +15,7 @@
 ---@field extension_data? any If the window is supported by an extension, the data it needs to remember.
 ---@field extension? string If the window is supported by an extension, the name of the extension.
 ---@field jumps? [WinInfo.JumplistEntry[], integer] Window-local jumplist, number of steps from last entry to currently active one
+---@field alt? string The alternate file for this window, if any
 
 ---@class WinInfo.JumplistEntry: FileMark
 -- TODO: coladd?
