@@ -54,7 +54,11 @@ end
 
 ---@diagnostic disable-next-line: unused
 M.is_win_supported = function(winid, bufnr)
-  return vim.bo[bufnr].buftype == "quickfix"
+  if vim.bo[bufnr].buftype ~= "quickfix" then
+    return false
+  end
+  local wininfo = vim.fn.getwininfo(winid)[1] or {}
+  return wininfo.quickfix == 1 and wininfo.loclist == 0
 end
 
 ---@diagnostic disable-next-line: unused
