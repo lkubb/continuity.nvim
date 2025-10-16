@@ -12,6 +12,9 @@
 
 --- API options for `auto.reset`
 ---@class ResetOpts: Notify & Reset & SilenceErrors
+---@field cwd? string|true #
+---   Path to a directory associated with the session to reset
+---   instead of current one. Set this to `true` to use nvim's current global CWD.
 ---@field reload? boolean Attempt to restart a new autosession after reset. Defaults to true.
 
 ---@class ResetProjectOpts

@@ -97,6 +97,38 @@ local function get_ctx(cwd)
   return spec
 end
 
+--- Get the session object associated with the autosession context.
+---@param ctx AutosessionContext
+---@param opts? LoadOpts
+---@return IdleSession<Session.GlobalTarget>
+local function get_autosess(ctx, opts)
+  opts = opts or {}
+  local session_file, state_dir, context_dir =
+    util.path.get_autosession_paths(ctx.name, ctx.project.data_dir)
+
+  return Session.create_new(ctx.name, session_file, state_dir, context_dir, {
+    autosave_enabled = opts.autosave_enabled,
+    autosave_interval = opts.autosave_interval,
+    autosave_notify = opts.autosave_notify,
+    on_attach = opts.on_attach,
+    on_detach = opts.on_detach,
+    buf_filter = opts.buf_filter,
+    modified = opts.modified,
+    options = opts.options,
+    tab_buf_filter = opts.tab_buf_filter,
+    meta = opts.meta,
+    jumps = opts.jumps,
+    changelist = opts.changelist,
+    local_marks = opts.local_marks,
+    global_marks = opts.global_marks,
+    command_history = opts.command_history,
+    search_history = opts.search_history,
+    input_history = opts.input_history,
+    expr_history = opts.expr_history,
+    debug_history = opts.debug_history,
+  })
+end
+
 ---@type fun(autosession: AutosessionContext?)
 local monitor
 
@@ -431,13 +463,35 @@ end
 --- Attempt to start a new autosession (optionally).
 ---@param opts? ResetOpts
 function M.reset(opts)
-  local cur = current_autosession()
-  if not cur then
+  ---@type ResetOpts
+  opts = vim.tbl_extend("force", { notify = false }, opts or {})
+  ---@type Session?
+  local session
+  if opts.cwd then
+    local ctx = get_ctx((opts.cwd ~= true and opts.cwd) or util.auto.cwd())
+    if not ctx then
+      vim.notify(
+        ("Failed to reset autosession! Passed path '%s' is not associated with one."):format(
+          opts.cwd
+        ),
+        vim.log.levels.ERROR
+      )
+      return
+    end
+    session = get_autosess(ctx)
+  else
+    session = current_autosession()
+  end
+  if not session then
     return
   end
-  opts = vim.tbl_extend("force", { notify = false }, opts or {})
-  cur:detach("delete", { reset = true })
-  cur:delete({ notify = opts.notify, silence_errors = opts.silence_errors })
+  if session:is_attached() then
+    ---@cast session ActiveSession
+    session:detach("delete", { reset = true })
+  else
+    opts.reload = false
+  end
+  session:delete({ notify = opts.notify, silence_errors = opts.silence_errors })
   if opts.reload ~= false then
     M.reload()
   end
