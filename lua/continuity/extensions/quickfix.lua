@@ -39,11 +39,11 @@ end
 M.on_pre_load = function(data)
   local lists, pos = data[1], data[2]
   if not (lists and pos) then
-    if not data.filename then
+    if not lists or not lists.filename then
       return
     end
     -- migration
-    lists, pos = { items = data }, 1
+    lists, pos = { { items = data } }, 1
   end
   vim.fn.setqflist({}, "f") -- ensure lists are always cleared
   vim.iter(lists):each(function(qflist)
