@@ -319,7 +319,7 @@ end
 ---@return string session_file #
 function M.get_autosession_file(name, dir)
   local filename = string.format("%s.json", M.escape(name))
-  return M.join(M.get_session_dir(dir), filename)
+  return M.join(dir, filename)
 end
 
 --- Get the path to the project sessions dir
