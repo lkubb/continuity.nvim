@@ -109,6 +109,18 @@ function M.read_file(filepath)
   return content
 end
 
+--- Calculate the sha256 hexdigest of a file on disk.
+--- Returns nil if reading the file fails.
+---@param file string Path to the file to hash
+---@return string? sha256_hexdigest Hexdigest of the file, if successful
+function M.sha256(file)
+  local contents = M.read_file(file)
+  if not contents then
+    return
+  end
+  return vim.fn.sha256(contents)
+end
+
 ---Read a file and return a list of its lines.
 ---@param file string Path to read. Must exist, otherwise an error is raised.
 ---@return string[] file_lines #

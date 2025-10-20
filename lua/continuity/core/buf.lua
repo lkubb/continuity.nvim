@@ -122,6 +122,16 @@ function BufContext.new(bufnr)
   return setmetatable({ bufnr = bufnr }, BufContext)
 end
 
+---@param uuid BufUUID Buffer UUID
+---@return BufContext? uuid_ctx Buffer context for buffer with `uuid`, if found
+function BufContext.by_uuid(uuid)
+  for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
+    if (vim.b[bufnr].continuity_ctx or {}).uuid == uuid then
+      return BufContext.new(bufnr)
+    end
+  end
+end
+
 function BufContext.__index(self, key)
   if key == "name" then
     -- The name doesn't change, so we can save it on the context itself
@@ -390,6 +400,7 @@ local function restore_modified(ctx)
     end
     ctx.needs_restore = nil
     ctx.restore_last_pos = true
+    ctx.last_changedtick = vim.b[ctx.bufnr].changedtick
   end, save_file)
   log.fmt_trace("Finished restoring modified buffer %s", ctx)
 end
@@ -702,6 +713,10 @@ function M.clean_modified(state_dir, keep)
     if not keep[uuid] then
       pcall(vim.fn.delete, sav)
       pcall(vim.fn.delete, vim.fn.fnamemodify(sav, ":r") .. ".undo")
+      local ctx = BufContext.by_uuid(uuid)
+      if ctx then
+        ctx.last_changedtick = nil
+      end
     end
   end
 end
@@ -738,36 +753,52 @@ function M.save_modified(state_dir, bufs)
     -- needs_restore are buffers that were restored initially, but have never been entered since loading.
     -- If we saved the latter, we would lose the undo history since it hasn't been loaded for them.
     -- This at least affects unnamed buffers since we solely manage the history for them.
-    if not (ctx.unrestored or ctx.needs_restore) then
+    if ctx.unrestored or ctx.needs_restore then
+      log.fmt_debug("Modified buf %s has not been restored yet, skipping save", tostring(ctx))
+    else
       local save_file = vim.fs.joinpath(state_dir, "modified_buffers", ctx.uuid .. ".buffer")
       local undo_file = vim.fs.joinpath(state_dir, "modified_buffers", ctx.uuid .. ".undo")
-      log.fmt_debug("Saving modified buffer %s to %s", tostring(ctx), save_file)
-      util.try_log(function()
-        -- Backup the current buffer contents. Avoid vim.cmd.w because that can have side effects, even with keepalt/noautocmd.
-        local lines = vim.api.nvim_buf_get_text(ctx.bufnr, 0, 0, -1, -1, {})
-        util.path.write_file(save_file, table.concat(lines, "\n") .. "\n")
+      if
+        ctx.last_changedtick
+        and ctx.last_changedtick == vim.b[ctx.bufnr].changedtick
+        and util.path.exists(save_file)
+        and (skip_wundo or util.path.exists(undo_file))
+      then
+        log.fmt_debug(
+          "Modified buf %s has not changed since last save, skipping save",
+          tostring(ctx)
+        )
+      else
+        log.fmt_debug("Saving modified buffer %s to %s", tostring(ctx), save_file)
+        util.try_log(function()
+          -- Backup the current buffer contents. Avoid vim.cmd.w because that can have side effects, even with keepalt/noautocmd.
+          local lines = vim.api.nvim_buf_get_text(ctx.bufnr, 0, 0, -1, -1, {})
+          util.path.write_file(save_file, table.concat(lines, "\n") .. "\n")
+          -- TODO: Consider ways to optimize this/make it more robust:
+          -- * Save hash of on-disk state
+          -- * Save patch only
 
-        if not skip_wundo then
-          vim.api.nvim_buf_call(ctx.bufnr, function()
-            vim.cmd.wundo({
-              vim.fn.fnameescape(undo_file),
-              bang = true,
-              mods = { noautocmd = true, silent = true },
-            })
-          end)
-        else
-          log.fmt_warn(
-            "Need to skip backing up undo history for modified buffer %s to %s because cmd window is active",
-            tostring(ctx),
-            undo_file
-          )
-        end
-      end, {
-        "Error while saving modified buffer %s: %s",
-        tostring(ctx),
-      })
-    else
-      log.fmt_debug("Modified buf %s has not been restored yet, skipping save", tostring(ctx))
+          if not skip_wundo then
+            vim.api.nvim_buf_call(ctx.bufnr, function()
+              vim.cmd.wundo({
+                vim.fn.fnameescape(undo_file),
+                bang = true,
+                mods = { noautocmd = true, silent = true },
+              })
+              ctx.last_changedtick = vim.b[ctx.bufnr].changedtick
+            end)
+          else
+            log.fmt_warn(
+              "Need to skip backing up undo history for modified buffer %s to %s because cmd window is active",
+              tostring(ctx),
+              undo_file
+            )
+          end
+        end, {
+          "Error while saving modified buffer %s: %s",
+          tostring(ctx),
+        })
+      end
     end
     res[ctx.uuid] = true
   end

@@ -55,6 +55,8 @@
 ---   The path to the buffer's swapfile if it had one when loaded.
 ---@field unrestored? boolean #
 ---   Indicates the buffer could not be restored properly because it had a swapfile and was opened read-only
+---@field last_changedtick? integer
+---   Tracks the last backed up changedtick when buffer modificataions are persisted.
 
 --- Indicates that any unhandled opts are also passed through to custom hooks.
 ---@alias PassthroughOpts table
