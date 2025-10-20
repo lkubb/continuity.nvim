@@ -43,11 +43,10 @@ end
 ---@param data [continuity.core.Snapshot.QFList[]?, integer?]
 M.on_pre_load = function(data)
   local lists, pos = data[1], data[2]
-  if not (lists and pos) then
-    ---@diagnostic disable-next-line: undefined-field
-    if not lists or not lists.filename then
-      return
-    end
+  if not lists then
+    return
+  ---@diagnostic disable-next-line: undefined-field
+  elseif lists.lnum then
     ---@diagnostic disable-next-line: assign-type-mismatch, missing-fields
     -- migration
     lists, pos = { { items = data } }, 1
