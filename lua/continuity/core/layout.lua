@@ -67,6 +67,64 @@ local function parse_jumplist(winid)
   return { parsed, math.max(0, #parsed - corrected_pos - 1) }
 end
 
+--- Get all location lists for a window, and the currently active position.
+--- Don't call this for a loclist window, it just returns the displayed loclist.
+---@param winid WinID? Window ID to parse loclists for. Defaults to current one.
+---@return [Snapshot.QFList[], integer]? loclists_pos #
+---   Tuple of parsed loclists and number of currently active one.
+---   Nothing if window has no loclists.
+local function parse_loclists(winid)
+  winid = winid or 0
+  local cnt = vim.fn.getloclist(winid, { nr = "$" }).nr
+  local ret = {} ---@type Snapshot.QFList[]
+  if cnt <= 0 then
+    return
+  end
+  local pos = vim.fn.getloclist(winid, { nr = 0 }).nr ---@type integer
+  for i = 1, cnt do
+    local loclist = vim.fn.getloclist(winid, { nr = i, all = 0 })
+    ret[#ret + 1] = {
+      idx = loclist.idx,
+      title = loclist.title,
+      context = loclist.context,
+      efm = loclist.efm,
+      quickfixtextfunc = loclist.quickfixtextfunc,
+      items = vim.tbl_map(function(item)
+        return {
+          filename = item.bufnr and vim.api.nvim_buf_get_name(item.bufnr),
+          module = item.module,
+          lnum = item.lnum,
+          end_lnum = item.end_lnum,
+          col = item.col,
+          end_col = item.end_col,
+          vcol = item.vcol,
+          nr = item.nr,
+          pattern = item.pattern,
+          text = item.text,
+          type = item.type,
+          valid = item.valid,
+        }
+      end, loclist.items),
+    }
+  end
+  return { ret, pos }
+end
+
+--- Restore saved loclists.
+---@param winid WinID Window ID of the window to restore loclists for
+---@param lists Snapshot.QFList[] Saved loclists as returned from `parse_loclists`
+---@param pos integer Position of active loclist
+local function restore_loclists(winid, lists, pos)
+  winid = winid or 0
+  vim.fn.setloclist(winid, {}, "f") -- ensure lists are always cleared
+  vim.iter(lists):each(function(loclist)
+    vim.fn.setloclist(winid, {}, " ", loclist)
+  end)
+  vim.api.nvim_win_call(winid, function()
+    vim.cmd.lhistory({ count = pos })
+  end)
+end
+
 --- Check if a window should be saved. If so, return relevant information.
 --- Only exposed for testing purposes
 ---@private
@@ -102,9 +160,24 @@ function M.get_win_info(tabnr, winid, current_win, opts)
       break
     end
   end
-  if not supported_by_ext and not (opts.buf_filter or Config.session.buf_filter)(bufnr, opts) then
+  local loclist_win, loclists, is_quickfix
+  if vim.bo[bufnr].buftype == "quickfix" then
+    is_quickfix = true
+    local wininfo = vim.fn.getwininfo(winid)[1] or {}
+    if wininfo.quickfix == 1 and wininfo.loclist == 1 then
+      loclist_win = vim.fn.getloclist(winid, { filewinid = 0 }).filewinid
+    end
+  end
+  if
+    not (supported_by_ext or loclist_win)
+    and not (opts.buf_filter or Config.session.buf_filter)(bufnr, opts)
+  then
     -- Don't need to check tab_buf_filter, only called for buffers that are visible in a tab
     return false
+  end
+  if not is_quickfix then
+    -- Loclist windows don't have loclists, same for the quickfix one I suppose
+    loclists = parse_loclists(winid)
   end
   local ctx = Buf.ctx(bufnr)
   win = vim.tbl_extend("error", win, {
@@ -117,6 +190,11 @@ function M.get_win_info(tabnr, winid, current_win, opts)
     options = util.opts.get_win(winid, opts.options or Config.session.options),
     jumps = util.opts.coalesce_auto("jumps", false, opts, Config.session) and parse_jumplist(winid),
     alt = get_alternate_file(winid, opts),
+    loclists = loclists,
+    -- We don't need to generate unique IDs for windows, just reuse winids
+    -- to be able to track/reference individual windows. We need this info to restore loclist windows.
+    loclist_win = loclist_win,
+    old_winid = winid,
   })
   ---@cast win WinInfo
   local winnr = vim.api.nvim_win_get_number(winid)
@@ -218,59 +296,36 @@ end
 ---@param scale_factor [number, number] Scaling factor for [width, height]
 ---@return WinLayoutRestored restored #
 ---   Same table as `layout`, but with valid window ID(s) set
----@return {winid?: WinID} visitor #
----   Window ID of most recent created window, if any
-local function set_winlayout_data(layout, scale_factor, visit_data)
-  local typ = layout[1]
-  if typ == "leaf" then
-    ---@cast layout WinLayoutLeafRestored
-    local win = layout[2]
+---@return WinID? active_winid #
+---   Window ID of active window, if any
+local function set_winlayout_data(layout, scale_factor)
+  local active_winid ---@type WinID?
+  local all_wins = {} ---@type table<WinID, WinInfoRestored?>
+  local loclist_wins = {} ---@type table<WinID, WinInfoRestored?>
+  local winid_old_new = {} ---@type table<WinID, WinID?>
+
+  --- Phase 2 of restoration, after all extensions have run and loclist windows are restored (so window IDs are stable).
+  ---@param win WinInfoRestored
+  local function restore_final(win)
+    -- Ensure the correct window is focused.
     vim.api.nvim_set_current_win(win.winid)
-    if win.extension then
-      local extmod = Ext.get(win.extension)
-      if extmod and extmod.load_win then
-        -- Re-enable autocmds so if the extensions rely on BufReadCmd it works
-        ---@type boolean, (WinID|string)?
-        local ok, new_winid
-        util.opts.with({ eventignore = "" }, function()
-          ok, new_winid = pcall(extmod.load_win, win.winid, win.extension_data)
-        end)
-        if ok then
-          ---@cast new_winid WinID?
-          new_winid = new_winid or win.winid
-          win.winid = new_winid
-        else
-          vim.notify(
-            string.format(
-              '[continuity] Extension "%s" load_win error: %s',
-              win.extension,
-              new_winid
-            ),
-            vim.log.levels.ERROR
-          )
-        end
-      end
-    else
-      local ctx = Buf.added(win.bufname, win.bufuuid)
-      log.fmt_debug("Loading buffer %s (uuid: %s) in win %s", win.bufname, win.bufuuid, win.winid)
-      vim.api.nvim_win_set_buf(win.winid, ctx.bufnr)
-      if win.alt then
-        vim.cmd.balt({ vim.fn.fnameescape(win.alt) })
-      end
-      -- After setting the buffer into the window, manually set the filetype to trigger syntax highlighting
-      log.fmt_trace("Triggering filetype from winlayout for buf %s", ctx.bufnr)
-      util.opts.with({ eventignore = "" }, function()
-        vim.bo[ctx.bufnr].filetype = vim.bo[ctx.bufnr].filetype
-      end)
-      -- Save the last position of the cursor in case buf_load plugins
-      -- change the buffer text and request restoration
-      local temp_pos_table = ctx.last_win_pos or {}
-      temp_pos_table[tostring(win.winid)] = win.cursor
-      ctx.last_win_pos = temp_pos_table
-      -- We don't need to restore last cursor position on buffer load
-      -- because the triggered :edit command keeps it
-      ctx.restore_last_pos = nil
-    end
+    -- Try to enforce window order in case extensions or loclist window creation have messed it up.
+    -- We can only do this inside frames (rows/cols).
+    -- This is mostly a workaround because we cannot control where a loclist window opens
+    -- and just loading the loclist buffer into an existing window does not set
+    -- the correct filewinid. [Maybe could be hacked together via ffi, but... :]]
+    -- Just for reference: https://neovim.discourse.group/t/calling-neovim-internal-functions-with-luajit-ffi-and-rust/165
+    -- One case where this does not work is when a loclist window was opened,
+    -- moved and then the associated window was split in the vertical direction,
+    -- resulting in it being put into a new frame without its loclist window.
+    -- To replicate this, we would need to replay the same sequence (possibly requiring
+    -- a lookahead if the loclist window was moved to before the referenced one).
+    -- Moving that state around would be much more involved, so just accept that
+    -- we can't restore absolutely everything.
+    vim.cmd.wincmd({ "x", count = win.frame_pos })
+
+    -- NOTE: From here on, the active window might be different! The window swap
+    -- keeps the active window in the same frame position, not the same window.
     util.opts.restore_win(win.winid, win.options)
     local width_scale = vim.wo.winfixwidth and 1 or scale_factor[1]
     ---@cast width_scale number
@@ -304,15 +359,107 @@ local function set_winlayout_data(layout, scale_factor, visit_data)
       vim.w[win.winid].continuity_win_cursor = win.cursor
     end
     if win.current then
-      visit_data.winid = win.winid
-    end
-  else
-    for _, v in ipairs(layout[2]) do
-      set_winlayout_data(v, scale_factor, visit_data)
+      active_winid = win.winid
     end
   end
+
+  --- Phase 1 of restoration. Restores window contents and loclists.
+  --- Might replace some windows.
+  ---@param layout_inner WinLayoutLeafRestored|WinLayoutBranchRestored
+  ---@param frame_pos integer
+  local function winlayout_inner(layout_inner, frame_pos)
+    local typ = layout_inner[1]
+    if typ == "leaf" then
+      ---@cast layout_inner WinLayoutLeafRestored
+      local win = layout_inner[2]
+      vim.api.nvim_set_current_win(win.winid)
+      if win.extension then
+        local extmod = Ext.get(win.extension)
+        if extmod and extmod.load_win then
+          -- Re-enable autocmds so if the extensions rely on BufReadCmd it works
+          ---@type boolean, (WinID|string)?
+          local ok, new_winid
+          util.opts.with({ eventignore = "" }, function()
+            ok, new_winid = pcall(extmod.load_win, win.winid, win.extension_data)
+          end)
+          if ok then
+            ---@cast new_winid WinID?
+            new_winid = new_winid or win.winid
+            win.winid = new_winid
+          else
+            vim.notify(
+              string.format(
+                '[continuity] Extension "%s" load_win error: %s',
+                win.extension,
+                new_winid
+              ),
+              vim.log.levels.ERROR
+            )
+          end
+        end
+      elseif win.loclist_win then
+        -- Keep track of loclist windows, we'll restore them later.
+        loclist_wins[win.winid] = win
+      else
+        local ctx = Buf.added(win.bufname, win.bufuuid)
+        log.fmt_debug("Loading buffer %s (uuid: %s) in win %s", win.bufname, win.bufuuid, win.winid)
+        vim.api.nvim_win_set_buf(win.winid, ctx.bufnr)
+        if win.alt then
+          vim.cmd.balt({ vim.fn.fnameescape(win.alt) })
+        end
+        -- After setting the buffer into the window, manually set the filetype to trigger syntax highlighting
+        log.fmt_trace("Triggering filetype from winlayout for buf %s", ctx.bufnr)
+        util.opts.with({ eventignore = "" }, function()
+          vim.bo[ctx.bufnr].filetype = vim.bo[ctx.bufnr].filetype
+        end)
+        -- Save the last position of the cursor in case buf_load plugins
+        -- change the buffer text and request restoration
+        local temp_pos_table = ctx.last_win_pos or {}
+        temp_pos_table[tostring(win.winid)] = win.cursor
+        ctx.last_win_pos = temp_pos_table
+        -- We don't need to restore last cursor position on buffer load
+        -- because the triggered :edit command keeps it
+        ctx.restore_last_pos = nil
+      end
+      if win.loclists then
+        restore_loclists(win.winid, win.loclists[1], win.loclists[2])
+      end
+      -- Keep a mapping of old to new window IDs because loclist windows in the snapshot reference the old ones.
+      -- `or 0` to allow migration from older format.
+      winid_old_new[win.old_winid or 0] = win.winid
+      -- Keep track of the relative position of this window inside its frame. Necessary to because loclist
+      -- windows are always appended to the referenced window, but the user might have moved it. We'll force
+      -- the order of windows inside their frame later (this workaround breaks if they were not in the same frame though).
+      win.frame_pos = frame_pos
+      -- Also, keep track of all windows to restore dimensions when loclists windows have been created.
+      all_wins[#all_wins + 1] = win
+    else
+      for pos, branch_or_leaf in ipairs(layout_inner[2]) do
+        winlayout_inner(branch_or_leaf, pos)
+      end
+    end
+  end
+
+  -- Restore window contents
+  winlayout_inner(layout, 1)
+
+  -- Restore loclist windows.
+  for locl_winid, locl_win in pairs(loclist_wins) do
+    local ref_winid = winid_old_new[assert(locl_win.loclist_win)] -- "filewinid" of loclist win
+    if ref_winid then
+      vim.api.nvim_set_current_win(ref_winid) -- Ensure the associated window is focused
+      util.opts.with({ eventignore = "" }, function()
+        vim.cmd("lopen") -- Create loclist window between associated one and placeholder, we're switching focus to the new one here
+      end)
+      local new_winid = vim.api.nvim_get_current_win()
+      vim.api.nvim_win_close(locl_winid, true) -- Remove the placeholder.
+      locl_win.winid = new_winid -- We replaced the window, update winid
+    end
+  end
+  -- Now that all windows have been created, we can restore frame order, options/dimensions and cursor pos.
+  vim.iter(all_wins):each(restore_final)
   -- Make it somewhat explicit that we're modifying dicts in-place
-  return layout, visit_data
+  return layout, active_winid
 end
 
 --- Hackityhack jumplist restoration by abusing ShaDa in the absence
@@ -408,10 +555,10 @@ function M.set_winlayout(layout, scale_factor)
   if not layout or not layout[1] then
     return
   end
+  local focused_winid
   layout = set_winlayout(layout)
-  local visit_data = {}
-  layout, visit_data = set_winlayout_data(layout, scale_factor, visit_data)
-  return visit_data.winid
+  layout, focused_winid = set_winlayout_data(layout, scale_factor)
+  return focused_winid
 end
 
 --- Ensure the active tabpage is a clean one.
