@@ -1,18 +1,22 @@
 ---@type continuity.core.Extension
 local M = {}
 
+---@return [continuity.core.Snapshot.QFList[]?, integer?]
 M.on_save = function()
   local cnt = vim.fn.getqflist({ nr = "$" }).nr
+  ---@type continuity.core.Snapshot.QFList[]
   local ret = {}
   if cnt <= 0 then
+    ---@diagnostic disable-next-line: return-type-mismatch
     return ret
   end
-  local pos = vim.fn.getqflist({ nr = 0 }).nr
+  local pos = vim.fn.getqflist({ nr = 0 }).nr ---@type integer
   for i = 1, cnt do
     local qflist = vim.fn.getqflist({ nr = i, all = true })
     ret[#ret + 1] = {
       idx = qflist.idx,
       title = qflist.title,
+      context = qflist.context,
       efm = qflist.efm,
       quickfixtextfunc = qflist.quickfixtextfunc,
       items = vim.tbl_map(function(item)
@@ -36,12 +40,15 @@ M.on_save = function()
   return { ret, pos }
 end
 
+---@param data [continuity.core.Snapshot.QFList[]?, integer?]
 M.on_pre_load = function(data)
   local lists, pos = data[1], data[2]
   if not (lists and pos) then
+    ---@diagnostic disable-next-line: undefined-field
     if not lists or not lists.filename then
       return
     end
+    ---@diagnostic disable-next-line: assign-type-mismatch, missing-fields
     -- migration
     lists, pos = { { items = data } }, 1
   end

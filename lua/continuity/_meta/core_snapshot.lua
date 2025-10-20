@@ -186,3 +186,27 @@
 ---   Window layout enriched with window-specific snapshot data
 ---@field cwd? string #
 ---   Tab-local cwd, if different from the global one or a tab-scoped snapshot
+
+--- Represents a quickfix/location list
+---@class Snapshot.QFList
+---@field idx integer Current position in list
+---@field title string Title of list
+---@field context? any Arbitrary context for this list, may be used by plugins
+---@field efm? string Error format string to use for parsing lines
+---@field quickfixtextfunc string Function to customize the displayed text
+---@field items Snapshot.QFListItem[] Items in the list
+
+--- A single item in a quickfix/location list
+---@class Snapshot.QFListItem
+---@field filename? string Path of the file this entry points to
+---@field module string Module name (?)
+---@field lnum integer Referenced line in the file, 1-indexed
+---@field end_lnum? integer For multiline items, last referenced line
+---@field col integer Referenced column in the line of the file, also 1-indexed
+---@field end_col? integer For ranged items, last referenced column number
+---@field vcol boolean Whether `col` is visual index or byte index
+---@field nr integer Item index in the list
+---@field pattern string Search pattern used to locate the item
+---@field text string Item description
+---@field type string Type of the item (?)
+---@field valid boolean Whether error message was recognized (?)
