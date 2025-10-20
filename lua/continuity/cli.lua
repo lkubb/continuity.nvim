@@ -32,6 +32,12 @@ local funcs = {
       with_sessions = { "true", "false" },
     },
   },
+  log = {
+    func = function()
+      local logfile = require("continuity.util").path.get_stdpath_filename("log", "continuity.log")
+      vim.cmd.tabnew(logfile)
+    end,
+  },
   migrate_projects = {
     func = Continuity.migrate_projects,
     kwargs = {
