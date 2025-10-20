@@ -9,6 +9,8 @@ local Config
 ---@field shada continuity.util.shada
 local M = {}
 
+---@namespace continuity.util
+
 --- Declare a require eagerly, but only load a module when it's first accessed.
 ---@param modname string Name of the mod whose loading should be deferred
 ---@return unknown
@@ -182,9 +184,15 @@ end
 
 ---@class TryLog.Params
 ---@field level? "trace"|"debug"|"info"|"warn"|"error" The level to log at. Defaults to `error`.
+---@field notify? boolean Call `vim.notify` in addition to logging. Defaults to false.
 
 ---@alias TryLog.Format [string, any...] A format string and variable arguments to pass to the formatter. The format string should include a final extra `%s` for the error message.
 ---@alias TryLog TryLog.Format & TryLog.Params The config table passed to `try_log*` functions. List of formatter args, optional key/value config.
+
+---TODO: Once emmylua supports generic classes with variadics, refactor this into a try class, somewhat like this:
+---   util.try(my_func):catch(err_handler):else(success_handler):finally(always_func):log({"load buffer", buf = ctx, win = winid})(my, args)
+--- or:
+---   util.try({"load buffer", log = true, buf = ctx, win = winid}):run(my_func):catch():else(success_handler)(my, args)
 
 --- Try to execute a function. If it fails, log a custom description and the message.
 --- Otherwise return the result.
@@ -210,6 +218,14 @@ function M.try_log_else(inner, msg, success, ...)
     local fun = "fmt_" .. (msg.level or "error")
     msg[#msg + 1] = err
     log[fun](unpack(msg))
+    if msg.notify then
+      vim.notify(
+        "[continuity] " .. msg[1]:format(unpack(msg, 2)),
+        vim.log.levels[
+          (msg.level --[[@as string]] or "error"):lower()
+        ]
+      )
+    end
     return nil
   end, success, ...)
 end
@@ -219,7 +235,7 @@ end
 --- Note: Avoid non-nullable returns in `inner` to avoid typing issues.
 ---@generic Rets, Args
 ---@param inner fun(...: Args...): Rets... Function to run in protected mode
----@param msg  TryLog #
+---@param msg TryLog #
 ---   Log configuration. Log string + arguments to log function
 ---   (the error message is appended to these arguments for the log call).
 ---   Optionally `level` key for log level to log the error at. Defaults to `error`.

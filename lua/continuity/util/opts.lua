@@ -134,12 +134,13 @@ end
 
 --- Run a function with specific opts set and restore the previous state after.
 --- Accepts options of all scopes, but ensure the targets are still valid after the function has finished.
----@generic T
+---@generic Rets, Args
 ---@param overrides table<string, any> Mapping of opts to override to their override values
----@param inner fun(): T... Function to execute while opt overrides are active
----@return T... #
+---@param inner fun(...: Args...): Rets... Function to execute while opt overrides are active
+---@param ... Args... Arguments for `inner`
+---@return Rets... #
 ---   Variadic returns of inner function
-function M.with(overrides, inner)
+function M.with(overrides, inner, ...)
   local bak = {}
   for opt, ovrr in pairs(overrides) do
     bak[opt] = vim.o[opt]
@@ -149,7 +150,7 @@ function M.with(overrides, inner)
     for opt, init in pairs(bak) do
       vim.o[opt] = init
     end
-  end)
+  end, ...)
 end
 
 --- Search through tables in descending priority for a non-nil key or return default.

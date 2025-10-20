@@ -145,18 +145,16 @@ function M.get_win_info(tabnr, winid, current_win, opts)
       and extmod.is_win_supported
       and extmod.is_win_supported(winid, bufnr)
     then
-      local ok, extension_data = pcall(extmod.save_win, winid)
-      if not ok then
-        vim.notify(
-          string.format('[continuity] Extension "%s" save_win error: %s', ext_name, extension_data),
-          vim.log.levels.ERROR
-        )
-        break
-      end
-      ---@cast extension_data -string
-      win.extension_data = extension_data
-      win.extension = ext_name
-      supported_by_ext = true
+      util.try_log_else(
+        extmod.save_win,
+        { [1] = 'Extension "%s" save_win error: %s', [2] = ext_name, notify = true },
+        function(extension_data)
+          win.extension_data = extension_data
+          win.extension = ext_name
+          supported_by_ext = true
+        end,
+        winid
+      )
       break
     end
   end
@@ -340,18 +338,14 @@ local function set_winlayout_data(layout, scale_factor)
       win.winid or "nil",
       win.cursor or "nil"
     )
-    local ok, err = pcall(vim.api.nvim_win_set_cursor, win.winid --[[@as integer]], win.cursor)
-    if not ok then
+    util.try_log(vim.api.nvim_win_set_cursor, {
       -- This can e.g. happen when an extension has restored the buffer asynchronously
-      log.fmt_error(
-        "Failed restoring cursor for bufnr %s (uuid: %s) in win %s to %s: %s",
-        win.bufname,
-        win.bufuuid or "nil",
-        win.winid or "nil",
-        win.cursor or "nil",
-        err
-      )
-    end
+      "Failed to restore cursor for bufnr %s (uuid: %s) in win %s to %s: %s",
+      win.bufname,
+      win.bufuuid or "nil",
+      win.winid or "nil",
+      win.cursor or "nil",
+    }, win.winid --[[@as integer]], win.cursor)
     if win.jumps then
       -- Restore jumplist later when the window is actually entered for the first time.
       -- Other restoration steps could otherwise cause modifications of the restored data.
@@ -377,25 +371,19 @@ local function set_winlayout_data(layout, scale_factor)
         local extmod = Ext.get(win.extension)
         if extmod and extmod.load_win then
           -- Re-enable autocmds so if the extensions rely on BufReadCmd it works
-          ---@type boolean, (WinID|string)?
-          local ok, new_winid
           util.opts.with({ eventignore = "" }, function()
-            ok, new_winid = pcall(extmod.load_win, win.winid, win.extension_data)
-          end)
-          if ok then
-            ---@cast new_winid WinID?
-            new_winid = new_winid or win.winid
-            win.winid = new_winid
-          else
-            vim.notify(
-              string.format(
-                '[continuity] Extension "%s" load_win error: %s',
-                win.extension,
-                new_winid
-              ),
-              vim.log.levels.ERROR
+            util.try_log_else(
+              extmod.load_win,
+              { [1] = "Extension %s load_win error: %s", [2] = win.extension, notify = true },
+              ---@param new_winid integer
+              function(new_winid)
+                new_winid = new_winid or win.winid
+                win.winid = new_winid
+              end,
+              win.winid,
+              win.extension_data
             )
-          end
+          end)
         end
       elseif win.loclist_win then
         -- Keep track of loclist windows, we'll restore them later.
@@ -422,7 +410,13 @@ local function set_winlayout_data(layout, scale_factor)
         ctx.restore_last_pos = nil
       end
       if win.loclists then
-        restore_loclists(win.winid, win.loclists[1], win.loclists[2])
+        util.try_log(
+          restore_loclists,
+          { "Failed to restore loclists for window %s: %s", win.winid },
+          win.winid,
+          win.loclists[1],
+          win.loclists[2]
+        )
       end
       -- Keep a mapping of old to new window IDs because loclist windows in the snapshot reference the old ones.
       -- `or 0` to allow migration from older format.
@@ -509,17 +503,11 @@ function M.restore_jumplist(winid)
         -- Before restoring shada, ensure vim thinks we're at the last entry of the new jumplist
         -- Note: It can happen that the last entry is removed from the jumplist
         -- if we're right on it for some reason.
-        local ok, err = pcall(
-          vim.api.nvim_win_set_cursor,
-          winid --[[@as integer]],
-          { last_item[2] or 1, last_item[3] or 0 }
-        )
-        if not ok then
-          log.fmt_warn(
-            "Failed to faithfully reproduce jumplist (%s), some positions might be off",
-            err
-          )
-        end
+        util.try_log(vim.api.nvim_win_set_cursor, {
+          [1] = "Failed to faithfully reproduce jumplist for win %s, some positions might be off: %s",
+          [2] = winid,
+          level = "warn",
+        }, winid --[[@as integer]], { last_item[2] or 1, last_item[3] or 0 })
       end
       local shaja = util.shada.new()
       local now = os.time() - #jumps
@@ -532,17 +520,18 @@ function M.restore_jumplist(winid)
       -- Ensure all items are actually restored by adding all necessary buffers (?)
       -- vim.iter(bufs):each(vim.fn.bufadd)
       vim.cmd.clearjumps()
-      shaja:read()
+      util.try_log(shaja.read, { "Failed to restore jumplist for win %s: %s", winid }, shaja)
       if backtrack > 0 then
         vim.cmd('exe "norm! ' .. tostring(backtrack) .. '\\<C-o>"')
       end
       if correct_buf then
         vim.api.nvim_win_set_buf(winid, correct_buf)
       end
-      local ok, err = pcall(vim.api.nvim_win_set_cursor, winid --[[@as integer]], cursor)
-      if not ok then
-        log.fmt_warn("Failed to reset win cursor to wanted, its position might be off: %s", err)
-      end
+      vim.util.try_log(vim.api.nvim_win_set_cursor, {
+        [1] = "Failed to win cursor to wanted for winid %s, its position might be off: %s",
+        [2] = winid,
+        level = "warn",
+      }, winid --[[@as integer]], cursor)
     end)
     vim.w[winid].continuity_jumplist = nil
   end

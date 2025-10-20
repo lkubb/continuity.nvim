@@ -131,16 +131,18 @@ local function rshada_hist(opts, snapshot_ctx)
   -- when the config has been switched before regenerating the ShaDa. Also (afaict),
   -- we cannot influence expr/debug histories otherwise. This could be overkill though,
   -- TODO: Reconsider if filtering and thus writing a temp file is necessary here
-  util.shada
-    .from_file(shada_file)
-    :select({ "history" }, {
-      opts.command_history and "cmd" or nil,
-      opts.debug_history and "debug" or nil,
-      opts.expr_history and "expr" or nil,
-      opts.input_history and "input" or nil,
-      opts.search_history and "search" or nil,
-    })
-    :read()
+  util.try_log(function()
+    util.shada
+      .from_file(shada_file)
+      :select({ "history" }, {
+        opts.command_history and "cmd" or nil,
+        opts.debug_history and "debug" or nil,
+        opts.expr_history and "expr" or nil,
+        opts.input_history and "input" or nil,
+        opts.search_history and "search" or nil,
+      })
+      :read()
+  end, { "Failed to restore history: %s" })
 end
 
 --- Create a snapshot and return the data.
@@ -273,18 +275,14 @@ local function create(target_tabpage, opts, snapshot_ctx)
     for ext_name, ext_config in pairs(Config.extensions) do
       local extmod = Ext.get(ext_name)
       if extmod and extmod.on_save and (ext_config.enable_in_tab or not target_tabpage) then
-        local ok, ext_data = pcall(
+        util.try_log_else(
           extmod.on_save,
+          { [1] = "Extension %s save error: %s", [2] = ext_name, notify = true },
+          function(ext_data)
+            data[ext_name] = ext_data
+          end,
           vim.tbl_extend("error", { tabpage = target_tabpage }, snapshot_ctx or {})
         )
-        if ok then
-          data[ext_name] = ext_data
-        else
-          vim.notify(
-            string.format('[continuity] Extension "%s" save error: %s', ext_name, ext_data),
-            vim.log.levels.ERROR
-          )
-        end
       end
     end
   end)
@@ -432,7 +430,7 @@ function M.restore(snapshot, opts, snapshot_ctx)
       util.opts.restore_global(snapshot.global.options)
       -- and restore histories
       if load_hist then
-        log.fmt_debug("Clearing + restoring histories. Config: %s", load_hist)
+        log.fmt_debug("Clearing + restoring histories. Config: %s", opts)
         rshada_hist(opts, snapshot_ctx)
       end
     end
@@ -440,7 +438,7 @@ function M.restore(snapshot, opts, snapshot_ctx)
     Ext.call("on_pre_load", snapshot, snapshot_ctx)
 
     if not snapshot.tab_scoped and opts.global_marks ~= false and snapshot.global.marks then
-      log.debug("Restoring global marks")
+      log.fmt_debug("Restoring global marks: %s", snapshot.global.marks)
       -- Let's set the global marks via ShaDa to avoid performance impact + interference because
       -- there's only nvim_buf_set_mark, which requires loading the files into bufs and verifies the validity.
       -- We can still clear all unwanted global marks after.
@@ -448,17 +446,19 @@ function M.restore(snapshot, opts, snapshot_ctx)
       for mark, data in pairs(snapshot.global.marks) do
         gmark_shada:add_gmark(mark, data[1], data[2], data[3])
       end
-      gmark_shada:read()
-      -- Clear all global marks that were not defined in the session
-      vim
-        .iter(vim.fn.getmarklist())
-        :map(function(mark)
-          return mark.mark:sub(2, 2)
-        end)
-        :filter(function(name)
-          return not snapshot.global.marks[name]
-        end)
-        :each(vim.api.nvim_del_mark)
+      util.try_log(gmark_shada.read, { "Failed to restore global marks: %s" }, gmark_shada)
+      util.try_log(function()
+        -- Clear all global marks that were not defined in the session
+        vim
+          .iter(vim.fn.getmarklist())
+          :map(function(mark)
+            return mark.mark:sub(2, 2)
+          end)
+          :filter(function(name)
+            return not snapshot.global.marks[name]
+          end)
+          :each(vim.api.nvim_del_mark)
+      end, { "Failed to reset global marks: %s" })
     end
 
     local scale = {

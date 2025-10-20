@@ -58,21 +58,14 @@ function M.get_marks(ctx)
   if ctx.initialized == false then
     if not ctx.snapshot_data then
       log.fmt_error(
-        "Internal error: Buffer %s (%s, %s) not marked as initialized, but missing snapshot data.",
-        ctx.name,
-        ctx.bufnr,
-        ctx.uuid
+        "Internal error: Buffer %s not marked as initialized, but missing snapshot data.",
+        tostring(ctx)
       )
     elseif ctx.snapshot_data.marks then
       -- We didn't restore the marks yet because the buffer was never focused in this session, so remember the data from last time
       return ctx.snapshot_data.marks
     end
-    log.fmt_debug(
-      "Buffer %s (%s, %s) not yet initialized, but did not remember marks",
-      ctx.name,
-      ctx.bufnr,
-      ctx.uuid
-    )
+    log.fmt_debug("Buffer %s not yet initialized, but did not remember marks", tostring(ctx))
   end
   return vim.iter(vim.fn.getmarklist(ctx.bufnr)):fold({}, function(acc, mark)
     local n = mark.mark:sub(2, 2)
@@ -92,21 +85,14 @@ function M.parse_changelist(ctx)
   if ctx.initialized == false then
     if not ctx.snapshot_data then
       log.fmt_error(
-        "Internal error: Buffer %s (%s, %s) not marked as initialized, but missing snapshot data.",
-        ctx.name,
-        ctx.bufnr,
-        ctx.uuid
+        "Internal error: Buffer %s not marked as initialized, but missing snapshot data.",
+        tostring(ctx)
       )
     elseif ctx.snapshot_data.changelist then
       -- We didn't restore the changelist yet because the buffer was never focused in this session, so remember the data from last time
       return ctx.snapshot_data.changelist
     end
-    log.fmt_debug(
-      "Buffer %s (%s, %s) not yet initialized, but did not remember changelist",
-      ctx.name,
-      ctx.bufnr,
-      ctx.uuid
-    )
+    log.fmt_debug("Buffer %s not yet initialized, but did not remember changelist", tostring(ctx))
   end
   local changelist
   vim.api.nvim_buf_call(ctx.bufnr, function()
@@ -130,7 +116,7 @@ end
 
 local BufContext = {}
 
----@param bufnr? BufNr Buffer number
+---@param bufnr BufNr Buffer number
 ---@return BufContext ctx #
 function BufContext.new(bufnr)
   return setmetatable({ bufnr = bufnr }, BufContext)
@@ -152,6 +138,14 @@ function BufContext.__newindex(self, key, value)
   local cur = vim.b[self.bufnr].continuity_ctx or {}
   cur[key] = value
   vim.b[self.bufnr].continuity_ctx = cur
+end
+
+function BufContext:__tostring()
+  return ("#%s (%s, UUID: %s)"):format(
+    self.bufnr,
+    self.name ~= "" and ('name: "%s"'):format(self.name) or "unnamed",
+    self.uuid or "[not set yet]"
+  )
 end
 
 --- Get continuity buffer context for a buffer (~ proxy to vim.b.continuity_ctx).
@@ -241,7 +235,7 @@ local function restore_buf_cursor(ctx, win_only)
     last_pos = ctx.last_buffer_pos
     log.fmt_debug(
       "Buffer %s was not remembered in a window, restoring cursor from buf mark: %s",
-      ctx.bufnr,
+      tostring(ctx),
       last_pos
     )
   else
@@ -252,7 +246,7 @@ local function restore_buf_cursor(ctx, win_only)
     last_pos = ctx.last_win_pos[tostring(current_win)]
     log.fmt_debug(
       "Trying to restore cursor for buf %s in win %s from saved win cursor pos: %s",
-      ctx.bufnr,
+      tostring(ctx),
       current_win,
       last_pos or "nil"
     )
@@ -267,14 +261,14 @@ local function restore_buf_cursor(ctx, win_only)
         last_pos and "There are more saved windows besides %s for buffer %s"
           or "Not remembering this window (%s) for this buffer (%s), it's a new one before all old ones were restored",
         current_win,
-        ctx.bufnr
+        tostring(ctx)
       )
       -- Need to use WinEnter since switching between multiple windows to the same buffer
       -- does not trigger a BufEnter event.
       vim.api.nvim_create_autocmd("WinEnter", {
         desc = "Continuity: restore cursor position of buffer in saved window",
         callback = function(args)
-          log.fmt_trace("WinEnter triggered for buf: %s", args)
+          log.fmt_trace("WinEnter triggered for buffer %s (args: %s)", tostring(ctx), args)
           restore_buf_cursor(ctx, true)
         end,
         buffer = ctx.bufnr,
@@ -299,7 +293,7 @@ local function restore_buf_cursor(ctx, win_only)
     -- position of the jumplist
     log.fmt_debug(
       "Not restoring cursor for buffer %s in window %s at %s because it has already been moved to (%s|%s)",
-      ctx.bufnr,
+      tostring(ctx),
       current_win or "nil",
       last_pos,
       cline or "nil",
@@ -308,7 +302,7 @@ local function restore_buf_cursor(ctx, win_only)
   else
     log.fmt_debug(
       "Restoring cursor for buffer %s in window %s at %s",
-      ctx.bufnr,
+      tostring(ctx),
       current_win,
       last_pos
     )
@@ -316,15 +310,11 @@ local function restore_buf_cursor(ctx, win_only)
     --   return "current cursor pre-restore: "
     --     .. vim.inspect(vim.api.nvim_win_call(current_win, vim.fn.winsaveview))
     -- end)
-    local ok, msg = pcall(vim.api.nvim_win_set_cursor, current_win, last_pos)
-    if not ok then
-      log.fmt_error(
-        "Restoring cursor for buffer %s in window %s failed: %s",
-        ctx.bufnr,
-        current_win,
-        msg
-      )
-    end
+    util.try_log(vim.api.nvim_win_set_cursor, {
+      "Failed to restore cursor for buffer %s in window %s: %s",
+      tostring(ctx),
+      current_win,
+    }, current_win, last_pos)
   end
   -- Ensure we break the chain of window-specific cursor recoveries once all windows
   -- have been visited
@@ -340,13 +330,13 @@ end
 --- Restore a single modified buffer when it is first focused in a window.
 ---@param ctx BufContext Buffer context for the buffer to restore.
 local function restore_modified(ctx)
-  log.fmt_trace("Restoring modified buffer %s", ctx.bufnr)
+  log.fmt_trace("Restoring modified buffer %s", tostring(ctx))
   if not ctx.uuid then
     -- sanity check, should not hit
     log.fmt_error(
-      "Not restoring '%s' because it does not have an internal uuid set."
+      "Not restoring buffer %s because it does not have an internal uuid set."
         .. " This is likely an internal error.",
-      ctx.name ~= "" and ctx.name or "unnamed buffer"
+      tostring(ctx)
     )
     return
   end
@@ -355,9 +345,9 @@ local function restore_modified(ctx)
       ctx.unrestored = true
       -- Unnamed buffers should not have a swap file, but account for it anyways
       log.fmt_warn(
-        "Not restoring %s because it is read-only, likely because it has an "
+        "Not restoring buffer %s because it is read-only, likely because it has an "
           .. "existing swap file and you chose to open it read-only.",
-        ctx.name ~= "" and ctx.name or ("unnamed buffer with uuid " .. ctx.uuid)
+        tostring(ctx)
       )
       return
     end
@@ -371,43 +361,37 @@ local function restore_modified(ctx)
   local save_file = vim.fs.joinpath(state_dir, "modified_buffers", ctx.uuid .. ".buffer")
   if not util.path.exists(save_file) then
     ctx.needs_restore = nil
-    log.fmt_warn(
-      "Not restoring %s because its save file is missing.",
-      ctx.name ~= "" and ctx.name or ("unnamed buffer with uuid " .. ctx.uuid)
-    )
+    log.fmt_warn("Not restoring buffer %s because its save file is missing.", tostring(ctx))
     return
   end
-  log.fmt_debug("Loading buffer changes for buffer %s", ctx.uuid, ctx.bufnr)
-  local ok, file_lines = pcall(util.path.read_lines, save_file)
-  if ok then
-    ---@cast file_lines -string
-    log.fmt_debug("Loaded buffer changes for buffer %s, loading into %s", ctx.uuid, ctx.bufnr)
+  log.fmt_debug("Loading buffer changes for buffer %s", tostring(ctx))
+  util.try_log_else(util.path.read_lines, {
+    "Failed loading buffer changes for %s: %s",
+    ctx,
+  }, function(file_lines)
     vim.api.nvim_buf_set_lines(ctx.bufnr, 0, -1, true, file_lines)
     -- Don't read the undo file if we're inside a recovered buffer, which should ensure the
     -- user can undo the recovery overwrite. This should be handled better.
     if not ctx.swapfile then
       local undo_file = vim.fs.joinpath(state_dir, "modified_buffers", ctx.uuid .. ".undo")
-      log.fmt_debug("Loading undo history for buffer %s", ctx.uuid)
-      local err
-      ok, err = pcall(
+      log.fmt_debug("Loading undo history for buffer %s", tostring(ctx))
+      util.try_log(
         vim.api.nvim_cmd,
+        { "Failed to load undo history for buffer %s: %s", tostring(ctx) },
         { cmd = "rundo", args = { vim.fn.fnameescape(undo_file) }, mods = { silent = true } },
         {}
       )
-      if not ok then
-        log.fmt_error("Failed loading undo history for buffer %s: %s", ctx.uuid, err)
-      end
     else
       log.warn(
         "Skipped loading undo history for buffer %s because it had a swapfile: %s",
-        ctx.uuid,
+        tostring(ctx),
         ctx.swapfile
       )
     end
     ctx.needs_restore = nil
     ctx.restore_last_pos = true
-  end
-  log.fmt_trace("Finished restoring modified buffer %s into %s", ctx.uuid, ctx.bufnr)
+  end, save_file)
+  log.fmt_trace("Finished restoring modified buffer %s", ctx)
 end
 
 --- Last step of buffer restoration, should be triggered by the final BufEnter event (:edit)
@@ -439,15 +423,17 @@ local function finish_restore_buf(ctx, buf, data)
     -- There's no `:clearchanges`, need to clear all buffer-local marks.
     -- TODO: Restore them after
     _, marks_cleared = vim.cmd.delmarks({ bang = true }), true
-    change_shada:read()
-    if buf.changelist[2] > 0 then
-      local prev = vim.api.nvim_win_get_cursor(0)
-      vim.cmd("keepjumps norm! " .. tostring(buf.changelist[2] + 1) .. "g;")
-      -- Need to keep position the same as before call, cannot rely on restore_last_pos logic
-      -- because it intentionally skips setting the cursor if it's anywhere other than (1, 0)
-      vim.api.nvim_win_set_cursor(0, prev)
-      ctx.restore_last_pos = true
-    end
+    util.try_log(function()
+      change_shada:read()
+      if buf.changelist[2] > 0 then
+        local prev = vim.api.nvim_win_get_cursor(0)
+        vim.cmd("keepjumps norm! " .. tostring(buf.changelist[2] + 1) .. "g;")
+        -- Need to keep position the same as before call, cannot rely on restore_last_pos logic
+        -- because it intentionally skips setting the cursor if it's anywhere other than (1, 0)
+        vim.api.nvim_win_set_cursor(0, prev)
+        ctx.restore_last_pos = true
+      end
+    end, { "Failed to restore changelist for buffer %s: %s", tostring(ctx) }, change_shada)
   end
 
   if buf.marks then
@@ -462,7 +448,7 @@ local function finish_restore_buf(ctx, buf, data)
       if not IGNORE_LOCAL_MARKS[mark] then
         util.try_log(
           vim.api.nvim_buf_set_mark,
-          { "Failed setting mark %s for buf %s: %s", mark, ctx.bufnr },
+          { "Failed setting mark %s for buf %s: %s", mark, tostring(ctx) },
           ctx.bufnr,
           mark,
           pos[1],
@@ -477,7 +463,7 @@ local function finish_restore_buf(ctx, buf, data)
   Ext.call("on_buf_load", data, ctx.bufnr)
 
   if ctx.restore_last_pos then
-    log.fmt_debug("Need to restore last cursor pos for buf %s", ctx.bufnr)
+    log.fmt_debug("Need to restore last cursor pos for buf %s", tostring(ctx))
     ctx.restore_last_pos = nil
     -- Need to schedule this, otherwise it does not work for previously hidden buffers
     -- to restore from mark.
@@ -512,7 +498,10 @@ local function restore_buf(ctx, buf, data)
   -- This function reloads the buffer in order to trigger the proper AutoCmds
   -- by calling :edit. It doesn't work for unnamed buffers though.
   if ctx.name == "" then
-    log.fmt_debug("Buffer %s is an unnamed one, skipping :edit. Triggering filetype.", ctx.bufnr)
+    log.fmt_debug(
+      "Buffer %s is an unnamed one, skipping :edit. Triggering filetype.",
+      tostring(ctx)
+    )
     -- At least trigger FileType autocommands for unnamed buffers
     -- The order is backwards then though, usually it's [Syntax] > Filetype > BufEnter
     -- now it's BufEnter > [Syntax] > Filetype. Issue?
@@ -521,7 +510,7 @@ local function restore_buf(ctx, buf, data)
     finish_restore_buf(ctx, buf, data)
     return
   end
-  log.fmt_debug("Triggering :edit for %s", buf)
+  log.fmt_debug("Triggering :edit for %s", tostring(ctx))
   -- We cannot get this information reliably in any other way.
   -- Need to set shortmess += A when loading initially because the
   -- message cannot be suppressed (but bufload does not allow choice).
@@ -529,7 +518,7 @@ local function restore_buf(ctx, buf, data)
   -- so we cannot query it via swapname.
   local swapcheck = vim.api.nvim_create_autocmd("SwapExists", {
     callback = function()
-      log.fmt_debug("Existing swapfile for buf %s at %s", ctx.bufnr, vim.v.swapname)
+      log.fmt_debug("Existing swapfile for buf %s at %s", tostring(ctx), vim.v.swapname)
       ctx.swapfile = vim.v.swapname
       -- TODO: better swap handling via swapinfo() and taking modified buffers into account
     end,
@@ -539,15 +528,16 @@ local function restore_buf(ctx, buf, data)
   local finish_restore = vim.api.nvim_create_autocmd("BufEnter", {
     desc = "Continuity: complete setup of restored buffer (2)",
     callback = function(args)
-      log.fmt_trace("BufEnter triggered again for: %s", args)
+      log.fmt_trace("BufEnter triggered again for buffer %s (event args: %s)", tostring(ctx), args)
       -- Might have already been deleted, in which case this call fails
-      local ok, res = pcall(vim.api.nvim_del_autocmd, swapcheck)
-      if not ok then
-        log.fmt_trace("Failed deleting swapcheck autocmd for buf %s: %s", args.buf, res)
-      end
+      util.try_log(vim.api.nvim_del_autocmd, {
+        [1] = "Failed to delete swapcheck autocmd for buffer %s: %s",
+        [2] = tostring(ctx),
+        level = "trace",
+      }, swapcheck)
       util.try_log(
         finish_restore_buf,
-        { "Failed final buffer restoration for buf %s! Error: %s", args.buf },
+        { "Failed final buffer restoration for buffer %s! Error: %s", tostring(ctx) },
         ctx,
         buf,
         data
@@ -568,21 +558,27 @@ local function restore_buf(ctx, buf, data)
   vim.schedule(function()
     -- Ensure the active window has not changed, otherwise reschedule restoration
     if vim.api.nvim_get_current_win() ~= current_win then
-      log.fmt_debug("Failed :edit-ing buf %s: Active window changed, rescheduling", ctx.bufnr)
+      log.fmt_debug(
+        "Failed :edit-ing buffer %s: Active window changed, rescheduling",
+        tostring(ctx)
+      )
       for auname, autocmd in pairs({ swapcheck = swapcheck, finish_restore = finish_restore }) do
-        local ok, res = pcall(vim.api.nvim_del_autocmd, autocmd)
-        if not ok then
-          log.fmt_debug("Failed deleting %s autocmd for buf %s: %s", auname, ctx.bufnr, res)
-        end
+        util.try_log(vim.api.nvim_del_autocmd, {
+          [1] = "Failed to delete %s autocmd for buffer %s: %s",
+          [2] = auname,
+          [3] = tostring(ctx),
+          level = "debug",
+        }, autocmd)
       end
       plan_restore(ctx, buf, data)
       return
     end
     -- We need to `keepjumps`, otherwise we reset our jumplist position here/add/move an entry
-    local ok, err = pcall(vim.cmd.edit, { mods = { emsg_silent = true, keepjumps = true } })
-    if not ok then
-      log.fmt_error("Failed :edit-ing buf %s: %s", ctx.bufnr, err)
-    end
+    util.try_log(
+      vim.cmd.edit,
+      { "Failed to :edit buffer %s: %s", tostring(ctx) },
+      { mods = { emsg_silent = true, keepjumps = true } }
+    )
   end)
 end
 
@@ -597,19 +593,23 @@ function plan_restore(ctx, buf, data)
     desc = "Continuity: complete setup of restored buffer (1a)",
     callback = function(args)
       if vim.g._continuity_verylazy_done then
-        log.fmt_trace("BufEnter triggered for buf %s, VeryLazy done for: %s", ctx.bufnr, args)
+        log.fmt_trace(
+          "BufEnter triggered for buffer %s (args: %s), VeryLazy done",
+          tostring(ctx),
+          args
+        )
         restore_buf(ctx, buf, data)
       else
         log.fmt_trace(
-          "BufEnter triggered for buf %s, waiting for VeryLazy for: %s",
-          ctx.bufnr,
+          "BufEnter triggered for buffer %s (args: %s), waiting for VeryLazy",
+          tostring(ctx),
           args
         )
         vim.api.nvim_create_autocmd("User", {
           pattern = "VeryLazy",
           desc = "Continuity: complete setup of restored buffer (1b)",
           callback = function()
-            log.fmt_trace("BufEnter triggered, VeryLazy done for: %s", args)
+            log.fmt_trace("BufEnter triggered, VeryLazy done for: %s (%s)", tostring(ctx), args)
             restore_buf(ctx, buf, data)
           end,
           once = true,
@@ -631,27 +631,29 @@ end
 ---@param state_dir string Directory unwritten buffer modifications are persisted to
 local function restore_modified_preview(ctx, state_dir)
   local save_file = vim.fs.joinpath(state_dir, "modified_buffers", ctx.uuid .. ".buffer")
-  local ok, file_lines = pcall(util.path.read_lines, save_file)
-  if not ok then
-    log.fmt_warn(
-      "Not restoring %s because its save file could not be read: %s",
-      ctx.uuid,
-      file_lines
-    )
-  else
-    ---@cast file_lines -string
-    log.fmt_debug("Restoring modified buf %s into bufnr %s", ctx.uuid, ctx.bufnr)
-    vim.api.nvim_buf_set_lines(ctx.bufnr, 0, -1, true, file_lines)
-    -- Ensure autocmd :edit works. It will trigger the final restoration.
-    -- Don't do it for unnamed buffers since :edit cannot be called for them.
-    if ctx.name ~= "" then
-      vim.bo[ctx.bufnr].modified = false
-    end
-    -- Ensure the buffer is remembered as only partially restored if it is never loaded until the next save
-    ctx.needs_restore = true
-    -- Remember the state dir for restore_modified, which is called after a buffer has been re-edited
-    ctx.state_dir = state_dir
-  end
+  util.try_log_else(
+    util.path.read_lines,
+    {
+      [1] = "Not restoring buffer %s because its save file could not be read: %s",
+      [2] = tostring(ctx),
+      level = "warn",
+    },
+    ---@param file_lines string[]
+    function(file_lines)
+      log.fmt_debug("Restoring modified buffer %s", ctx)
+      vim.api.nvim_buf_set_lines(ctx.bufnr, 0, -1, true, file_lines)
+      -- Ensure autocmd :edit works. It will trigger the final restoration.
+      -- Don't do it for unnamed buffers since :edit cannot be called for them.
+      if ctx.name ~= "" then
+        vim.bo[ctx.bufnr].modified = false
+      end
+      -- Ensure the buffer is remembered as only partially restored if it is never loaded until the next save
+      ctx.needs_restore = true
+      -- Remember the state dir for restore_modified, which is called after a buffer has been re-edited
+      ctx.state_dir = state_dir
+    end,
+    save_file
+  )
 end
 
 --- Ensure a saved buffer exists in the same state as it was saved.
@@ -665,11 +667,7 @@ function M.restore(buf, data, state_dir)
   local ctx = M.added(buf.name, buf.uuid)
   if ctx.initialized ~= nil then
     -- TODO: Consider the effect of multiple snapshots referencing the same buffer without `reset`
-    log.fmt_warn(
-      "core.buf.restore called more than once for buffer %s (%s), ignoring.",
-      buf,
-      ctx.bufnr
-    )
+    log.fmt_warn("core.buf.restore called more than once for buffer %s, ignoring.", tostring(ctx))
     return ctx.bufnr
   end
 
@@ -743,15 +741,8 @@ function M.save_modified(state_dir, bufs)
     if not (ctx.unrestored or ctx.needs_restore) then
       local save_file = vim.fs.joinpath(state_dir, "modified_buffers", ctx.uuid .. ".buffer")
       local undo_file = vim.fs.joinpath(state_dir, "modified_buffers", ctx.uuid .. ".undo")
-      log.fmt_debug(
-        "Saving modified buffer %s (%s) named '%s' to %s",
-        ctx.bufnr,
-        ctx.uuid,
-        ctx.name,
-        save_file
-      )
-
-      local ok, msg = pcall(function()
+      log.fmt_debug("Saving modified buffer %s to %s", tostring(ctx), save_file)
+      util.try_log(function()
         -- Backup the current buffer contents. Avoid vim.cmd.w because that can have side effects, even with keepalt/noautocmd.
         local lines = vim.api.nvim_buf_get_text(ctx.bufnr, 0, 0, -1, -1, {})
         util.path.write_file(save_file, table.concat(lines, "\n") .. "\n")
@@ -766,30 +757,17 @@ function M.save_modified(state_dir, bufs)
           end)
         else
           log.fmt_warn(
-            "Need to skip backing up undo history for modified buffer %s (%s) named '%s' to %s because cmd window is active",
-            ctx.bufnr,
-            ctx.uuid,
-            ctx.name,
+            "Need to skip backing up undo history for modified buffer %s to %s because cmd window is active",
+            tostring(ctx),
             undo_file
           )
         end
-      end)
-      if not ok then
-        log.fmt_error(
-          "Error saving modified buffer %s (%s) named '%s': %s",
-          ctx.bufnr,
-          ctx.uuid,
-          ctx.name,
-          msg
-        )
-      end
+      end, {
+        "Error while saving modified buffer %s: %s",
+        tostring(ctx),
+      })
     else
-      log.fmt_debug(
-        "Modified buf %s (%s) named '%s' has not been restored yet, skipping save",
-        ctx.bufnr,
-        ctx.uuid,
-        ctx.name
-      )
+      log.fmt_debug("Modified buf %s has not been restored yet, skipping save", tostring(ctx))
     end
     res[ctx.uuid] = true
   end
