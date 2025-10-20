@@ -578,7 +578,7 @@ function M.restore_jumplist(winid)
       if correct_buf then
         vim.api.nvim_win_set_buf(winid, correct_buf)
       end
-      vim.util.try_log(vim.api.nvim_win_set_cursor, {
+      util.try_log(vim.api.nvim_win_set_cursor, {
         [1] = "Failed to win cursor to wanted for winid %s, its position might be off: %s",
         [2] = winid,
         level = "warn",
