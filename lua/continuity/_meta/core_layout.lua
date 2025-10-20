@@ -16,11 +16,11 @@
 ---@field extension_data? any If the window is supported by an extension, the data it needs to remember.
 ---@field extension? string If the window is supported by an extension, the name of the extension.
 ---@field jumps? [WinInfo.JumplistEntry[], integer] Window-local jumplist, number of steps from last entry to currently active one
----@field alt? string The alternate file for this window, if any
+---@field alt? integer Index of the alternate file for this window in `buflist`, if any
 ---@field loclist_win? WinID Present for loclist windows. Window ID of the associated window, the one that opens selections (`filewinid`).
 ---@field loclists? [Snapshot.QFList[], integer] Location list stack and position of currently active one.
 
----@class WinInfo.JumplistEntry: FileMark
+---@class WinInfo.JumplistEntry: CompressedFileMark
 -- TODO: coladd?
 
 --- Window-specific snapshot data after it has been restored. Contains the restored window's ID.

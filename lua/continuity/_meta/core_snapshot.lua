@@ -123,6 +123,10 @@
 ---@field modified table<BufUUID, true?>? #
 ---   List of buffers (identified by internal UUID) whose unsaved modifications
 ---   were backed up in the snapshot
+---@field buflist string[] #
+---   List of named buffers that are referenced somewhere in this snapshot.
+---   Used to reduce repetition of buffer paths in save file, especially lists of named marks
+---   (jumplist, quickfix and location lists).
 
 --- Global snapshot data like cwd, height/width and global options.
 ---@class Snapshot.GlobalData
@@ -198,7 +202,7 @@
 
 --- A single item in a quickfix/location list
 ---@class Snapshot.QFListItem
----@field filename? string Path of the file this entry points to
+---@field filename? integer Index of path of the file this entry points to in `buflist`
 ---@field module string Module name (?)
 ---@field lnum integer Referenced line in the file, 1-indexed
 ---@field end_lnum? integer For multiline items, last referenced line

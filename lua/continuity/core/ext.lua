@@ -178,8 +178,8 @@ function M.dispatch(name, session_name, opts, target_tabnr)
 end
 
 --- Call extension funcs that don't need special handling/don't return a value
----@overload fun(stage_name: "on_pre_load", snapshot: Snapshot, opts: snapshot.Context)
----@overload fun(stage_name: "on_post_load", snapshot: Snapshot, opts: snapshot.Context)
+---@overload fun(stage_name: "on_pre_load", snapshot: Snapshot, opts: snapshot.Context, buflist: string[])
+---@overload fun(stage_name: "on_post_load", snapshot: Snapshot, opts: snapshot.Context, buflist: string[])
 ---@overload fun(stage_name: "on_post_bufinit", snapshot: Snapshot, visible_only: boolean)
 ---@overload fun(stage_name: "on_buf_load", snapshot: Snapshot, bufnr: BufNr)
 ---@generic T

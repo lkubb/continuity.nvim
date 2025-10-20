@@ -2,7 +2,7 @@
 local M = {}
 
 ---@return [continuity.core.Snapshot.QFList[]?, integer?]
-M.on_save = function()
+M.on_save = function(_, buflist)
   local cnt = vim.fn.getqflist({ nr = "$" }).nr
   ---@type continuity.core.Snapshot.QFList[]
   local ret = {}
@@ -16,23 +16,23 @@ M.on_save = function()
     ret[#ret + 1] = {
       idx = qflist.idx,
       title = qflist.title,
-      context = qflist.context,
+      context = qflist.context ~= "" and qflist.context or nil,
       efm = qflist.efm,
-      quickfixtextfunc = qflist.quickfixtextfunc,
+      quickfixtextfunc = qflist.quickfixtextfunc ~= "" and qflist.quickfixtextfunc or nil,
       items = vim.tbl_map(function(item)
         return {
-          filename = item.bufnr and vim.api.nvim_buf_get_name(item.bufnr),
-          module = item.module,
+          filename = item.bufnr and buflist:add(vim.api.nvim_buf_get_name(item.bufnr)),
+          module = item.module ~= "" and item.module or nil,
           lnum = item.lnum,
-          end_lnum = item.end_lnum,
-          col = item.col,
-          end_col = item.end_col,
-          vcol = item.vcol,
-          nr = item.nr,
-          pattern = item.pattern,
+          end_lnum = item.end_lnum ~= 0 and item.end_lnum or nil,
+          col = item.col ~= 1 and item.col or nil,
+          end_col = item.end_col ~= 0 and item.end_col or nil,
+          vcol = item.vcol ~= 0 and item.vcol or nil,
+          nr = item.nr ~= 0 and item.nr or nil,
+          pattern = item.pattern ~= "" and item.pattern or nil,
           text = item.text,
-          type = item.type,
-          valid = item.valid,
+          type = item.type ~= "" and item.type or nil,
+          valid = item.valid ~= 1 and item.valid or nil,
         }
       end, qflist.items),
     }
@@ -41,7 +41,8 @@ M.on_save = function()
 end
 
 ---@param data [continuity.core.Snapshot.QFList[]?, integer?]
-M.on_pre_load = function(data)
+---@param buflist string[]
+M.on_pre_load = function(data, _, buflist)
   local lists, pos = data[1], data[2]
   if not lists then
     return
@@ -53,6 +54,27 @@ M.on_pre_load = function(data)
   end
   vim.fn.setqflist({}, "f") -- ensure lists are always cleared
   vim.iter(lists):each(function(qflist)
+    qflist.context = qflist.context or ""
+    qflist.quicktextfunc = qflist.quicktextfunc or ""
+    qflist.items = vim
+      .iter(qflist.items or {})
+      :map(function(item)
+        if item.filename then
+          item.filename = buflist[item.filename] or item.filename
+        end
+        return vim.tbl_extend("keep", item, {
+          module = "",
+          end_lnum = 0,
+          col = 1,
+          end_col = 0,
+          vcol = 0,
+          nr = 0,
+          pattern = "",
+          type = "",
+          valid = 1,
+        })
+      end)
+      :totable()
     vim.fn.setqflist({}, " ", qflist)
   end)
   vim.cmd.chistory({ count = pos })

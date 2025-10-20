@@ -16,6 +16,11 @@
 ---@field [2] integer Line number
 ---@field [3] integer Column number
 
+--- A mark that should have a file name, but is repeated often. The
+--- path to the referenced file is saved in a lookup table instead.
+---@class CompressedFileMark: FileMark
+---@field [1] integer Index of absolute path to file this mark references in `buflist`
+
 --- Continuity needs to remember buffer-specific data, which it does via `vim.b`.
 --- This class offers a simplified interface to that context.
 ---@class BufContext

@@ -32,15 +32,28 @@ end
 
 --- Parse the window-local jumplist into a format that can be saved.
 ---@param winid WinID Window ID of window to query
+---@param buflist snapshot.BufList Indexed buffer list
 ---@return [WinInfo.JumplistEntry[], integer] jumps_backtrack #
 ---   Tuple of list of jumplist entries and jumplist position, backwards from most recent entry
-local function parse_jumplist(winid)
+local function parse_jumplist(winid, buflist)
   if vim.w[winid].continuity_jumplist then
     --- If we're in a restored session that has enabled jumplist restoration and the window
     --- has never been focused, its jumplist has not been restored yet and is available
     --- in `w:continuity_jumplist`. Remember this value. If we enabled saving jumplists
     --- only after the session has been loaded, just fall through and remember whatever nvim gives us.
-    return vim.w[winid].continuity_jumplist
+    return {
+      vim
+        .iter(vim.w[winid].continuity_jumplist[1])
+        :map(function(jump)
+          return {
+            buflist:add(jump[1]),
+            jump[2],
+            jump[3],
+          }
+        end)
+        :totable(),
+      vim.w[winid].continuity_jumplist[2],
+    }
   end
   local jumplist = vim.fn.getjumplist(winid)
   local jumps, current_pos = jumplist[1], jumplist[2]
@@ -51,7 +64,7 @@ local function parse_jumplist(winid)
     local bufname = vim.api.nvim_buf_get_name(jump.bufnr)
     if bufname ~= "" then
       parsed[#parsed + 1] = {
-        vim.fn.fnamemodify(bufname, ":p"),
+        buflist:add(vim.fn.fnamemodify(bufname, ":p")),
         jump.lnum,
         jump.col,
       }
@@ -70,10 +83,11 @@ end
 --- Get all location lists for a window, and the currently active position.
 --- Don't call this for a loclist window, it just returns the displayed loclist.
 ---@param winid WinID? Window ID to parse loclists for. Defaults to current one.
+---@param buflist snapshot.BufList Indexed buffer list
 ---@return [Snapshot.QFList[], integer]? loclists_pos #
 ---   Tuple of parsed loclists and number of currently active one.
 ---   Nothing if window has no loclists.
-local function parse_loclists(winid)
+local function parse_loclists(winid, buflist)
   winid = winid or 0
   local cnt = vim.fn.getloclist(winid, { nr = "$" }).nr
   local ret = {} ---@type Snapshot.QFList[]
@@ -86,23 +100,23 @@ local function parse_loclists(winid)
     ret[#ret + 1] = {
       idx = loclist.idx,
       title = loclist.title,
-      context = loclist.context,
+      context = loclist.context ~= "" and loclist.context or nil,
       efm = loclist.efm,
-      quickfixtextfunc = loclist.quickfixtextfunc,
+      quickfixtextfunc = loclist.quickfixtextfunc ~= "" and loclist.quickfixtextfunc or nil,
       items = vim.tbl_map(function(item)
         return {
-          filename = item.bufnr and vim.api.nvim_buf_get_name(item.bufnr),
-          module = item.module,
-          lnum = item.lnum,
-          end_lnum = item.end_lnum,
-          col = item.col,
-          end_col = item.end_col,
-          vcol = item.vcol,
-          nr = item.nr,
-          pattern = item.pattern,
+          filename = item.bufnr and buflist:add(vim.api.nvim_buf_get_name(item.bufnr)),
+          module = item.module ~= "" and item.module or nil,
+          lnum = item.lnum ~= 1 and item.lnum or nil,
+          end_lnum = item.end_lnum ~= 0 and item.end_lnum or nil,
+          col = item.col ~= 1 and item.col or nil,
+          end_col = item.end_col ~= 0 and item.end_col or nil,
+          vcol = item.vcol ~= 0 and item.vcol or nil,
+          nr = item.nr ~= 0 and item.nr or nil,
+          pattern = item.pattern ~= "" and item.pattern or nil,
           text = item.text,
-          type = item.type,
-          valid = item.valid,
+          type = item.type ~= "" and item.type or nil,
+          valid = item.valid ~= 1 and item.valid or nil,
         }
       end, loclist.items),
     }
@@ -114,10 +128,32 @@ end
 ---@param winid WinID Window ID of the window to restore loclists for
 ---@param lists Snapshot.QFList[] Saved loclists as returned from `parse_loclists`
 ---@param pos integer Position of active loclist
-local function restore_loclists(winid, lists, pos)
+---@param buflist string[] Indexed list of buffers, generated during save
+local function restore_loclists(winid, lists, pos, buflist)
   winid = winid or 0
   vim.fn.setloclist(winid, {}, "f") -- ensure lists are always cleared
   vim.iter(lists):each(function(loclist)
+    loclist.context = loclist.context or ""
+    loclist.quicktextfunc = loclist.quicktextfunc or ""
+    loclist.items = vim
+      .iter(loclist.items or {})
+      :map(function(item)
+        if item.filename then
+          item.filename = buflist[item.filename] or item.filename
+        end
+        return vim.tbl_extend("keep", item, {
+          module = "",
+          end_lnum = 0,
+          col = 1,
+          end_col = 0,
+          vcol = 0,
+          nr = 0,
+          pattern = "",
+          type = "",
+          valid = 1,
+        })
+      end)
+      :totable()
     vim.fn.setloclist(winid, {}, " ", loclist)
   end)
   vim.api.nvim_win_call(winid, function()
@@ -132,8 +168,9 @@ end
 ---@param winid WinID Window ID of window to query
 ---@param current_win WinID Window ID of the currently active window
 ---@param opts snapshot.CreateOpts Snapshot creation opts
+---@param buflist snapshot.BufList Indexed buffer list
 ---@return WinInfo|false wininfo #
-function M.get_win_info(tabnr, winid, current_win, opts)
+function M.get_win_info(tabnr, winid, current_win, opts, buflist)
   local bufnr = vim.api.nvim_win_get_buf(winid)
   local win = {}
   local supported_by_ext = false
@@ -175,7 +212,7 @@ function M.get_win_info(tabnr, winid, current_win, opts)
   end
   if not is_quickfix then
     -- Loclist windows don't have loclists, same for the quickfix one I suppose
-    loclists = parse_loclists(winid)
+    loclists = parse_loclists(winid, buflist)
   end
   local ctx = Buf.ctx(bufnr)
   win = vim.tbl_extend("error", win, {
@@ -186,8 +223,9 @@ function M.get_win_info(tabnr, winid, current_win, opts)
     width = vim.api.nvim_win_get_width(winid),
     height = vim.api.nvim_win_get_height(winid),
     options = util.opts.get_win(winid, opts.options or Config.session.options),
-    jumps = util.opts.coalesce_auto("jumps", false, opts, Config.session) and parse_jumplist(winid),
-    alt = get_alternate_file(winid, opts),
+    jumps = util.opts.coalesce_auto("jumps", false, opts, Config.session)
+      and parse_jumplist(winid, buflist),
+    alt = buflist:add(get_alternate_file(winid, opts)),
     loclists = loclists,
     -- We don't need to generate unique IDs for windows, just reuse winids
     -- to be able to track/reference individual windows. We need this info to restore loclist windows.
@@ -209,20 +247,21 @@ end
 ---@param layout vim.fn.winlayout.ret Retval of `vim.fn.winlayout()`
 ---@param current_win WinID ID of current window
 ---@param opts snapshot.CreateOpts Snapshot creation opts
+---@param buflist snapshot.BufList Indexed buffer list
 ---@return WinLayout|false winlayout #
-function M.add_win_info_to_layout(tabnr, layout, current_win, opts)
+function M.add_win_info_to_layout(tabnr, layout, current_win, opts, buflist)
   ---@diagnostic disable-next-line: undefined-field
   ---@type "leaf"|"col"|"row"|nil
   local typ = layout[1]
   if typ == "leaf" then
     ---@cast layout vim.fn.winlayout.leaf
-    local res = M.get_win_info(tabnr, layout[2], current_win, opts)
+    local res = M.get_win_info(tabnr, layout[2], current_win, opts, buflist)
     return res and { "leaf", res } or false
   elseif typ then
     ---@cast layout vim.fn.winlayout.branch
     local items = {}
     for _, v in ipairs(layout[2]) do
-      local ret = M.add_win_info_to_layout(tabnr, v, current_win, opts)
+      local ret = M.add_win_info_to_layout(tabnr, v, current_win, opts, buflist)
       if ret then
         items[#items + 1] = ret
       end
@@ -292,11 +331,12 @@ end
 --- Apply saved data to restored windows. Calls extensions or loads files, then restores options and dimensions
 ---@param layout WinLayoutLeafRestored|WinLayoutBranchRestored Snapshot window data with valid window ID
 ---@param scale_factor [number, number] Scaling factor for [width, height]
+---@param buflist string[] Indexed buffer list, generated during save
 ---@return WinLayoutRestored restored #
 ---   Same table as `layout`, but with valid window ID(s) set
 ---@return WinID? active_winid #
 ---   Window ID of active window, if any
-local function set_winlayout_data(layout, scale_factor)
+local function set_winlayout_data(layout, scale_factor, buflist)
   local active_winid ---@type WinID?
   local all_wins = {} ---@type table<WinID, WinInfoRestored?>
   local loclist_wins = {} ---@type table<WinID, WinInfoRestored?>
@@ -349,7 +389,15 @@ local function set_winlayout_data(layout, scale_factor)
     if win.jumps then
       -- Restore jumplist later when the window is actually entered for the first time.
       -- Other restoration steps could otherwise cause modifications of the restored data.
-      vim.w[win.winid].continuity_jumplist = win.jumps
+      vim.w[win.winid].continuity_jumplist = {
+        vim
+          .iter(win.jumps[1])
+          :map(function(jump)
+            return { buflist[jump[1]] or jump[1], jump[2], jump[3] }
+          end)
+          :totable(),
+        win.jumps[2],
+      }
       vim.w[win.winid].continuity_win_cursor = win.cursor
     end
     if win.current then
@@ -393,7 +441,9 @@ local function set_winlayout_data(layout, scale_factor)
         log.fmt_debug("Loading buffer %s (uuid: %s) in win %s", win.bufname, win.bufuuid, win.winid)
         vim.api.nvim_win_set_buf(win.winid, ctx.bufnr)
         if win.alt then
-          vim.cmd.balt({ vim.fn.fnameescape(win.alt) })
+          vim.cmd.balt({
+            vim.fn.fnameescape(buflist[win.alt] or win.alt --[[@as string]]),
+          })
         end
         -- After setting the buffer into the window, manually set the filetype to trigger syntax highlighting
         log.fmt_trace("Triggering filetype from winlayout for buf %s", ctx.bufnr)
@@ -415,7 +465,8 @@ local function set_winlayout_data(layout, scale_factor)
           { "Failed to restore loclists for window %s: %s", win.winid },
           win.winid,
           win.loclists[1],
-          win.loclists[2]
+          win.loclists[2],
+          buflist
         )
       end
       -- Keep a mapping of old to new window IDs because loclist windows in the snapshot reference the old ones.
@@ -539,14 +590,15 @@ end
 
 ---@param layout WinLayout|false|nil
 ---@param scale_factor [number, number] Scaling factor for [width, height]
+---@param buflist string[] Indexed buffer list, generated during save
 ---@return WinID? ID of the window that should have focus after session load
-function M.set_winlayout(layout, scale_factor)
+function M.set_winlayout(layout, scale_factor, buflist)
   if not layout or not layout[1] then
     return
   end
   local focused_winid
   layout = set_winlayout(layout)
-  layout, focused_winid = set_winlayout_data(layout, scale_factor)
+  layout, focused_winid = set_winlayout_data(layout, scale_factor, buflist)
   return focused_winid
 end
 

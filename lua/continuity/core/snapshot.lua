@@ -61,6 +61,42 @@ local hist_map = {
   debug_history = ">",
 }
 
+--- Keep an indexed list of buffer names. Used to reduce repetition in snapshots, especially
+--- in lists of named marks (jumplist/quickfix/loclist).
+---@class BufList
+---@field by_name table<string, integer?> Mapping of buffer name to list index
+---@field by_index string[] List of buffer names
+local BufList = {}
+
+---@return BufList buflist #
+function BufList.new()
+  return setmetatable({ by_name = {}, by_index = {} }, { __index = BufList })
+end
+
+---@overload fun(name: ""): nil
+---@overload fun(name: nil): nil
+---@overload fun(name: string - ""): integer
+---@param name string? Buffer name, usually file path
+---@return integer? buf_idx Index of buffer path in buffer list
+function BufList:add(name)
+  if not name or name == "" then
+    return
+  end
+  if self.by_name[name] then
+    return self.by_name[name]
+  end
+  local idx = #self.by_index + 1
+  self.by_name[name] = idx
+  self.by_index[idx] = name
+  return idx
+end
+
+---@param idx integer Index of item to get
+---@return string? buffer_name Name of referenced buffer
+function BufList:get(idx)
+  return self.by_index[idx]
+end
+
 --- Get session-specific ShaDa file. Used for history persistence.
 ---@param snapshot_ctx snapshot.Context Contextual information about the loading session (name, paths)
 ---@param op "save"|"restore" Operation being beformed, for error log
@@ -161,6 +197,9 @@ local function create(target_tabpage, opts, snapshot_ctx)
     debug_history = util.opts.coalesce_auto("debug_history", false, opts, Config.session),
   }
 
+  -- Indexed list of buffer paths to reduce repetition of (often long) paths, e.g. in jumplists
+  local buflist = BufList.new()
+
   ---@type CreateOpts
   opts = opts or {}
   ---@type Snapshot
@@ -177,6 +216,7 @@ local function create(target_tabpage, opts, snapshot_ctx)
         or {},
       marks = not target_tabpage and opts.global_marks and get_global_marks() or nil,
     },
+    buflist = buflist.by_index,
   }
 
   --- Process history export to shada, if enabled
@@ -229,6 +269,7 @@ local function create(target_tabpage, opts, snapshot_ctx)
         }
         data.buffers[#data.buffers + 1] = buf
         included_bufs[#included_bufs + 1] = ctx
+        buflist:add(ctx.name)
       end
     end
     local current_tabpage = vim.api.nvim_get_current_tabpage()
@@ -263,7 +304,8 @@ local function create(target_tabpage, opts, snapshot_ctx)
           tabnr,
           winlayout,
           current_win,
-          opts
+          opts,
+          buflist
         ) or {},
       }
       data.tabs[#data.tabs + 1] = tab
@@ -281,7 +323,8 @@ local function create(target_tabpage, opts, snapshot_ctx)
           function(ext_data)
             data[ext_name] = ext_data
           end,
-          vim.tbl_extend("error", { tabpage = target_tabpage }, snapshot_ctx or {})
+          vim.tbl_extend("error", { tabpage = target_tabpage }, snapshot_ctx or {}),
+          buflist
         )
       end
     end
@@ -435,7 +478,7 @@ function M.restore(snapshot, opts, snapshot_ctx)
       end
     end
 
-    Ext.call("on_pre_load", snapshot, snapshot_ctx)
+    Ext.call("on_pre_load", snapshot, snapshot_ctx, snapshot.buflist or {})
 
     if not snapshot.tab_scoped and opts.global_marks ~= false and snapshot.global.marks then
       log.fmt_debug("Restoring global marks: %s", snapshot.global.marks)
@@ -501,7 +544,7 @@ function M.restore(snapshot, opts, snapshot_ctx)
       if tab.cwd then
         vim.cmd.tcd({ args = { vim.fn.fnameescape(tab.cwd) } })
       end
-      local win = layout.set_winlayout(tab.wins, scale)
+      local win = layout.set_winlayout(tab.wins, scale, snapshot.buflist or {})
       if win then
         curwin = win
       end

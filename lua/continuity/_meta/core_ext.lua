@@ -35,11 +35,11 @@
 --- Continuity-specific extensions can make use of two additional hooks, which were required when
 --- the autosession behavior was implemented as an extension instead of a separate interface.
 ---@class Extension: resession.Extension
----@field on_save? fun(opts: resession.Extension.OnSaveOpts & snapshot.Context): any #
+---@field on_save? fun(opts: resession.Extension.OnSaveOpts & snapshot.Context, buflist: continuity.core.snapshot.BufList): any #
 ---   Called when saving a session. Should return necessary state.
----@field on_pre_load? fun(data: any, opts: snapshot.Context) #
+---@field on_pre_load? fun(data: any, opts: snapshot.Context, buflist: string[]) #
 ---   Called before restoring a session, receives the data returned by `on_save`.
----@field on_post_load? fun(data: any, opts: snapshot.Context) #
+---@field on_post_load? fun(data: any, opts: snapshot.Context, buflist: string[]) #
 ---   Called after restoring a session, receives the data returned by `on_save`.
 ---@field on_post_bufinit? fun(data: any, visible_only: boolean) #
 ---   Called after **visible** buffers were loaded. Receives data from `on_save`.
