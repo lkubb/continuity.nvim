@@ -487,7 +487,7 @@ function M.reset(opts)
   end
   if session:is_attached() then
     ---@cast session ActiveSession
-    session:detach("delete", { reset = true })
+    session = session:detach("delete", { reset = true })
   else
     opts.reload = false
   end

@@ -452,7 +452,7 @@ function ActiveSession:detach(reason, opts)
     current_session = nil
   end
   sessions[self.name] = nil
-  return setmetatable(self, IdleSession)
+  return setmetatable(self, { __index = IdleSession })
 end
 
 function ActiveSession:forget()
@@ -465,7 +465,7 @@ function ActiveSession:forget()
   sessions[self.name] = nil
   tab_sessions[self.tabnr] = nil
   self.tabnr = nil
-  return setmetatable(self, IdleSession)
+  return setmetatable(self, { __index = IdleSession })
 end
 
 PendingSession = vim.tbl_extend("keep", PendingSession, Session) ---@diagnostic disable-line: assign-type-mismatch
