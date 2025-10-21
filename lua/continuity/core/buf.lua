@@ -683,6 +683,11 @@ function M.restore(buf, data, state_dir)
   end
 
   ctx.initialized = not buf.loaded -- unloaded bufs don't need any further initialization
+  if buf.bt == "help" then
+    -- Need to restore buftype, otherwise saving a restored session filters out the buffer.
+    -- Setting this early also ensures other help-specific default opts are set.
+    vim.bo[ctx.bufnr].buftype = "help"
+  end
   if buf.loaded then
     vim.fn.bufload(ctx.bufnr)
     ctx.restore_last_pos = true

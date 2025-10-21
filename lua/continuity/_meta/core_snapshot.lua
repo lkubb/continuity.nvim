@@ -178,6 +178,8 @@
 ---   Position is always `0` when invisible buffers are saved.
 ---@field marks? table<string, AnonymousMark?> #
 ---   Saved buffer-local marks, if enabled
+---@field bt? 'acwrite'|'help'|'nofile'|'nowrite'|'quickfix'|'terminal'|'prompt' #
+---   `buftype` option of buffer. Unset if empty (`""`).
 
 ---@class Snapshot.BufData.ChangelistItem: AnonymousMark
 -- TODO: coladd?

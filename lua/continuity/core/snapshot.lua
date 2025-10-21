@@ -277,6 +277,7 @@ local function create(target_tabpage, opts, snapshot_ctx)
       if include_buf(target_tabpage, bufnr, tabpage_bufs, opts) then
         local ctx = Buf.ctx(bufnr)
         local in_win = vim.fn.bufwinid(bufnr)
+        local bt = vim.bo[ctx.bufnr].buftype
         ---@type Snapshot.BufData
         local buf = {
           name = ctx.name,
@@ -293,6 +294,7 @@ local function create(target_tabpage, opts, snapshot_ctx)
             and Buf.parse_changelist(ctx),
           marks = util.opts.coalesce_auto("local_marks", false, opts, Config.session)
             and Buf.get_marks(ctx),
+          bt = bt ~= "" and bt or nil,
         }
         data.buffers[#data.buffers + 1] = buf
         included_bufs[#included_bufs + 1] = ctx
