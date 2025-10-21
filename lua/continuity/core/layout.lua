@@ -161,6 +161,44 @@ local function restore_loclists(winid, lists, pos, buflist)
   end)
 end
 
+local win_restore_group =
+  vim.api.nvim_create_augroup("continuity.core.layout.WinRestore", { clear = true })
+local win_restore ---@type integer?
+--- Can't attach autocmd to WinEnter of specific window, so keep track of
+--- windows to restore in this list.
+local restore_wins = {} ---@type table<WinID, true?>
+
+--- Ensure jumplist of window is restored, even if several windows
+--- show the same buffer.
+---@param winid WinID ID of window to ensure restoration for
+local function schedule_restore_jumplist(winid)
+  win_restore = win_restore
+    or vim.api.nvim_create_autocmd("WinEnter", {
+      desc = "Continuity: Finish window restoration (jumplists)",
+      group = win_restore_group,
+      callback = function(ev)
+        local curwin = vim.api.nvim_get_current_win()
+        if not restore_wins[curwin] then
+          return
+        end
+        if
+          (vim.b[ev.buf].continuity_ctx or {}).initialized ~= false
+          and vim.w[curwin].continuity_jumplist
+        then
+          --- This buffer has already been initialized or has not been loaded by Continuity,
+          --- so jumplist restoration will not be triggered in BufEnter of `finish_restore_buf`.
+          M.restore_jumplist(curwin)
+        end
+        restore_wins[curwin] = nil
+        if vim.tbl_isempty(restore_wins) then
+          -- Remove this autocommand once we don't have anything to do anymore
+          return true
+        end
+      end,
+    })
+  restore_wins[winid] = true
+end
+
 --- Check if a window should be saved. If so, return relevant information.
 --- Only exposed for testing purposes
 ---@private
@@ -399,6 +437,9 @@ local function set_winlayout_data(layout, scale_factor, buflist)
         win.jumps[2],
       }
       vim.w[win.winid].continuity_win_cursor = win.cursor
+      --- ensure jumplist is restored later, even if BufEnter does not trigger
+      --- (already restored buffer/same buffer in two windows)
+      schedule_restore_jumplist(win.winid)
     end
     if win.current then
       active_winid = win.winid
