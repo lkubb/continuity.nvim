@@ -138,10 +138,37 @@ local function wshada_hist(opts, snapshot_ctx, snapshot)
       return not should_skip and (char .. "0") or nil
     end)
     :join(",")
-  util.opts.with({ shada = shada_opt .. ",'0", shadafile = shada_file }, function()
-    -- Try to merge with existing shada file
-    vim.cmd("wshada " .. vim.fn.fnameescape(shada_file))
-  end)
+
+  -- NOTE: Writing shada breaks jumplists in the active window, even if we did not request to store them.
+  -- This appears to be fixed in nvim 0.12+: https://github.com/neovim/neovim/pull/33542
+  -- It still sets the `'"` mark in all windows (shouldn't matter as much).
+  -- We open a temporary window in <0.12 to avoid having to restore the jumplist after writing history shada
+  if vim.fn.has("nvim-0.12") == 1 then
+    util.opts.with(
+      { shada = shada_opt .. ",'0", shadafile = shada_file },
+      -- Try to merge with existing shada file
+      vim.cmd.wshada,
+      { vim.fn.fnameescape(shada_file) }
+    )
+  else
+    util.opts.with({ eventignore = "all" }, function()
+      local winid = vim.api.nvim_open_win(
+        0,
+        true,
+        { relative = "editor", row = 1, col = 1, width = 1, height = 1 }
+      )
+      util.try_finally(function()
+        util.opts.with(
+          { shada = shada_opt .. ",'0", shadafile = shada_file },
+          -- Try to merge with existing shada file
+          vim.cmd.wshada,
+          { vim.fn.fnameescape(shada_file) }
+        )
+      end, function()
+        vim.api.nvim_win_close(winid, true)
+      end)
+    end)
+  end
   return snapshot
 end
 
