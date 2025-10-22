@@ -494,10 +494,13 @@ local function set_winlayout_data(layout, scale_factor, buflist)
         -- Keep track of loclist windows, we'll restore them later.
         loclist_wins[win.winid] = win
       else
+        -- This force-restores the buffer, regardless of `in_win`
         local ctx = Buf.added(win.bufname, win.bufuuid)
         log.fmt_debug("Loading buffer %s (uuid: %s) in win %s", win.bufname, win.bufuuid, win.winid)
         vim.api.nvim_win_set_buf(win.winid, ctx.bufnr)
         if win.alt then
+          -- Ensure altbuf is restored already in case user decides to switch immediately (or an autocmd causes the switch)
+          Buf.added(buflist[win.alt] or win.alt --[[@as string]])
           vim.cmd.balt({
             vim.fn.fnameescape(buflist[win.alt] or win.alt --[[@as string]]),
           })
@@ -597,7 +600,7 @@ function M.restore_jumplist(winid)
           log.debug(
             "Need to jump back to non-final jumplist entry, which is in a different buffer than the currently displayed one"
           )
-          -- Restoration should still work, right?
+          -- Don't need to force-restore buffer, this is a technicality
           local bufnr = vim.fn.bufadd(last_item[1] --[[@as string]])
           if not vim.api.nvim_buf_is_loaded(bufnr) then
             vim.fn.bufload(bufnr)

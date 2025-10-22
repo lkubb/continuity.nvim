@@ -32,6 +32,11 @@ local IGNORE_LOCAL_MARKS = {
   ["^"] = true, -- last insert mode exit location [RO]
 }
 
+--- Keep track of bufs by name/uuid that are referenced in a snapshot,
+--- but not restored yet. Useful to force-restore them earlier if necessary.
+---@type table<BufUUID|string, [fun(), integer, uv_timer_t]?>
+local scheduled_restores = {}
+
 --- Generate a UUID for a buffer.
 --- They are used to keep track of unnamed buffers between sessions
 --- and as a general identifier when preserving unwritten changes.
@@ -205,6 +210,12 @@ end
 ---@return BufContext ctx #
 ---   Buffer context of the specified buffer.
 function M.added(name, uuid)
+  -- Force-restore this buffer if scheduled already
+  if name ~= "" and scheduled_restores[name] then
+    scheduled_restores[name][1]()
+  elseif uuid and scheduled_restores[uuid] then
+    scheduled_restores[uuid][1]()
+  end
   local bufnr
   if name == "" and uuid then
     for _, buf in ipairs(vim.api.nvim_list_bufs()) do
@@ -702,6 +713,57 @@ function M.restore(buf, data, state_dir)
     restore_modified_preview(ctx, state_dir)
   end
   return ctx.bufnr
+end
+
+--- Schedule restoration of a buffer soon. Either waits for `CusorHold[I]` event
+--- or timeout. Used to restore hidden buffers (those not displayed in a window).
+---@param buf Snapshot.BufData Saved buffer metadata for the buffer
+---@param snapshot Snapshot Complete snapshot data
+---@param state_dir? string Path snapshot-associated data is written to (modified buffers).
+---@param opts? {timeout?: integer, callback?: fun(buf: Snapshot.BufData)}
+---@return fun()? restore_it #
+---   Restoration function, can be called manually to force earlier restoration.
+---   Undefined if a buffer with the same UUID was already scheduled.
+function M.restore_soon(buf, snapshot, state_dir, opts)
+  if scheduled_restores[buf.uuid] then
+    log.fmt_error(
+      "Scheduled restoration of buf %s twice! Most likely an internal error, skipping",
+      tostring(buf)
+    )
+    return
+  end
+  opts = opts or {}
+  local restore_triggered = false
+  local function restore_it()
+    if restore_triggered then
+      return
+    end
+    restore_triggered = true
+    scheduled_restores[buf.uuid] = nil
+    scheduled_restores[buf.name] = nil
+    -- Don't trigger autocmds during buffer load.
+    -- Ignore all messages (including swapfile messages) during buffer restoration
+    util.try_finally(util.opts.with, function()
+      -- Always call callback after restoration attempt
+      if opts.callback then
+        opts.callback(buf)
+      end
+    end, { eventignore = "all", shortmess = "aAF" }, M.restore, buf, snapshot, state_dir)
+  end
+  local aucmd_id = vim.api.nvim_create_autocmd({ "CursorHold", "CursorHoldI" }, {
+    once = true,
+    desc = ("Continuity: Restore buffer %s not shown in window"):format(buf.uuid),
+    callback = restore_it,
+  })
+  -- Relying on CursorHold[I] events only would defer execution until neovim is focused,
+  -- which is suboptimal, especially since it causes autosave warnings because the session
+  -- is still loading. Cap restoration to <timeout>.
+  local timer = vim.defer_fn(restore_it, opts.timeout or 1000) ---@type uv_timer_t
+  scheduled_restores[buf.uuid] = { restore_it, aucmd_id, timer }
+  if buf.name ~= "" then
+    scheduled_restores[buf.name] = { restore_it, aucmd_id, timer }
+  end
+  return restore_it
 end
 
 --- Remove previously saved buffers and their undo history when they are

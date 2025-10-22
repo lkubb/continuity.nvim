@@ -302,8 +302,10 @@ local function create(target_tabpage, opts, snapshot_ctx)
     for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
       if include_buf(target_tabpage, bufnr, tabpage_bufs, opts) then
         local ctx = Buf.ctx(bufnr)
-        -- NOTE: This only works for the current tabpage!
-        local in_win = vim.fn.bufwinid(bufnr)
+        -- NOTE: bufwinid only works for the current tabpage. Buffers in non-current tab
+        --       windows are still restored immediately, so this field just avoids a bit
+        --       of restoration overhead now.
+        local in_win = vim.fn.win_findbuf(bufnr)
         local bt = vim.bo[ctx.bufnr].buftype
         ---@type Snapshot.BufData
         local buf = {
@@ -315,7 +317,7 @@ local function create(target_tabpage, opts, snapshot_ctx)
           options = util.opts.get_buf(bufnr, opts.options or Config.session.options),
           last_pos = (ctx.restore_last_pos and ctx.last_buffer_pos)
             or vim.api.nvim_buf_get_mark(bufnr, '"') --[[@as AnonymousMark]],
-          in_win = in_win > 0,
+          in_win = #in_win > 0,
           uuid = ctx.uuid,
           changelist = util.opts.coalesce_auto("changelist", false, opts, Config.session)
             and Buf.parse_changelist(ctx),
@@ -514,11 +516,6 @@ function M.restore(snapshot, opts, snapshot_ctx)
     snapshot = shallow_snapshot_copy
   end
 
-  -- Keep track of buffers that are not displayed for later restoration
-  -- to speed up startup
-  ---@type Snapshot.BufData[]
-  local buffers_later = {}
-
   -- Don't trigger autocmds during snapshot restoration
   -- Ignore all messages (including swapfile messages) as well
   util.opts.with({ eventignore = "all", shortmess = "aAF" }, function()
@@ -563,11 +560,43 @@ function M.restore(snapshot, opts, snapshot_ctx)
       (vim.o.lines - vim.o.cmdheight) / snapshot.global.height,
     }
 
+    -- Keep track of buffers that are not restored immediately so we know
+    -- when snapshot restoration has finished completely.
+    local scheduled_bufs = {} ---@type table<BufUUID, true?>
+    --- Called when a scheduled buffer has been restored.
+    ---@param buf Snapshot.BufData
+    local function bufrestored(buf)
+      scheduled_bufs[buf.uuid] = nil
+      log.fmt_trace("Restored deferred buf: %s\nRemaining:%s", buf.uuid, scheduled_bufs)
+      if vim.tbl_isempty(scheduled_bufs) then
+        util.opts.with(
+          { eventignore = "all", shortmess = "aAF" },
+          Ext.call,
+          "on_post_bufinit",
+          snapshot,
+          false
+        )
+        _is_loading = false
+        log.trace("Finished loading snapshot")
+      end
+    end
+
     ---@type integer?
     local last_bufnr
+    local timeout = 500
+    local scheduled_cnt = 0
     for _, buf in ipairs(snapshot.buffers) do
       if buf.in_win == false then
-        buffers_later[#buffers_later + 1] = buf
+        local restore_it = Buf.restore_soon(
+          buf,
+          snapshot,
+          snapshot_ctx.state_dir,
+          { timeout = timeout + scheduled_cnt * 30, callback = bufrestored }
+        )
+        if restore_it then
+          scheduled_bufs[buf.uuid] = true
+          scheduled_cnt = scheduled_cnt + 1
+        end
       else
         last_bufnr = Buf.restore(buf, snapshot, snapshot_ctx.state_dir)
       end
@@ -626,13 +655,7 @@ function M.restore(snapshot, opts, snapshot_ctx)
           -- We might not have restored it yet since it wasn't in a window
           for buf in vim.iter(vim.tbl_values(snapshot.buffers)):rev() do
             if buf.loaded then
-              last_bufnr = Buf.restore(buf, snapshot, snapshot_ctx.state_dir)
-              buffers_later = vim
-                .iter(buffers_later)
-                :filter(function(later)
-                  return later.uuid ~= buf.uuid
-                end)
-                :totable()
+              last_bufnr = Buf.added(buf.name, buf.uuid).bufnr
               break
             end
           end
@@ -650,34 +673,6 @@ function M.restore(snapshot, opts, snapshot_ctx)
   -- It will take care of reloading the buffer to check for swap files,
   -- enable syntax highlighting and load plugins.
   vim.api.nvim_exec_autocmds("BufEnter", { buffer = vim.api.nvim_get_current_buf() })
-  -- Schedule the restoration of invisible buffers to speed up startup.
-  local restore_triggered = false
-  local restore_invisible = function()
-    if restore_triggered then
-      return
-    end
-    restore_triggered = true
-    log.debug("Restoring invisible buffers")
-    -- Don't trigger autocmds during buffer load (shouldn't be necessary since this autocmd is not nested)
-    -- Ignore all messages (including swapfile messages) during buffer restoration
-    util.opts.with({ eventignore = "all", shortmess = "aAF" }, function()
-      for _, buf in ipairs(buffers_later) do
-        Buf.restore(buf, snapshot, snapshot_ctx.state_dir)
-      end
-      Ext.call("on_post_bufinit", snapshot, false)
-    end)
-    log.debug("Finished loading session")
-    _is_loading = false
-  end
-  vim.api.nvim_create_autocmd({ "CursorHold", "CursorHoldI" }, {
-    once = true,
-    desc = "Continuity: Restore buffers not shown in windows",
-    callback = restore_invisible,
-  })
-  -- I previously used CursorHold[I] events only, but they are not triggered e.g. when neovim
-  -- is not focused. This caused the autosave hook to print warnings since the session
-  -- was still loading. Make the final restoration happen in 1s at the latest.
-  vim.defer_fn(restore_invisible, 1000)
 end
 
 --- Restore a saved snapshot. Also handles hooks.
