@@ -250,6 +250,7 @@ function M.get_win_info(tabnr, winid, current_win, opts, buflist)
   then
     -- Don't need to check tab_buf_filter, only called for buffers that are visible in a tab
     return false
+    -- TODO: Consider preserving layout here, at least if it's the only window in the tabpage
   end
   if not is_quickfix then
     -- Loclist windows don't have loclists, same for the quickfix one I suppose

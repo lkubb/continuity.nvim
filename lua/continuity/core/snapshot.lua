@@ -302,6 +302,7 @@ local function create(target_tabpage, opts, snapshot_ctx)
     for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
       if include_buf(target_tabpage, bufnr, tabpage_bufs, opts) then
         local ctx = Buf.ctx(bufnr)
+        -- NOTE: This only works for the current tabpage!
         local in_win = vim.fn.bufwinid(bufnr)
         local bt = vim.bo[ctx.bufnr].buftype
         ---@type Snapshot.BufData
@@ -329,6 +330,7 @@ local function create(target_tabpage, opts, snapshot_ctx)
     end
 
     local tabpages = target_tabpage and { target_tabpage } or vim.api.nvim_list_tabpages()
+    local current_tabpage = not target_tabpage and vim.api.nvim_get_current_tabpage() or nil
 
     -- We want to avoid mutating the UI state during save at all costs for two reasons:
     --   1) When the cmd window (e.g. q:) is shown, we cannot switch active tab/win/buf:
@@ -353,6 +355,7 @@ local function create(target_tabpage, opts, snapshot_ctx)
       ---@type Snapshot.TabData
       local tab = {
         cwd = (target_tabpage or vim.fn.haslocaldir(-1, tabnr) == 1) and vim.fn.getcwd(-1, tabnr),
+        current = current_tabpage == tabpage,
         options = util.opts.get_tab(tabpage, opts.options or Config.session.options),
         wins = require("continuity.core.layout").add_win_info_to_layout(
           tabnr,
@@ -583,8 +586,7 @@ function M.restore(snapshot, opts, snapshot_ctx)
       vim.api.nvim_set_current_dir(snapshot.global.cwd)
     end
 
-    ---@type integer?
-    local curwin
+    local curwin, curtab, curtab_wincnt ---@type WinID?, TabID?, integer?
     for i, tab in ipairs(snapshot.tabs) do
       if i > 1 then
         vim.cmd.tabnew()
@@ -595,9 +597,10 @@ function M.restore(snapshot, opts, snapshot_ctx)
       if tab.cwd then
         vim.cmd.tcd({ args = { vim.fn.fnameescape(tab.cwd) } })
       end
-      local win = layout.set_winlayout(tab.wins, scale, snapshot.buflist or {})
-      if win then
-        curwin = win
+      curwin = layout.set_winlayout(tab.wins, scale, snapshot.buflist or {}) or curwin
+      if tab.current then
+        -- Can't rely on tabpagenr later because that assumes 1) reset 2) global scope
+        curtab, curtab_wincnt = vim.api.nvim_get_current_tabpage(), #(tab.wins or {}) -- or {} to support resession format, which sets `false`
       end
       util.opts.restore_tab(tab.options)
       vim.t.continuity_cmdheight_tracker = vim.o.cmdheight -- set this directly because we're ignoring events
@@ -607,15 +610,37 @@ function M.restore(snapshot, opts, snapshot_ctx)
     -- the user is confronted with an empty, unlisted buffer after loading the session. To avoid that situation,
     -- we will switch to the last restored buffer. If the last restored tabpage has at least a single defined window,
     -- we shouldn't do that though, it can result in unexpected behavior.
-    -- TODO: Remember and at least switch to active tabpage if there are multiple.
     if curwin then
       vim.api.nvim_set_current_win(curwin)
-    elseif
-      snapshot.tabs[#snapshot.tabs]
-      and snapshot.tabs[#snapshot.tabs].wins == false
-      and last_bufnr
-    then
-      vim.cmd("buffer " .. last_bufnr)
+    else
+      if curtab then
+        vim.api.nvim_set_current_tabpage(curtab)
+      end
+      if (curtab_wincnt or #(snapshot.tabs[#snapshot.tabs] or {})) == 0 then
+        -- This means the active tabpage had a single, unsupported buffer.
+        -- Switch to the last loaded buffer in the snapshot, if any.
+        -- FIXME: Unsure if this is expected, it's mostly inherited and does not restore jumplist at all.
+        --        Consider keeping window layout intact and switching to alternative buffer/going back in
+        --        jumplist instead or handling this situation during save.
+        if not last_bufnr then
+          -- We might not have restored it yet since it wasn't in a window
+          for buf in vim.iter(vim.tbl_values(snapshot.buffers)):rev() do
+            if buf.loaded then
+              last_bufnr = Buf.restore(buf, snapshot, snapshot_ctx.state_dir)
+              buffers_later = vim
+                .iter(buffers_later)
+                :filter(function(later)
+                  return later.uuid ~= buf.uuid
+                end)
+                :totable()
+              break
+            end
+          end
+        end
+        if last_bufnr then
+          vim.api.nvim_win_set_buf(0, last_bufnr)
+        end
+      end
     end
 
     Ext.call("on_post_load", snapshot, snapshot_ctx)

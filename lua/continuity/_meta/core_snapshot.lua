@@ -192,6 +192,8 @@
 ---   Window layout enriched with window-specific snapshot data
 ---@field cwd? string #
 ---   Tab-local cwd, if different from the global one or a tab-scoped snapshot
+---@field current? boolean
+---   Whether this tabpage was the active one. Only present for global sessions.
 
 --- Represents a quickfix/location list
 ---@class Snapshot.QFList
