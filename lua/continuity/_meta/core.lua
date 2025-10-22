@@ -5,6 +5,7 @@
 ---@alias WinID integer Nvim window ID
 ---@alias WinNr integer Nvim window number
 ---@alias BufNr integer Nvim buffer number
+---@alias TabID integer Nvim tab ID
 ---@alias TabNr integer Nvim tab number
 
 ---@class AnonymousMark: integer[]

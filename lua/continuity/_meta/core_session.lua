@@ -85,7 +85,7 @@
 ---@class ActiveSessionInfo: Session.Config
 ---@field name string #
 ---   Name of the session
----@field tabnr (TabNr|true)? #
+---@field tabid (TabID|true)? #
 ---   Tab number the session is attached to, if any. Can be `true`, which indicates it's a
 ---   tab-scoped session that has not been restored yet - although not when requesting via the API
 ---@field tab_scoped boolean #
@@ -102,12 +102,12 @@
 --- The associated session is tab-scoped to this specific tab
 ---@class Session.TabTarget
 ---@field tab_scoped true
----@field tabnr TabNr
+---@field tabid TabID
 
 --- The associated session is global-scoped
 ---@class Session.GlobalTarget
 ---@field tab_scoped false
----@field tabnr nil
+---@field tabid nil
 
 ---@alias Session.Target Session.TabTarget|Session.GlobalTarget
 
@@ -115,7 +115,7 @@
 ---@class Session<T: Session.Target>: T, Session.Config
 ---@field name string
 ---@field tab_scoped boolean
----@field tabnr? TabNr
+---@field tabid? TabID
 ---@field _on_attach Session.AttachHook[]
 ---@field _on_detach Session.DetachHook[]
 local Session = {}
@@ -134,27 +134,27 @@ function Session.new(name, session_file, state_dir, context_dir, opts) end
 ---@param state_dir string
 ---@param context_dir string
 ---@param opts Session.InitOptsWithMeta
----@param tabnr TabNr
+---@param tabid TabID
 ---@return IdleSession<Session.TabTarget>
-function Session.new(name, session_file, state_dir, context_dir, opts, tabnr) end
+function Session.new(name, session_file, state_dir, context_dir, opts, tabid) end
 ---@param name string
 ---@param session_file string
 ---@param state_dir string
 ---@param context_dir string
 ---@param opts Session.InitOptsWithMeta
----@param tabnr nil
+---@param tabid nil
 ---@param needs_restore true
 ---@return PendingSession<Session.GlobalTarget>
-function Session.new(name, session_file, state_dir, context_dir, opts, tabnr, needs_restore) end
+function Session.new(name, session_file, state_dir, context_dir, opts, tabid, needs_restore) end
 ---@param name string
 ---@param session_file string
 ---@param state_dir string
 ---@param context_dir string
 ---@param opts Session.InitOptsWithMeta
----@param tabnr true
+---@param tabid true
 ---@param needs_restore true
 ---@return PendingSession<Session.TabTarget>
-function Session.new(name, session_file, state_dir, context_dir, opts, tabnr, needs_restore) end
+function Session.new(name, session_file, state_dir, context_dir, opts, tabid, needs_restore) end
 
 --- Create a new session by loading a snapshot, which you need to restore explicitly.
 ---@param name string #

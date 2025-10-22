@@ -64,4 +64,4 @@
 ---@alias ext.LoadHook fun(name: string, opts: ext.HookOpts)[]
 
 --- A function that, after being registered, is called before/after a snapshot is saved.
----@alias ext.SaveHook fun(name: string, opts: ext.HookOpts, target_tabpage: TabNr?)[]
+---@alias ext.SaveHook fun(name: string, opts: ext.HookOpts, target_tabpage: TabID?)[]

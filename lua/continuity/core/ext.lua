@@ -170,10 +170,10 @@ end
 ---@param name Hook.Save
 ---@param session_name string
 ---@param opts HookOpts
----@param target_tabnr? TabNr
-function M.dispatch(name, session_name, opts, target_tabnr)
+---@param target_tabid? TabID
+function M.dispatch(name, session_name, opts, target_tabid)
   for _, cb in ipairs(hooks[name]) do
-    cb(session_name, opts, target_tabnr)
+    cb(session_name, opts, target_tabid)
   end
 end
 

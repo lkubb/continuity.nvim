@@ -14,7 +14,7 @@ local M = {}
 ---@namespace continuity.core
 
 local current_session ---@type string?
-local tab_sessions = {} ---@type table<TabNr, string?>
+local tab_sessions = {} ---@type table<TabID, string?>
 local sessions = {} ---@type table<string, ActiveSession<Session.TabTarget>|ActiveSession<Session.GlobalTarget>?>
 
 ---@param session_file string
@@ -47,10 +47,10 @@ local IdleSession = {} ---@diagnostic disable-line: assign-type-mismatch,missing
 local ActiveSession = {} ---@diagnostic disable-line: assign-type-mismatch,missing-fields
 
 ---@generic T: Session.Target
-function Session.new(name, session_file, state_dir, context_dir, opts, tabnr, needs_restore)
-  if tabnr == true then
+function Session.new(name, session_file, state_dir, context_dir, opts, tabid, needs_restore)
+  if tabid == true then
     ---@diagnostic disable-next-line: unnecessary-assert
-    assert(needs_restore, "tabnr must not be `true` unless needs_restore is set as well")
+    assert(needs_restore, "tabid must not be `true` unless needs_restore is set as well")
   end
   ---@type Session.Config
   local config = {
@@ -82,8 +82,8 @@ function Session.new(name, session_file, state_dir, context_dir, opts, tabnr, ne
     debug_history = opts.debug_history,
     -- internals
     name = name,
-    tabnr = tabnr ~= true and tabnr or nil,
-    tab_scoped = not not tabnr,
+    tabid = tabid ~= true and tabid or nil,
+    tab_scoped = not not tabid,
     needs_restore = needs_restore,
     _on_attach = {},
     _on_detach = {},
@@ -213,11 +213,11 @@ function Session:restore(opts, snapshot)
   log.fmt_trace("Loading session %s. Data: %s", self.name, snapshot)
   local load_opts =
     vim.tbl_extend("keep", self:opts() --[[@as table]], opts, { attach = false, reset = "auto" })
-  local tabnr = Snapshot.restore_as(self.name, snapshot, load_opts)
+  local tabid = Snapshot.restore_as(self.name, snapshot, load_opts)
   if self.tab_scoped then
-    self.tabnr = assert(tabnr, "Restored session defined as tab-scoped, but did not receive tabnr")
+    self.tabid = assert(tabid, "Restored session defined as tab-scoped, but did not receive tabid")
   else
-    assert(not tabnr, "Restored session defined as global, but received tabnr")
+    assert(not tabid, "Restored session defined as global, but received tabid")
   end
   return self, true
 end
@@ -233,11 +233,11 @@ function Session:is_attached()
     return self.name == current_session and sessions[self.name] == self
   end
   ---@cast self Session<Session.TabTarget>
-  if self.tabnr == true then
+  if self.tabid == true then
     -- Unrestored, cannot be attached
     return false
   end
-  return tab_sessions[self.tabnr] == self.name and sessions[self.name] == self
+  return tab_sessions[self.tabid] == self.name and sessions[self.name] == self
 end
 
 function Session:opts()
@@ -291,7 +291,7 @@ function Session:info()
     autosave_notify = self.autosave_notify,
     -- Metadata
     name = self.name,
-    tabnr = self.tabnr,
+    tabid = self.tabid,
     tab_scoped = self.tab_scoped,
     meta = self.meta,
     session_file = self.session_file,
@@ -318,9 +318,9 @@ function IdleSession:attach()
   self._aug = vim.api.nvim_create_augroup("continuity__" .. self.name, { clear = true })
   if self.tab_scoped then
     ---@cast self ActiveSession<Session.TabTarget>
-    tab_sessions[self.tabnr] = self.name
+    tab_sessions[self.tabid] = self.name
     vim.api.nvim_create_autocmd("TabClosed", {
-      pattern = tostring(self.tabnr),
+      pattern = tostring(self.tabid),
       callback = function()
         self:detach("tab_closed", {})
       end,
@@ -376,7 +376,7 @@ function IdleSession:save(opts)
     not Snapshot.save_as(
       self.name,
       save_opts,
-      self.tabnr,
+      self.tabid,
       save_opts.session_file,
       save_opts.state_dir,
       save_opts.context_dir
@@ -434,7 +434,7 @@ function ActiveSession:detach(reason, opts)
     if self.tab_scoped then
       ---@cast self ActiveSession<Session.TabTarget>
       if reason ~= "tab_closed" then
-        vim.cmd.tabclose({ self.tabnr, bang = true })
+        vim.cmd.tabclose({ self.tabid, bang = true })
       end
       -- TODO: Consider unloading associated buffers? (cave: should happen even on tab_closed)
     else
@@ -445,8 +445,8 @@ function ActiveSession:detach(reason, opts)
   end
   if self.tab_scoped then
     ---@cast self ActiveSession<Session.TabTarget>
-    tab_sessions[self.tabnr] = nil
-    self.tabnr = nil
+    tab_sessions[self.tabid] = nil
+    self.tabid = nil
   else
     ---@cast self ActiveSession<Session.GlobalTarget>
     current_session = nil
@@ -463,8 +463,8 @@ function ActiveSession:forget()
     self._aug = nil
   end
   sessions[self.name] = nil
-  tab_sessions[self.tabnr] = nil
-  self.tabnr = nil
+  tab_sessions[self.tabid] = nil
+  self.tabid = nil
   return setmetatable(self, { __index = IdleSession })
 end
 
@@ -473,7 +473,7 @@ IdleSession = vim.tbl_extend("keep", IdleSession, Session) ---@diagnostic disabl
 ActiveSession = vim.tbl_extend("keep", ActiveSession, IdleSession) ---@diagnostic disable-line: assign-type-mismatch
 
 ---@param name string
----@return TabNr?
+---@return TabID?
 local function find_tabpage_for_session(name)
   for k, v in pairs(tab_sessions) do
     if v == name then
@@ -482,10 +482,10 @@ local function find_tabpage_for_session(name)
   end
 end
 
----@overload fun(by_name: true): table<string,TabNr?>
----@overload fun(by_name: false?): table<TabNr,string?>
+---@overload fun(by_name: true): table<string,TabID?>
+---@overload fun(by_name: false?): table<TabID,string?>
 ---@param by_name? boolean Index returned mapping by session name instead of tab number
----@return table<string,TabNr?>|table<TabNr,string?> active_tab_sessions #
+---@return table<string,TabID?>|table<TabID,string?> active_tab_sessions #
 local function list_active_tabpage_sessions(by_name)
   -- First prune tab-scoped sessions for closed tabs
   -- Note: Shouldn't usually be necessary because we're auto-detaching on TabClosed
@@ -518,8 +518,8 @@ local function detach_global(reason, opts)
   return true
 end
 
---- Detach a tabpage-scoped session, either by its name or tabnr
----@param target? (string|TabNr|(string|TabNr)[]) #
+--- Detach a tabpage-scoped session, either by its name or tabid
+---@param target? (string|TabID|(string|TabID)[]) #
 ---   Target a tabpage session by name or associated tabpage.
 ---   Defaults to current tabpage. Also takes a list.
 ---@param reason Session.DetachReason Reason to pass to detach handlers.
@@ -536,14 +536,14 @@ local function detach_tabpage(target, reason, opts)
     return had_effect
   end
   target = target or vim.api.nvim_get_current_tabpage()
-  local name, tabnr
+  local name, tabid
   if type(target) == "string" then
-    name, tabnr = target, find_tabpage_for_session(target)
+    name, tabid = target, find_tabpage_for_session(target)
   else
-    name, tabnr = tab_sessions[target], target
+    name, tabid = tab_sessions[target], target
   end
-  -- not (tabnr and name) didn't work for emmylua to assert tabnr
-  if not tabnr or not name then
+  -- not (tabid and name) didn't work for emmylua to assert tabid
+  if not tabid or not name then
     return false
   end
   assert(sessions[name], "Tabpage session not known, this is likely a bug"):detach(reason, opts)
@@ -590,19 +590,19 @@ end
 
 ---@generic T: Session.Target
 ---@overload fun(name: string, session_file: string, state_dir: string, context_dir: string, opts: Session.InitOptsWithMeta): IdleSession<Session.GlobalTarget>
----@overload fun(name: string, session_file: string, state_dir: string, context_dir: string, opts: Session.InitOptsWithMeta, tabnr: nil): IdleSession<Session.GlobalTarget>
----@overload fun(name: string, session_file: string, state_dir: string, context_dir: string, opts: Session.InitOptsWithMeta, tabnr: TabNr): IdleSession<Session.TabTarget>
+---@overload fun(name: string, session_file: string, state_dir: string, context_dir: string, opts: Session.InitOptsWithMeta, tabid: nil): IdleSession<Session.GlobalTarget>
+---@overload fun(name: string, session_file: string, state_dir: string, context_dir: string, opts: Session.InitOptsWithMeta, tabid: TabID): IdleSession<Session.TabTarget>
 ---@param name string
 ---@param session_file string
 ---@param state_dir string
 ---@param context_dir string
 ---@param opts Session.InitOptsWithMeta
----@param tabnr? TabNr
+---@param tabid? TabID
 ---@return IdleSession<T>
-function M.create_new(name, session_file, state_dir, context_dir, opts, tabnr)
+function M.create_new(name, session_file, state_dir, context_dir, opts, tabid)
   -- help emmylua resolve to the proper type with this conditional
-  if tabnr then
-    return Session.new(name, session_file, state_dir, context_dir, opts, tabnr)
+  if tabid then
+    return Session.new(name, session_file, state_dir, context_dir, opts, tabid)
   end
   return Session.new(name, session_file, state_dir, context_dir, opts)
 end
@@ -628,11 +628,11 @@ function M.get_all()
   return vim.list_extend(res, vim.tbl_values(M.get_tabs()))
 end
 
----@return table<TabNr, ActiveSession<Session.TabTarget>>
+---@return table<TabID, ActiveSession<Session.TabTarget>>
 function M.get_tabs()
-  return vim.iter(pairs(list_active_tabpage_sessions())):fold({}, function(res, tabnr, name)
-    res[tabnr] = assert(
-      sessions[name] and sessions[name].tabnr == tabnr,
+  return vim.iter(pairs(list_active_tabpage_sessions())):fold({}, function(res, tabid, name)
+    res[tabid] = assert(
+      sessions[name] and sessions[name].tabid == tabid,
       "Tabpage session not known or points to wrong tab, this is likely a bug"
     )
     return res
@@ -646,16 +646,16 @@ function M.get_named(name)
   return sessions[name]
 end
 
----@param tabnr? TabNr #
+---@param tabid? TabID #
 ---    Tab number the session is associated with. Empty for current tab.
 ---@return ActiveSession<Session.TabTarget>?
-function M.get_tabnr(tabnr)
+function M.get_tabid(tabid)
   ---@type string?
-  local name = list_active_tabpage_sessions()[tabnr or vim.api.nvim_get_current_tabpage()]
+  local name = list_active_tabpage_sessions()[tabid or vim.api.nvim_get_current_tabpage()]
   ---@diagnostic disable-next-line: return-type-mismatch
   return name
       and assert(
-        sessions[name] and sessions[name].tabnr == tabnr,
+        sessions[name] and sessions[name].tabid == tabid,
         "Tabpage session not known or points to wrong tab, this is likely a bug"
       )
       and sessions[name]
@@ -666,7 +666,7 @@ end
 function M.get_global()
   return current_session
       and assert(
-        sessions[current_session] and sessions[current_session].tabnr == nil,
+        sessions[current_session] and sessions[current_session].tabid == nil,
         "Current global session unknown or points to tab, this is likely a bug"
       )
       and sessions[current_session] --[[@as ActiveSession<Session.GlobalTarget>]]
@@ -729,7 +729,7 @@ end
 
 --- Detach from the session that contains the target (or all active sessions if unspecified).
 ---@param target? ("__global"|"__active"|"__active_tab"|"__all_tabs"|string|integer|(string|integer)[]) #
----   The scope/session name/tabnr to detach from. If unspecified, detaches all sessions.
+---   The scope/session name/tabid to detach from. If unspecified, detaches all sessions.
 ---@param reason? Session.DetachReason #
 ---   Pass a custom reason to detach handlers. Defaults to `request`.
 ---@param opts? Session.DetachOpts & PassthroughOpts

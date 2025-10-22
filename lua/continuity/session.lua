@@ -19,7 +19,7 @@ local M = {}
 local function get_save_name(tab_scoped)
   local current
   if tab_scoped then
-    current = Session.get_tabnr()
+    current = Session.get_tabid()
   else
     current = Session.get_global()
   end
@@ -35,21 +35,21 @@ end
 
 --- Check if a session with this configuration is already attached and return it if so
 ---@generic T: Session.Target
----@overload fun(name: string, opts: DirParam, tabnr: TabNr, session_file: string?, state_dir: string?, context_dir: string?): ActiveSession<Session.TabTarget>?
----@overload fun(name: string, opts: DirParam, tabnr: true, session_file: string?, state_dir: string?, context_dir: string?): ActiveSession<Session.TabTarget>?
----@overload fun(name: string, opts: DirParam, tabnr: false, session_file: string?, state_dir: string?, context_dir: string?): ActiveSession<T>?
----@overload fun(name: string, opts: DirParam, tabnr: nil, session_file: string?, state_dir: string?, context_dir: string?): ActiveSession<Session.GlobalTarget>?
+---@overload fun(name: string, opts: DirParam, tabid: TabID, session_file: string?, state_dir: string?, context_dir: string?): ActiveSession<Session.TabTarget>?
+---@overload fun(name: string, opts: DirParam, tabid: true, session_file: string?, state_dir: string?, context_dir: string?): ActiveSession<Session.TabTarget>?
+---@overload fun(name: string, opts: DirParam, tabid: false, session_file: string?, state_dir: string?, context_dir: string?): ActiveSession<T>?
+---@overload fun(name: string, opts: DirParam, tabid: nil, session_file: string?, state_dir: string?, context_dir: string?): ActiveSession<Session.GlobalTarget>?
 ---@param name string Name of the session to find
 ---@param opts DirParam Session dir override
----@param tabnr? TabNr|false
----   Pass expected tabnr or `true` to filter for any tab session.
+---@param tabid? TabID|false
+---   Pass expected tab ID or `true` to filter for any tab session.
 ---   Pass `nil` for a global session.
 ---   Pass `false` for either.
 ---@param session_file? string Session file (snapshot) path to match against
 ---@param state_dir? string Session-associated data path to match against
 ---@param context_dir? string Context-associated data path to match against
 ---@return ActiveSession<T>? matching_active_session #
-local function find_attached(name, opts, tabnr, session_file, state_dir, context_dir)
+local function find_attached(name, opts, tabid, session_file, state_dir, context_dir)
   local attached = Session.get_named(name)
   if not attached then
     return
@@ -59,7 +59,7 @@ local function find_attached(name, opts, tabnr, session_file, state_dir, context
       util.path.get_session_paths(name, opts.dir or Config.session.dir)
   end
   if
-    (tabnr == false or (tabnr == true and not not attached.tabnr) or attached.tabnr == tabnr)
+    (tabid == false or (tabid == true and not not attached.tabid) or attached.tabid == tabid)
     and attached.session_file == session_file
     and attached.state_dir == state_dir
     and attached.context_dir == context_dir
@@ -69,18 +69,18 @@ local function find_attached(name, opts, tabnr, session_file, state_dir, context
 end
 
 --- Get a session with the specified configuration. If a session with this configuration
---- (name + session_file + state_dir + tabnr) exists, update its other options and return it,
+--- (name + session_file + state_dir + tabid) exists, update its other options and return it,
 --- otherwise create a new one.
 ---@generic T: Session.Target
----@overload fun(name: string, opts: Session.InitOptsWithMeta & DirParam, tabnr: nil): IdleSession<Session.GlobalTarget>|ActiveSession<Session.GlobalTarget>, TypeGuard<ActiveSession<Session.GlobalTarget>>
----@overload fun(name: string, opts: Session.InitOptsWithMeta & DirParam, tabnr: TabNr): IdleSession<Session.TabTarget>|ActiveSession<Session.TabTarget>, TypeGuard<ActiveSession<Session.TabTarget>>
+---@overload fun(name: string, opts: Session.InitOptsWithMeta & DirParam, tabid: nil): IdleSession<Session.GlobalTarget>|ActiveSession<Session.GlobalTarget>, TypeGuard<ActiveSession<Session.GlobalTarget>>
+---@overload fun(name: string, opts: Session.InitOptsWithMeta & DirParam, tabid: TabID): IdleSession<Session.TabTarget>|ActiveSession<Session.TabTarget>, TypeGuard<ActiveSession<Session.TabTarget>>
 ---@param name string Name of session to get/create
 ---@param opts Session.InitOptsWithMeta & DirParam
----@param tabnr? TabNr Target tab number of session, if any
+---@param tabid? TabID Target tab number of session, if any
 ---@return IdleSession<T>|ActiveSession<T> session
 ---@return TypeGuard<ActiveSession<T>> is_attached Whether we referenced an already attached session.
 -- Note: TypeGuard does not work this way! It's only applied to the first *argument*.
-local function get_session(name, opts, tabnr)
+local function get_session(name, opts, tabid)
   local session_file, state_dir, context_dir =
     util.path.get_session_paths(name, opts.dir or Config.session.dir)
   ---@type Session.InitOptsWithMeta
@@ -96,18 +96,18 @@ local function get_session(name, opts, tabnr)
     tab_buf_filter = opts.tab_buf_filter,
     meta = opts.meta,
   }
-  local attached = find_attached(name, { dir = opts.dir }, tabnr, session_file, state_dir)
+  local attached = find_attached(name, { dir = opts.dir }, tabid, session_file, state_dir)
   if attached then
     attached:update(session_opts)
     return attached, true
   end
-  return Session.create_new(name, session_file, state_dir, context_dir, session_opts, tabnr), false
+  return Session.create_new(name, session_file, state_dir, context_dir, session_opts, tabid), false
 end
 
 --- Save the current global or tabpage state to a named session.
 ---@param name string Name of the session
 ---@param opts? SaveOpts & PassthroughOpts
----@param target_tabpage? TabNr Only save this tabpage (instead of everything)
+---@param target_tabpage? TabID Only save this tabpage (instead of everything)
 local function save(name, opts, target_tabpage)
   ---@type SaveOpts & PassthroughOpts
   opts = vim.tbl_extend("keep", opts --[[@as table]] or {}, {

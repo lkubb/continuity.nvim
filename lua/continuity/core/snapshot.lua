@@ -21,7 +21,7 @@ function M.is_loading()
 end
 
 --- Decide whether to include a buffer.
----@param tabpage? TabNr When saving a tab-scoped session, the tab number.
+---@param tabpage? TabID When saving a tab-scoped session, the tab number.
 ---@param bufnr BufNr The buffer to check for inclusion
 ---@param tabpage_bufs table<BufNr, true?> #
 ---   When saving a tab-scoped session, the list of buffers that are displayed in the tabpage.
@@ -236,7 +236,7 @@ end
 
 --- Create a snapshot and return the data.
 --- Note: Does not handle modified buffer contents, which requires a path to save to.
----@param target_tabpage? TabNr For tab snapshots, tab number of the tab to snapshot
+---@param target_tabpage? TabID For tab snapshots, tab number of the tab to snapshot
 ---@param opts? CreateOpts Snapshot creation options
 ---@param snapshot_ctx? snapshot.Context Contextual information about the loading session (name, paths)
 ---@return Snapshot snapshot Snapshot data
@@ -385,7 +385,7 @@ end
 
 --- Create a snapshot and return the data.
 --- Note: Does not handle modified buffer contents, which requires a path to save to.
----@param target_tabpage? TabNr #
+---@param target_tabpage? TabID #
 ---   Limit the session to this tab. If unspecified, saves global state.
 ---@param opts? CreateOpts #
 ---   Influence which buffers and options are persisted (overrides global default config).
@@ -406,7 +406,7 @@ end
 --- Also handles changed buffer contents.
 ---@param name string Name of the session
 ---@param opts CreateOpts & PassthroughOpts Influence which data is included. Note: Passed through to hooks, is allowed to contain more fields.
----@param target_tabpage? TabNr Instead of saving everything, only save the current tabpage
+---@param target_tabpage? TabID Instead of saving everything, only save this tabpage
 ---@param session_file string Path to write the session to.
 ---@param state_dir string Path to write session-associated data to (modified buffers).
 ---@param context_dir string A shared path for all sessions in this context (`dir` for manual sessions, project dir for autosessions)
@@ -659,7 +659,7 @@ end
 ---@param name string Name of the target session. Only used for hooks.
 ---@param snapshot Snapshot Snapshot data to restore
 ---@param opts snapshot.RestoreOpts & snapshot.Context & PassthroughOpts
----@return TabNr? target_tab #
+---@return TabID? target_tab #
 ---   Tab number of the restored tab, if snapshot was tab-scoped.
 function M.restore_as(name, snapshot, opts)
   opts.modified =
