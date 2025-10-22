@@ -172,7 +172,7 @@ local function restore_loclists(winid, lists, pos, buflist)
     vim.fn.setloclist(winid, {}, " ", loclist)
   end)
   vim.api.nvim_win_call(winid, function()
-    vim.cmd.lhistory({ count = pos })
+    vim.cmd.lhistory({ count = pos, mods = { silent = true } })
   end)
 end
 

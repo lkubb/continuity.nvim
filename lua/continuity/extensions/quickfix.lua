@@ -77,7 +77,7 @@ M.on_pre_load = function(data, _, buflist)
       :totable()
     vim.fn.setqflist({}, " ", qflist)
   end)
-  vim.cmd.chistory({ count = pos })
+  vim.cmd.chistory({ count = pos, mods = { silent = true } })
 end
 
 ---@diagnostic disable-next-line: unused
