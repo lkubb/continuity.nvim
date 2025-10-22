@@ -12,21 +12,33 @@ local M = {}
 ---@namespace continuity.core.layout
 ---@using continuity.core
 
+--- Get the alternate buffer for a window.
+---@param winid WinID Window ID to get alternate buffer for
+---@return BufNr? alt_bufnr #
+---   Buffer number of alternate buffer
+local function get_alternate_buf(winid)
+  local bufnr = vim.api.nvim_win_call(winid or 0, function()
+    return vim.fn.bufnr("#")
+  end)
+  if bufnr > 0 then
+    return bufnr
+  end
+end
+
 --- Get the alternate file for a window.
 ---@param winid WinID Window ID to get alternate file for
 ---@param opts snapshot.CreateOpts Snapshot creation opts
 ---@return string? alternate_file #
 ---   Absolute path to alternate file
 local function get_alternate_file(winid, opts)
-  local bufnr = vim.api.nvim_win_call(winid or 0, function()
-    return vim.fn.bufnr("#")
-  end)
-  if bufnr > 0 then
-    -- NOTE: This doesn't respect tab_buf_filter, issue?
-    local file = vim.api.nvim_buf_get_name(bufnr)
-    if file ~= "" and (opts.buf_filter or Config.session.buf_filter)(bufnr, opts) then
-      return vim.fn.fnamemodify(file, ":p")
-    end
+  local altbuf = get_alternate_buf(winid)
+  if not altbuf then
+    return
+  end
+  local name = vim.api.nvim_buf_get_name(altbuf)
+  -- NOTE: This doesn't respect tab_buf_filter, issue?
+  if name ~= "" and (opts.buf_filter or Config.session.buf_filter)(altbuf, opts) then
+    return vim.fn.fnamemodify(name, ":p")
   end
 end
 
@@ -571,7 +583,7 @@ function M.restore_jumplist(winid)
     util.opts.with({ eventignore = "all" }, function()
       -- This is the buf the window should display (the current one). We might need
       -- to perform a switcheroo to properly restore the jumplist in the intended order.
-      local correct_buf ---@type integer?
+      local correct_buf, correct_alt ---@type integer?, integer?
       if backtrack > 0 then
         -- The position that we are trying to restore needs to be filled by the last item
         -- in the jumplist since it's going to be pushed up top.
@@ -580,6 +592,7 @@ function M.restore_jumplist(winid)
         table.insert(jumps, #jumps - backtrack, jumps[#jumps])
         jumps[#jumps] = nil
         correct_buf = vim.api.nvim_win_get_buf(winid)
+        correct_alt = get_alternate_buf(winid) --[[@as integer]]
         if vim.api.nvim_buf_get_name(correct_buf) ~= last_item[1] then
           log.debug(
             "Need to jump back to non-final jumplist entry, which is in a different buffer than the currently displayed one"
@@ -622,6 +635,9 @@ function M.restore_jumplist(winid)
       end
       if correct_buf then
         vim.api.nvim_win_set_buf(winid, correct_buf)
+      end
+      if correct_alt then
+        vim.cmd.balt({ vim.fn.fnameescape(vim.api.nvim_buf_get_name(correct_alt)) })
       end
       util.try_log(vim.api.nvim_win_set_cursor, {
         [1] = "Failed to win cursor to wanted for winid %s, its position might be off: %s",
