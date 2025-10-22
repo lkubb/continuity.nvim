@@ -63,20 +63,22 @@ function M.get_buf(bufnr, opts)
 end
 
 --- Return all tab-scoped options of the current (!) tabpage.
---- Note: Must be called with the target tabpage being the active one.
----@diagnostic disable-next-line: unused
----@param tabnr TabNr Unused.
+--- In practice, there's only `cmdheight` at the time of writing this.
+--- This value is tracked via autocmds since it cannot be queried
+--- without switching to the tabpage, which has side effects.
+--- Falls back to the current tabpage's cmdheight.
+---@param tabnr TabNr Tab number to query options for
 ---@param opts string[] #
 ---   List of options to fetch current values for (if they are tab-scoped).
 ---   Options of other scopes are ignored.
 ---@return table<string, any>
 function M.get_tab(tabnr, opts)
   local ret = {}
-  -- 'cmdheight' is the only tab-local option, but the scope from nvim_get_option_info is incorrect
-  -- since there's no way to fetch a tabpage-local option, we rely on this being called from inside
-  -- the relevant tabpage
+  -- 'cmdheight' is the only tab-local option, but the scope from nvim_get_option_info is incorrect.
+  -- Since there's currently no way to query a tabpage-local option, we rely on an autocommand that
+  -- tracks the option's value per tabpage (setup in `plugin/continuity.lua`).
   if vim.tbl_contains(opts, "cmdheight") then
-    ret.cmdheight = vim.o.cmdheight
+    ret.cmdheight = vim.t[tabnr].continuity_cmdheight_tracker or vim.o.cmdheight
   end
   return ret
 end

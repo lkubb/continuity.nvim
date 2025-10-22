@@ -1,3 +1,38 @@
+-- There's no way to get the `cmdheight` tabpage-local option
+-- for a non-current tabpage. We need to know this value, but
+-- session saving should avoid interfering with the UI at all
+-- costs. Solution: Keep track of this option for all tabs in
+-- a tabpage variable.
+local function update_cmdheight_optionset()
+  vim.t.continuity_cmdheight_tracker = vim.v.option_new
+end
+
+local function update_cmdheight()
+  vim.t.continuity_cmdheight_tracker = vim.o.cmdheight
+end
+
+local plugin_group = vim.api.nvim_create_augroup("ContinuityPlugin", { clear = true })
+
+vim.api.nvim_create_autocmd("OptionSet", {
+  pattern = "cmdheight",
+  group = plugin_group,
+  desc = "Continuity: Keep track of cmdheight changes",
+  -- NOTE: This is called each time switching the current tabpage causes a change in cmdheight.
+  callback = update_cmdheight_optionset,
+})
+
+vim.api.nvim_create_autocmd("TabNewEntered", {
+  group = plugin_group,
+  desc = "Continuity: Initialize tracked cmdheight of new tabpage",
+  callback = update_cmdheight,
+})
+
+vim.api.nvim_create_autocmd("VimEnter", {
+  group = plugin_group,
+  desc = "Continuity: Initialize tracked cmdheight of initial tabpage",
+  callback = update_cmdheight,
+})
+
 -- If folke/lazy.nvim is in use, we need to know when it
 -- finishes setup to be able to properly restore buffers.
 ---@cast vim.g.lazy_did_setup boolean?
@@ -13,6 +48,7 @@ else
   vim.g._continuity_verylazy_done = true
 end
 
+-- Initialize Continuity user command
 vim.api.nvim_create_user_command("Continuity", function(params)
   require("continuity.cli").run(params)
 end, {
@@ -27,7 +63,6 @@ end, {
 vim.g.continuity_autosession = vim.g.continuity_autosession or false
 
 if vim.g.continuity_autosession then
-  local init_group = vim.api.nvim_create_augroup("ContinuityInit", { clear = true })
   local is_pager = false
 
   -- This event is triggered before VimEnter and indicates we're running as a pager.
@@ -36,7 +71,7 @@ if vim.g.continuity_autosession then
     callback = function()
       is_pager = true
     end,
-    group = init_group,
+    group = plugin_group,
     once = true,
   })
 
@@ -69,7 +104,7 @@ if vim.g.continuity_autosession then
       end
       require("continuity.auto").load(startup_cwd)
     end,
-    group = init_group,
+    group = plugin_group,
     once = true,
     nested = true, -- otherwise the focused buffer is not initialized correctly
   })

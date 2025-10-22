@@ -139,6 +139,17 @@ local function wshada_hist(opts, snapshot_ctx, snapshot)
     end)
     :join(",")
 
+  ---@diagnostic disable-next-line: unnecessary-if
+  if vim.fn.getcmdwintype() ~= "" then
+    -- Opening a sacrificial window fails when cmdwin is active.
+    -- Still do the dance above to set the corresponding snapshot options.
+    local msg =
+      "Command-line window is active. Cannot save history without butchering jumplist of active window. Skipping history export."
+    log.warn(msg)
+    vim.notify_once("Continuity: " .. msg, vim.log.levels.WARN)
+    return snapshot
+  end
+
   -- NOTE: Writing shada breaks jumplists in the active window, even if we did not request to store them.
   -- This appears to be fixed in nvim 0.12+: https://github.com/neovim/neovim/pull/33542
   -- It still sets the `'"` mark in all windows (shouldn't matter as much).
@@ -151,12 +162,26 @@ local function wshada_hist(opts, snapshot_ctx, snapshot)
       { vim.fn.fnameescape(shada_file) }
     )
   else
-    util.opts.with({ eventignore = "all" }, function()
-      local winid = vim.api.nvim_open_win(
-        0,
-        true,
-        { relative = "editor", row = 1, col = 1, width = 1, height = 1 }
-      )
+    -- `lazyredraw` should not be necessary, but better be safe.
+    -- There is an issue that erroneously places the cursor in the cmdline,
+    -- but I don't think it's triggered if everything works as intended here.
+    -- Ref: https://github.com/neovim/neovim/issues/11806
+    util.opts.with({ eventignore = "all", lazyredraw = true }, function()
+      local curwin = vim.api.nvim_get_current_win()
+      -- Use the current buffer specifically to avoid causing a tabline redraw,
+      -- which would also exit visual mode.
+      local sacrificial_winid = vim.api.nvim_open_win(0, true, {
+        relative = "editor",
+        row = 0,
+        col = 0,
+        width = 1,
+        height = 1,
+        focusable = false,
+        hide = true,
+        noautocmd = true,
+        zindex = 1,
+        border = "none",
+      })
       util.try_finally(function()
         util.opts.with(
           { shada = shada_opt .. ",'0", shadafile = shada_file },
@@ -165,7 +190,8 @@ local function wshada_hist(opts, snapshot_ctx, snapshot)
           { vim.fn.fnameescape(shada_file) }
         )
       end, function()
-        vim.api.nvim_win_close(winid, true)
+        vim.api.nvim_set_current_win(curwin)
+        vim.api.nvim_win_close(sacrificial_winid, true)
       end)
     end)
   end
@@ -301,28 +327,27 @@ local function create(target_tabpage, opts, snapshot_ctx)
         buflist:add(ctx.name)
       end
     end
-    local current_tabpage = vim.api.nvim_get_current_tabpage()
+
     local tabpages = target_tabpage and { target_tabpage } or vim.api.nvim_list_tabpages()
-    -- When the cmd window (e.g. q:) is active, calling nvim_set_current_tabpage causes an error:
-    -- E11: Invalid in command-line window. Try to avoid that error, otherwise abort.
-    local skip_set_current = false
-    ---@diagnostic disable-next-line: unnecessary-if
-    if vim.fn.getcmdwintype() ~= "" then
-      if #tabpages > 1 or tabpages[1] ~= current_tabpage then
-        -- Setting the current tabpage fails when a cmd window is active.
-        -- Since we really only need to do it to save the single tab-scoped option (cmdheight),
-        -- warn about it, but resume anyways. This means we cannot assume the current tabpage anywhere,
-        -- including in extensions! Also, all tab pages will use cmdheight of the current one.
-        log.warn(
-          "Command-line window is active. Cannot properly save sessions that contain more tab pages than the active one. At least the cmdheight option will be affected."
-        )
-      end
-      skip_set_current = true
-    end
+
+    -- We want to avoid mutating the UI state during save at all costs for two reasons:
+    --   1) When the cmd window (e.g. q:) is shown, we cannot switch active tab/win/buf:
+    --      > E11: Invalid in command-line window.
+    --   2) Switching active tab/win/buf can cause a UI redraw, which might reset some state
+    --      (most notably exits visual mode) and cause a flicker, especially if floating wins
+    --      are visible. This is **hugely** annoying.
+    --
+    -- Some situations that would cause us to violate that principle:
+    --   1) Querying the single tabpage-local `cmdheight` option [tracked via autocmds instead]
+    --   2) Opening a scratch window to avoid resetting jumplist for active window when writing
+    --      history shada [unnecessary in nvim 0.12+, worked around partially by opening the
+    --      current buffer in the window if cmdwintype is empty, otherwise not saving it at all]
+    --   3) Querying the jumplist using a window ID (does not work when the window is not in the
+    --      current tabpage) [worked around by using tabnr and winnr]
+    --
+    -- TLDR: Don't rely on active tabpage/window/buffer when saving a snapshot.
+
     for _, tabpage in ipairs(tabpages) do
-      if not skip_set_current then
-        vim.api.nvim_set_current_tabpage(tabpage)
-      end
       local tabnr = vim.api.nvim_tabpage_get_number(tabpage)
       local winlayout = vim.fn.winlayout(tabnr)
       ---@type Snapshot.TabData
@@ -338,9 +363,6 @@ local function create(target_tabpage, opts, snapshot_ctx)
         ) or {},
       }
       data.tabs[#data.tabs + 1] = tab
-    end
-    if not skip_set_current then
-      vim.api.nvim_set_current_tabpage(current_tabpage)
     end
 
     for ext_name, ext_config in pairs(Config.extensions) do
@@ -578,6 +600,7 @@ function M.restore(snapshot, opts, snapshot_ctx)
         curwin = win
       end
       util.opts.restore_tab(tab.options)
+      vim.t.continuity_cmdheight_tracker = vim.o.cmdheight -- set this directly because we're ignoring events
     end
 
     -- curwin can be nil if we saved a session in a window with an unsupported buffer. If this was the only window in the active tabpage,

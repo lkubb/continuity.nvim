@@ -32,10 +32,12 @@ end
 
 --- Parse the window-local jumplist into a format that can be saved.
 ---@param winid WinID Window ID of window to query
+---@param tabnr TabNr Tab number containing the window
+---@param winnr WinNr Window number coresponding to `winid` in `tabnr` to query
 ---@param buflist snapshot.BufList Indexed buffer list
 ---@return [WinInfo.JumplistEntry[], integer] jumps_backtrack #
 ---   Tuple of list of jumplist entries and jumplist position, backwards from most recent entry
-local function parse_jumplist(winid, buflist)
+local function parse_jumplist(winid, tabnr, winnr, buflist)
   if vim.w[winid].continuity_jumplist then
     --- If we're in a restored session that has enabled jumplist restoration and the window
     --- has never been focused, its jumplist has not been restored yet and is available
@@ -55,7 +57,8 @@ local function parse_jumplist(winid, buflist)
       vim.w[winid].continuity_jumplist[2],
     }
   end
-  local jumplist = vim.fn.getjumplist(winid)
+  -- Need to use winnr/tabnr here because using winid only works for active tabpage
+  local jumplist = vim.fn.getjumplist(winnr, tabnr)
   local jumps, current_pos = jumplist[1], jumplist[2]
   ---@type WinInfo.JumplistEntry[]
   local parsed = {}
@@ -253,6 +256,7 @@ function M.get_win_info(tabnr, winid, current_win, opts, buflist)
     loclists = parse_loclists(winid, buflist)
   end
   local ctx = Buf.ctx(bufnr)
+  local winnr = vim.api.nvim_win_get_number(winid) ---@type WinNr
   win = vim.tbl_extend("error", win, {
     bufname = ctx.name,
     bufuuid = ctx.uuid,
@@ -262,7 +266,7 @@ function M.get_win_info(tabnr, winid, current_win, opts, buflist)
     height = vim.api.nvim_win_get_height(winid),
     options = util.opts.get_win(winid, opts.options or Config.session.options),
     jumps = util.opts.coalesce_auto("jumps", false, opts, Config.session)
-      and parse_jumplist(winid, buflist),
+      and parse_jumplist(winid, tabnr, winnr, buflist),
     alt = buflist:add(get_alternate_file(winid, opts)),
     loclists = loclists,
     -- We don't need to generate unique IDs for windows, just reuse winids
@@ -271,7 +275,6 @@ function M.get_win_info(tabnr, winid, current_win, opts, buflist)
     old_winid = winid,
   })
   ---@cast win WinInfo
-  local winnr = vim.api.nvim_win_get_number(winid)
   if vim.fn.haslocaldir(winnr, tabnr) == 1 then
     win.cwd = vim.fn.getcwd(winnr, tabnr)
   end
