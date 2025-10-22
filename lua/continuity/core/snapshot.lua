@@ -516,6 +516,10 @@ function M.restore(snapshot, opts, snapshot_ctx)
     snapshot = shallow_snapshot_copy
   end
 
+  -- Keep track of buffers that are not restored immediately so we know
+  -- when snapshot restoration has finished completely.
+  local scheduled_bufs = {} ---@type table<BufUUID, true?>
+
   -- Don't trigger autocmds during snapshot restoration
   -- Ignore all messages (including swapfile messages) as well
   util.opts.with({ eventignore = "all", shortmess = "aAF" }, function()
@@ -560,9 +564,6 @@ function M.restore(snapshot, opts, snapshot_ctx)
       (vim.o.lines - vim.o.cmdheight) / snapshot.global.height,
     }
 
-    -- Keep track of buffers that are not restored immediately so we know
-    -- when snapshot restoration has finished completely.
-    local scheduled_bufs = {} ---@type table<BufUUID, true?>
     --- Called when a scheduled buffer has been restored.
     ---@param buf Snapshot.BufData
     local function bufrestored(buf)
@@ -673,6 +674,11 @@ function M.restore(snapshot, opts, snapshot_ctx)
   -- It will take care of reloading the buffer to check for swap files,
   -- enable syntax highlighting and load plugins.
   vim.api.nvim_exec_autocmds("BufEnter", { buffer = vim.api.nvim_get_current_buf() })
+
+  if vim.tbl_isempty(scheduled_bufs) then
+    _is_loading = false
+    log.trace("Finished loading snapshot")
+  end
 end
 
 --- Restore a saved snapshot. Also handles hooks.
