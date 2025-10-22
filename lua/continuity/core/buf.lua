@@ -421,8 +421,8 @@ end
 --- Allows extensions to modify the final buffer contents and restores the cursor position (again).
 ---@param ctx BufContext Buffer context for the buffer to restore
 ---@param buf Snapshot.BufData Saved buffer information
----@param data Snapshot Complete session data
-local function finish_restore_buf(ctx, buf, data)
+---@param snapshot Snapshot Complete snapshot data
+local function finish_restore_buf(ctx, buf, snapshot)
   -- Save the last position of the cursor for buf_load plugins
   -- that change the buffer text, which can reset cursor position.
   -- set_winlayout_data also sets continuity_last_win_pos with window ids
@@ -430,7 +430,7 @@ local function finish_restore_buf(ctx, buf, data)
   -- Extensions can request default restoration by setting continuity_restore_last_pos on the buffer
   ctx.last_buffer_pos = buf.last_pos
 
-  if data.modified and data.modified[buf.uuid] then
+  if snapshot.modified and snapshot.modified[buf.uuid] then
     restore_modified(ctx)
   end
 
@@ -482,7 +482,7 @@ local function finish_restore_buf(ctx, buf, data)
   end
 
   log.fmt_debug("Calling on_buf_load extensions")
-  Ext.call("on_buf_load", data, ctx.bufnr)
+  Ext.call("on_buf_load", snapshot, ctx.bufnr)
 
   if ctx.restore_last_pos then
     log.fmt_debug("Need to restore last cursor pos for buf %s", tostring(ctx))
@@ -500,7 +500,7 @@ local function finish_restore_buf(ctx, buf, data)
   end
 end
 
----@type fun(ctx: BufContext, buf: table<string,any>, data: table<string,any>)
+---@type fun(ctx: BufContext, buf: Snapshot.BufData, snapshot: Snapshot)
 local plan_restore
 
 --- Restore a single buffer. This tries to to trigger necessary autocommands that have been
@@ -510,8 +510,8 @@ local plan_restore
 --- b) on_buf_load plugins reenabled recovery after altering the contents.
 ---@param ctx BufContext Buffer context for the buffer to restore
 ---@param buf Snapshot.BufData Saved buffer metadata of the buffer to restore
----@param data Snapshot Complete session data
-local function restore_buf(ctx, buf, data)
+---@param snapshot Snapshot Complete snapshot data
+local function restore_buf(ctx, buf, snapshot)
   if not ctx.need_edit then
     -- prevent recursion in nvim <0.11: https://github.com/neovim/neovim/pull/29544
     return
@@ -529,7 +529,7 @@ local function restore_buf(ctx, buf, data)
     -- now it's BufEnter > [Syntax] > Filetype. Issue?
     vim.bo[ctx.bufnr].filetype = vim.bo[ctx.bufnr].filetype
     -- Don't forget to finish restoration since we don't trigger edit here (cursor, extensions)
-    finish_restore_buf(ctx, buf, data)
+    finish_restore_buf(ctx, buf, snapshot)
     return
   end
   log.fmt_debug("Triggering :edit for %s", tostring(ctx))
@@ -562,7 +562,7 @@ local function restore_buf(ctx, buf, data)
         { "Failed final buffer restoration for buffer %s! Error: %s", tostring(ctx) },
         ctx,
         buf,
-        data
+        snapshot
       )
       -- Should be called last. Avoid overhead by pre-checking if the logic needs to run at all.
       if vim.w.continuity_jumplist then
@@ -592,7 +592,7 @@ local function restore_buf(ctx, buf, data)
           level = "debug",
         }, autocmd)
       end
-      plan_restore(ctx, buf, data)
+      plan_restore(ctx, buf, snapshot)
       return
     end
     -- We need to `keepjumps`, otherwise we reset our jumplist position here/add/move an entry
@@ -608,8 +608,8 @@ end
 --- Required since events were suppressed when loading it initially, which breaks many extensions.
 ---@param ctx BufContext Buffer context for the buffer to schedule restoration for
 ---@param buf Snapshot.BufData Saved buffer metadata of the buffer to schedule restoration for
----@param data Snapshot Complete session data
-function plan_restore(ctx, buf, data)
+---@param snapshot Snapshot Complete snapshot data
+function plan_restore(ctx, buf, snapshot)
   ctx.need_edit = true
   vim.api.nvim_create_autocmd("BufEnter", {
     desc = "Continuity: complete setup of restored buffer (1a)",
@@ -620,7 +620,7 @@ function plan_restore(ctx, buf, data)
           tostring(ctx),
           args
         )
-        restore_buf(ctx, buf, data)
+        restore_buf(ctx, buf, snapshot)
       else
         log.fmt_trace(
           "BufEnter triggered for buffer %s (args: %s), waiting for VeryLazy",
@@ -632,7 +632,7 @@ function plan_restore(ctx, buf, data)
           desc = "Continuity: complete setup of restored buffer (1b)",
           callback = function()
             log.fmt_trace("BufEnter triggered, VeryLazy done for: %s (%s)", tostring(ctx), args)
-            restore_buf(ctx, buf, data)
+            restore_buf(ctx, buf, snapshot)
           end,
           once = true,
           nested = true,
@@ -650,7 +650,7 @@ end
 --- Called for buffers with persisted unsaved modifications.
 --- Ensures buffer previews (like in pickers) show the correct text.
 ---@param ctx BufContext Buffer context for the buffer to restore modifications for
----@param state_dir string Directory unwritten buffer modifications are persisted to
+---@param state_dir string Path snapshot-associated data is written to (modified buffers).
 local function restore_modified_preview(ctx, state_dir)
   local save_file = vim.fs.joinpath(state_dir, "modified_buffers", ctx.uuid .. ".buffer")
   util.try_log_else(
@@ -682,10 +682,10 @@ end
 --- Extracted from the loading logic to keep DRY.
 --- This should be called while events are suppressed.
 ---@param buf Snapshot.BufData Saved buffer metadata for the buffer
----@param data Snapshot Complete session data
----@param state_dir? string Directory unwritten buffer modifications are persisted to
+---@param snapshot Snapshot Complete snapshot data
+---@param state_dir? string Path snapshot-associated data is written to (modified buffers).
 ---@return BufNr bufnr Buffer number of the restored buffer
-function M.restore(buf, data, state_dir)
+function M.restore(buf, snapshot, state_dir)
   local ctx = M.added(buf.name, buf.uuid)
   if ctx.initialized ~= nil then
     -- TODO: Consider the effect of multiple snapshots referencing the same buffer without `reset`
@@ -705,11 +705,11 @@ function M.restore(buf, data, state_dir)
     ctx.snapshot_data = buf -- this can be a large table when changelists are stored, problem?
     -- FIXME: All autocmds are added to the same, global augroup. When detaching a session with reset,
     --        the corresponding aucmds (and maybe continuity context) should likely be cleared though.
-    plan_restore(ctx, buf, data)
+    plan_restore(ctx, buf, snapshot)
   end
   ctx.last_buffer_pos = buf.last_pos
   util.opts.restore_buf(ctx.bufnr, buf.options)
-  if state_dir and data.modified and data.modified[buf.uuid] then
+  if state_dir and snapshot.modified and snapshot.modified[buf.uuid] then
     restore_modified_preview(ctx, state_dir)
   end
   return ctx.bufnr
@@ -769,7 +769,7 @@ end
 --- Remove previously saved buffers and their undo history when they are
 --- no longer part of Continuity's state (most likely have been written).
 ---@param state_dir string #
----   Path to the modified_buffers directory of the session represented by `data`.
+---   Path snapshot-associated data is written to (modified buffers).
 ---@param keep table<BufUUID, true?> #
 ---   Buffers to keep saved modifications for
 function M.clean_modified(state_dir, keep)
@@ -789,8 +789,8 @@ function M.clean_modified(state_dir, keep)
 end
 
 --- Iterate over modified buffers, save them and their undo history
---- and return session data.
----@param state_dir string Directory unwritten buffer modifications are persisted to
+--- and return snapshot data.
+---@param state_dir string Path snapshot-associated data is written to (modified buffers).
 ---@param bufs BufContext[] List of buffers to check for modifications.
 ---@return table<BufUUID, true?>? #
 ---   Lookup table of Buffer UUID for modification status

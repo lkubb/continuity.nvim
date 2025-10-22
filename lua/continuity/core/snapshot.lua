@@ -256,7 +256,7 @@ local function create(target_tabpage, opts, snapshot_ctx)
   ---@type CreateOpts
   opts = opts or {}
   ---@type Snapshot
-  local data = {
+  local snapshot = {
     buffers = {},
     tabs = {},
     tab_scoped = target_tabpage ~= nil,
@@ -283,7 +283,7 @@ local function create(target_tabpage, opts, snapshot_ctx)
       or hist_opts.debug_history
     )
   then
-    data = wshada_hist(hist_opts, snapshot_ctx, data)
+    snapshot = wshada_hist(hist_opts, snapshot_ctx, snapshot)
   end
 
   local included_bufs = {}
@@ -325,7 +325,7 @@ local function create(target_tabpage, opts, snapshot_ctx)
             and Buf.get_marks(ctx),
           bt = bt ~= "" and bt or nil,
         }
-        data.buffers[#data.buffers + 1] = buf
+        snapshot.buffers[#snapshot.buffers + 1] = buf
         included_bufs[#included_bufs + 1] = ctx
         buflist:add(ctx.name)
       end
@@ -367,7 +367,7 @@ local function create(target_tabpage, opts, snapshot_ctx)
           buflist
         ) or {},
       }
-      data.tabs[#data.tabs + 1] = tab
+      snapshot.tabs[#snapshot.tabs + 1] = tab
     end
 
     for ext_name, ext_config in pairs(Config.extensions) do
@@ -377,7 +377,7 @@ local function create(target_tabpage, opts, snapshot_ctx)
           extmod.on_save,
           { [1] = "Extension %s save error: %s", [2] = ext_name, notify = true },
           function(ext_data)
-            data[ext_name] = ext_data
+            snapshot[ext_name] = ext_data
           end,
           vim.tbl_extend("error", { tabpage = target_tabpage }, snapshot_ctx or {}),
           buflist
@@ -385,7 +385,7 @@ local function create(target_tabpage, opts, snapshot_ctx)
       end
     end
   end)
-  return data, included_bufs
+  return snapshot, included_bufs
 end
 
 --- Create a snapshot and return the data.
