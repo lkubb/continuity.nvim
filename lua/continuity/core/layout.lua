@@ -560,8 +560,20 @@ local function set_winlayout_data(layout, scale_factor, buflist)
       locl_win.winid = new_winid -- We replaced the window, update winid
     end
   end
+  -- Need to reset winfix[height|width], otherwise the final dimensions
+  -- may differ from expectations.
+  -- Setting widths/heights twice, forwards and backwards, worked as a workaround in limited testing,
+  -- but this should be the proper way and work in a sigle iteration.
+  local fixdim_bak = {}
+  vim.iter(all_wins):each(function(win)
+    fixdim_bak[win.winid] = { vim.wo[win.winid].winfixheight, vim.wo[win.winid].winfixwidth }
+    vim.wo[win.winid].winfixheight, vim.wo[win.winid].winfixwidth = false, false
+  end)
   -- Now that all windows have been created, we can restore frame order, options/dimensions and cursor pos.
   vim.iter(all_wins):each(restore_final)
+  vim.iter(pairs(fixdim_bak)):each(function(winid, bak)
+    vim.wo[winid].winfixheight, vim.wo[winid].winfixwidth = bak[1], bak[2]
+  end)
   -- Make it somewhat explicit that we're modifying dicts in-place
   return layout, active_winid
 end
