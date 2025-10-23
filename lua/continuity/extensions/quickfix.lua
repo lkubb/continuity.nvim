@@ -80,7 +80,6 @@ M.on_pre_load = function(data, _, buflist)
   vim.cmd.chistory({ count = pos, mods = { silent = true } })
 end
 
----@diagnostic disable-next-line: unused
 M.is_win_supported = function(winid, bufnr)
   if vim.bo[bufnr].buftype ~= "quickfix" then
     return false
@@ -89,17 +88,57 @@ M.is_win_supported = function(winid, bufnr)
   return wininfo.quickfix == 1 and wininfo.loclist == 0
 end
 
----@diagnostic disable-next-line: unused
 M.save_win = function(winid)
-  return {}
+  local bufnr = vim.api.nvim_win_get_buf(winid)
+  -- Detect stevearc/quicker.nvim
+  if not vim.b[bufnr].qf_prefixes then
+    return {}
+  end
+  return {
+    quicker = true,
+    height = vim.api.nvim_win_get_height(winid),
+    view = vim.api.nvim_win_call(winid, vim.fn.winsaveview),
+  }
 end
 
----@diagnostic disable-next-line: unused
 M.load_win = function(winid, config)
+  local qfwinid ---@type integer
   vim.api.nvim_set_current_win(winid)
-  vim.cmd("vertical copen")
+
+  if config.quicker then
+    require("quicker").open({
+      open_cmd_mods = { vertical = true },
+      height = config.height,
+      view = config.view,
+      focus = true,
+    })
+    -- During its setup() function, quicker replaces the qflist items to reload the buffer,
+    -- which resets the cursor just after we restore it. Handle that situation by reacting
+    -- to the triggered FileType event. If quicker was already loaded, this does not happen,
+    -- so clean up in a moment.
+    local restview = vim.api.nvim_create_autocmd("FileType", {
+      pattern = "qf",
+      callback = function()
+        if vim.api.nvim_get_current_win() == qfwinid then
+          -- Need to schedule, otherwise we're too early.
+          vim.schedule(function()
+            vim.api.nvim_win_call(qfwinid, function()
+              vim.fn.winrestview(config.view)
+            end)
+          end)
+          return true
+        end
+      end,
+    })
+    vim.defer_fn(function()
+      pcall(vim.api.nvim_del_autocmd, restview)
+    end, 100)
+  else
+    vim.cmd("vertical copen")
+  end
   vim.api.nvim_win_close(winid, true)
-  return vim.api.nvim_get_current_win()
+  qfwinid = vim.api.nvim_get_current_win()
+  return qfwinid
 end
 
 return M
