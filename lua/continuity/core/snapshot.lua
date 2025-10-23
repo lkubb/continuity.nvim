@@ -617,6 +617,7 @@ function M.restore(snapshot, opts, snapshot_ctx)
     end
 
     local curwin, curtab, curtab_wincnt ---@type WinID?, TabID?, integer?
+    local tabs = {}
     for i, tab in ipairs(snapshot.tabs) do
       if i > 1 then
         vim.cmd.tabnew()
@@ -627,13 +628,21 @@ function M.restore(snapshot, opts, snapshot_ctx)
       if tab.cwd then
         vim.cmd.tcd({ args = { vim.fn.fnameescape(tab.cwd) } })
       end
-      curwin = layout.set_winlayout(tab.wins, scale, snapshot.buflist or {}) or curwin
+      tabs[i] = vim.api.nvim_get_current_tabpage()
       if tab.current then
         -- Can't rely on tabpagenr later because that assumes 1) reset 2) global scope
-        curtab, curtab_wincnt = vim.api.nvim_get_current_tabpage(), #(tab.wins or {}) -- or {} to support resession format, which sets `false`
+        curtab, curtab_wincnt = tabs[i], #(tab.wins or {}) -- or {} to support resession format, which sets `false`
       end
       util.opts.restore_tab(tab.options)
       vim.t.continuity_cmdheight_tracker = vim.o.cmdheight -- set this directly because we're ignoring events
+    end
+
+    -- Restore windows in tabs in a second step to avoid window height drift in the first tabpage.
+    -- If we restore window height before creating a second tab and `'showtabline'` is 1, with each
+    -- save/restore cycle, the lower windows in the first tabpage successively get smaller.
+    for i, tab in ipairs(snapshot.tabs) do
+      vim.api.nvim_set_current_tabpage(tabs[i])
+      curwin = layout.set_winlayout(tab.wins, scale, snapshot.buflist or {}) or curwin
     end
 
     -- curwin can be nil if we saved a session in a window with an unsupported buffer. If this was the only window in the active tabpage,
