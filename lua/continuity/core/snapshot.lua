@@ -682,12 +682,74 @@ function M.restore(snapshot, opts, snapshot_ctx)
   -- Trigger the BufEnter event manually for the current buffer.
   -- It will take care of reloading the buffer to check for swap files,
   -- enable syntax highlighting and load plugins.
-  vim.api.nvim_exec_autocmds("BufEnter", { buffer = vim.api.nvim_get_current_buf() })
+  local curbuf = vim.api.nvim_get_current_buf()
+  vim.api.nvim_exec_autocmds("BufEnter", { buffer = curbuf })
 
   if vim.tbl_isempty(scheduled_bufs) then
     _is_loading = false
     log.trace("Finished loading snapshot")
   end
+
+  -- Automatically restore all other windows and visible buffers. This avoids showing partially
+  -- restored buffers (missing plugins/LSP annotations...) until a window is focused.
+  -- TODO: Consider centralizing the current schedule-as-you-go autocmd logic in the snapshot module.
+  --       Autocmds are still necessary because hidden buffers need to be re-:edited the moment they become visible,
+  --       but this initial restoration could benefit from more intentional design.
+
+  -- First, create an ordered list of all window IDs at this point, beginning with those in the visible tabpage.
+  local restored_wins = vim.api.nvim_tabpage_list_wins(0)
+  if snapshot.tab_scoped then
+    restored_wins = vim.iter(restored_wins)
+  else
+    -- FIXME: This assumes the snapshot was loaded with `reset`. It does not hurt to iterate over all
+    --        windows since we check if the buffer inside was actually restored by us, but this could
+    --        be written in a more efficient way for these cases.
+    local othertab_wins = vim
+      .iter(vim.api.nvim_list_wins())
+      :filter(function(win)
+        return not vim.list_contains(restored_wins, win)
+      end)
+      :totable()
+    restored_wins = vim.iter(vim.list_extend(restored_wins, othertab_wins))
+  end
+
+  -- Use a timer to rapidly execute autocmds for unfocused buffers/windows
+  -- while not blocking the UI any longer than necessary.
+  ---@type uv_timer_t
+  local edit_timer = assert(vim.uv.new_timer())
+  local edited_bufs = { [curbuf] = true } ---@type table<BufNr, true?>
+  -- Need to do this very fast (before LSP load) or quite slowly,
+  -- otherwise some LSPs might be confused (basedpyright complained about "redundant open text document command").
+  -- I noticed that not deferring the first iteration can interfere with some
+  -- plugins in the initially focused buffer (loading with focus on a quickfix
+  -- buffer + quicker.nvim and setting start to 0 caused an infinite loop)
+  edit_timer:start(10, 1, function()
+    local win = restored_wins:next()
+    if not win then
+      return edit_timer:stop()
+    end
+    vim.schedule(function()
+      if not vim.api.nvim_win_is_valid(win) then
+        return
+      end
+      vim.api.nvim_win_call(win, function()
+        local bufnr = vim.api.nvim_win_get_buf(win)
+        -- Only do this for restored buffers, others don't have this set at all
+        if (vim.b[bufnr].continuity_ctx or {}).initialized == nil then
+          return
+        end
+        if not edited_bufs[bufnr] then
+          -- Buffer has not been re-:edited yet by this function. Can't rely on the
+          -- `initialized` context value because it might not have been set yet.
+          edited_bufs[bufnr] = true
+          vim.api.nvim_exec_autocmds("BufEnter", { buffer = bufnr })
+        else
+          -- Buffer is visible in multiple windows, still restore jumplist/cursor.
+          vim.api.nvim_exec_autocmds("WinEnter", { buffer = bufnr })
+        end
+      end)
+    end)
+  end)
 end
 
 --- Restore a saved snapshot. Also handles hooks.

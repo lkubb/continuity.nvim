@@ -452,7 +452,6 @@ local function set_winlayout_data(layout, scale_factor, buflist)
           :totable(),
         win.jumps[2],
       }
-      vim.w[win.winid].continuity_win_cursor = win.cursor
       --- ensure jumplist is restored later, even if BufEnter does not trigger
       --- (already restored buffer/same buffer in two windows)
       schedule_restore_jumplist(win.winid)
@@ -580,75 +579,68 @@ function M.restore_jumplist(winid)
     ---@type [WinInfo.JumplistEntry[], integer]
     local jumplist = vim.w[winid].continuity_jumplist
     local jumps, backtrack = jumplist[1], jumplist[2]
-    local cursor = vim.w[winid].continuity_win_cursor
-    log.fmt_debug("Restoring jumplist for win %s", winid)
 
+    log.fmt_debug("Restoring jumplist for win %s", winid)
     util.opts.with({ eventignore = "all" }, function()
-      -- This is the buf the window should display (the current one). We might need
-      -- to perform a switcheroo to properly restore the jumplist in the intended order.
-      local correct_buf, correct_alt ---@type integer?, integer?
-      if backtrack > 0 then
-        -- The position that we are trying to restore needs to be filled by the last item
-        -- in the jumplist since it's going to be pushed up top.
-        ---@type WinInfo.JumplistEntry
-        local last_item = assert(jumps[#jumps])
-        table.insert(jumps, #jumps - backtrack, jumps[#jumps])
-        jumps[#jumps] = nil
-        correct_buf = vim.api.nvim_win_get_buf(winid)
-        correct_alt = get_alternate_buf(winid) --[[@as integer]]
-        if vim.api.nvim_buf_get_name(correct_buf) ~= last_item[1] then
-          log.debug(
-            "Need to jump back to non-final jumplist entry, which is in a different buffer than the currently displayed one"
-          )
-          -- Don't need to force-restore buffer, this is a technicality
-          local bufnr = vim.fn.bufadd(last_item[1] --[[@as string]])
-          if not vim.api.nvim_buf_is_loaded(bufnr) then
-            vim.fn.bufload(bufnr)
+      -- Ensure we don't affect what is shown in the window with our shenanigans
+      M.lock_view({ win = winid }, function()
+        -- This is the buf the window should display (the current one). We might need
+        -- to perform a switcheroo to properly restore the jumplist in the intended order.
+        local correct_buf, correct_alt ---@type integer?, integer?
+        if backtrack > 0 then
+          -- The position that we are trying to restore needs to be filled by the last item
+          -- in the jumplist since it's going to be pushed up top.
+          ---@type WinInfo.JumplistEntry
+          local last_item = assert(jumps[#jumps])
+          table.insert(jumps, #jumps - backtrack, jumps[#jumps])
+          jumps[#jumps] = nil
+          correct_buf = vim.api.nvim_win_get_buf(winid)
+          correct_alt = get_alternate_buf(winid) --[[@as integer]]
+          if vim.api.nvim_buf_get_name(correct_buf) ~= last_item[1] then
+            log.debug(
+              "Need to jump back to non-final jumplist entry, which is in a different buffer than the currently displayed one"
+            )
+            -- Don't need to force-restore buffer, this is a technicality
+            local bufnr = vim.fn.bufadd(last_item[1] --[[@as string]])
+            if not vim.api.nvim_buf_is_loaded(bufnr) then
+              vim.fn.bufload(bufnr)
+            end
+            vim.api.nvim_win_set_buf(winid, bufnr)
+          else
+            log.debug(
+              "Need to jump back to non-final jumplist entry, which is in the same buffer as the currently displayed one"
+            )
+            correct_buf = nil
           end
-          vim.api.nvim_win_set_buf(winid, bufnr)
-        else
-          log.debug(
-            "Need to jump back to non-final jumplist entry, which is in the same buffer as the currently displayed one"
-          )
-          correct_buf = nil
+          -- Before restoring shada, ensure vim thinks we're at the last entry of the new jumplist
+          -- Note: It can happen that the last entry is removed from the jumplist
+          -- if we're right on it for some reason.
+          util.try_log(vim.api.nvim_win_set_cursor, {
+            [1] = "Failed to faithfully reproduce jumplist for win %s, some positions might be off: %s",
+            [2] = winid,
+            level = "warn",
+          }, winid --[[@as integer]], { last_item[2] or 1, last_item[3] or 0 })
         end
-        -- Before restoring shada, ensure vim thinks we're at the last entry of the new jumplist
-        -- Note: It can happen that the last entry is removed from the jumplist
-        -- if we're right on it for some reason.
-        util.try_log(vim.api.nvim_win_set_cursor, {
-          [1] = "Failed to faithfully reproduce jumplist for win %s, some positions might be off: %s",
-          [2] = winid,
-          level = "warn",
-        }, winid --[[@as integer]], { last_item[2] or 1, last_item[3] or 0 })
-      end
-      local shaja = util.shada.new()
-      local now = os.time() - #jumps
-      -- local bufs = {}
-      vim.iter(ipairs(jumps)):each(function(i, jump)
-        ---@cast jump WinInfo.JumplistEntry
-        shaja:add_jump(jump[1], jump[2], jump[3], now + i)
-        -- bufs[i] = jump[1]
+        local shaja = util.shada.new()
+        local now = os.time() - #jumps
+        vim.iter(ipairs(jumps)):each(function(i, jump)
+          ---@cast jump WinInfo.JumplistEntry
+          shaja:add_jump(jump[1], jump[2], jump[3], now + i)
+        end)
+        vim.cmd.clearjumps()
+        util.try_log(shaja.read, { "Failed to restore jumplist for win %s: %s", winid }, shaja)
+        if backtrack > 0 then
+          vim.cmd('exe "norm! ' .. tostring(backtrack) .. '\\<C-o>"')
+        end
+        if correct_buf then
+          vim.api.nvim_win_set_buf(winid, correct_buf)
+        end
+        if correct_alt then
+          vim.cmd.balt({ vim.fn.fnameescape(vim.api.nvim_buf_get_name(correct_alt)) })
+        end
       end)
-      -- Ensure all items are actually restored by adding all necessary buffers (?)
-      -- vim.iter(bufs):each(vim.fn.bufadd)
-      vim.cmd.clearjumps()
-      util.try_log(shaja.read, { "Failed to restore jumplist for win %s: %s", winid }, shaja)
-      if backtrack > 0 then
-        vim.cmd('exe "norm! ' .. tostring(backtrack) .. '\\<C-o>"')
-      end
-      if correct_buf then
-        vim.api.nvim_win_set_buf(winid, correct_buf)
-      end
-      if correct_alt then
-        vim.cmd.balt({ vim.fn.fnameescape(vim.api.nvim_buf_get_name(correct_alt)) })
-      end
-      util.try_log(vim.api.nvim_win_set_cursor, {
-        [1] = "Failed to win cursor to wanted for winid %s, its position might be off: %s",
-        [2] = winid,
-        level = "warn",
-      }, winid --[[@as integer]], cursor)
+      vim.w[winid].continuity_jumplist = nil
     end)
-    vim.w[winid].continuity_jumplist = nil
   end
 end
 
@@ -702,6 +694,42 @@ function M.close_everything()
   end
   vim.cmd.tabonly({ mods = { emsg_silent = true } })
   vim.cmd.only({ mods = { emsg_silent = true } })
+end
+
+--- Backup and restore all window views in a target scope during an operation.
+---@generic Args, Rets
+---@param targets {buf?: BufNr, win?: WinID|WinID[], tab?: TabID} #
+---   Specify the target windows. Only one of these is respected:
+---     win: Lock (all) specified window ID(s)
+---     buf: Lock all windows that show this buffer
+---     tab: Lock all windows in tabpage
+---@param inner fun(...: Args...): Rets... Function to run after backing up views
+---@return Rets... #
+---   `inner` variadic returns
+function M.lock_view(targets, inner)
+  local wins ---@type WinID[]
+  if targets.win then
+    wins = type(targets.win) == "table" and targets.win or { targets.win }
+  elseif targets.buf then
+    wins = vim.fn.win_findbuf(targets.buf)
+  elseif targets.tab then
+    wins = vim.api.nvim_tabpage_list_wins(targets.tab)
+  else
+    error("Missing lock target spec")
+  end
+  local bak = {}
+  vim.iter(wins):each(function(win)
+    vim.api.nvim_win_call(win, function()
+      bak[win] = vim.fn.winsaveview()
+    end)
+  end)
+  return util.try_finally(inner, function()
+    vim.iter(pairs(bak)):each(function(win, view)
+      vim.api.nvim_win_call(win, function()
+        vim.fn.winrestview(view)
+      end)
+    end)
+  end)
 end
 
 return M

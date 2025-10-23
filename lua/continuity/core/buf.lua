@@ -547,7 +547,7 @@ local function restore_buf(ctx, buf, snapshot)
     once = true,
     group = restore_group,
   })
-  local finish_restore = vim.api.nvim_create_autocmd("BufEnter", {
+  vim.api.nvim_create_autocmd("BufEnter", {
     desc = "Continuity: complete setup of restored buffer (2)",
     callback = function(args)
       log.fmt_trace("BufEnter triggered again for buffer %s (event args: %s)", tostring(ctx), args)
@@ -575,33 +575,14 @@ local function restore_buf(ctx, buf, snapshot)
     group = restore_group,
   })
 
-  local current_win = vim.api.nvim_get_current_win()
-  -- Schedule this to avoid issues with triggering nested AutoCmds (unsure if necessary)
-  vim.schedule(function()
-    -- Ensure the active window has not changed, otherwise reschedule restoration
-    if vim.api.nvim_get_current_win() ~= current_win then
-      log.fmt_debug(
-        "Failed :edit-ing buffer %s: Active window changed, rescheduling",
-        tostring(ctx)
-      )
-      for auname, autocmd in pairs({ swapcheck = swapcheck, finish_restore = finish_restore }) do
-        util.try_log(vim.api.nvim_del_autocmd, {
-          [1] = "Failed to delete %s autocmd for buffer %s: %s",
-          [2] = auname,
-          [3] = tostring(ctx),
-          level = "debug",
-        }, autocmd)
-      end
-      plan_restore(ctx, buf, snapshot)
-      return
-    end
-    -- We need to `keepjumps`, otherwise we reset our jumplist position here/add/move an entry
-    util.try_log(
-      vim.cmd.edit,
-      { "Failed to :edit buffer %s: %s", tostring(ctx) },
-      { mods = { emsg_silent = true, keepjumps = true } }
-    )
-  end)
+  -- We need to `keepjumps`, otherwise we reset our jumplist position here/add/move an entry
+  util.try_log(function()
+    -- Re-editing a buffer resets the cursor in other windows that show it, make
+    -- sure we don't affect those.
+    require("continuity.core.layout").lock_view({ buf = ctx.bufnr }, function()
+      vim.cmd.edit({ mods = { emsg_silent = true, keepjumps = true } })
+    end)
+  end, { "Failed to :edit buffer %s: %s", tostring(ctx) })
 end
 
 --- Create the autocommand that re-:edits a buffer when it's first entered.
