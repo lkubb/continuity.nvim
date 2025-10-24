@@ -729,7 +729,7 @@ end
 ---@param inner fun(...: Args...): Rets... Function to run after backing up views
 ---@return Rets... #
 ---   `inner` variadic returns
-function M.lock_view(targets, inner)
+function M.lock_view(targets, inner, ...)
   local wins = {} ---@type WinID[]
   local function flt(win)
     return not vim.list_contains(wins, win)
@@ -760,7 +760,7 @@ function M.lock_view(targets, inner)
         vim.w[win]._continuity_locked_view = nil
       end)
     end)
-  end)
+  end, ...)
 end
 
 return M

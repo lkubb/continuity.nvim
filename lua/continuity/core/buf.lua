@@ -448,8 +448,9 @@ local function finish_restore_buf(ctx, buf, snapshot)
     util.try_log(function()
       change_shada:read()
       if buf.changelist[2] > 0 then
-        require("continuity.layout").lock_view(
-          { win = vim.api.nvim_get_current_window() },
+        require("continuity.core.layout").lock_view(
+          { win = vim.api.nvim_get_current_win() },
+          ---@diagnostic disable-next-line: param-type-not-match
           vim.cmd,
           "keepjumps norm! " .. tostring(buf.changelist[2] + 1) .. "g;"
         )
