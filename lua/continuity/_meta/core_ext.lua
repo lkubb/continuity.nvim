@@ -41,6 +41,9 @@
 ---   Called before restoring a session, receives the data returned by `on_save`.
 ---@field on_post_load? fun(data: any, opts: snapshot.Context, buflist: string[]) #
 ---   Called after restoring a session, receives the data returned by `on_save`.
+---@field load_win? fun(winid: integer, data: any, win: layout.WinInfo): integer? #
+---   Called when restoring window layout. Receives the data returned by `save_win`,
+---   should return window ID of the restored window, if successful.
 ---@field on_post_bufinit? fun(data: any, visible_only: boolean) #
 ---   Called after **visible** buffers were loaded. Receives data from `on_save`.
 ---   Note that invisible buffers are not loaded at all yet and visible buffers may not have been entered,

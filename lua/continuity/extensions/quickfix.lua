@@ -91,25 +91,21 @@ end
 M.save_win = function(winid)
   local bufnr = vim.api.nvim_win_get_buf(winid)
   -- Detect stevearc/quicker.nvim
-  if not vim.b[bufnr].qf_prefixes then
-    return {}
-  end
-  return {
-    quicker = true,
-    height = vim.api.nvim_win_get_height(winid),
-    view = vim.api.nvim_win_call(winid, vim.fn.winsaveview),
-  }
+  return { quicker = vim.b[bufnr].qf_prefixes and true or nil }
 end
 
-M.load_win = function(winid, config)
+M.load_win = function(winid, config, win)
   local qfwinid ---@type integer
   vim.api.nvim_set_current_win(winid)
 
   if config.quicker then
+    ---@diagnostic disable-next-line: need-check-nil
+    local view = win.view or { lnum = win.cursor[1], col = win.cursor[2] }
     require("quicker").open({
       open_cmd_mods = { vertical = true },
-      height = config.height,
-      view = config.view,
+      height = win.height, -- FIXME: consider scale?
+      ---@diagnostic disable-next-line: need-check-nil
+      view = view,
       focus = true,
     })
     -- During its setup() function, quicker replaces the qflist items to reload the buffer,
@@ -123,7 +119,7 @@ M.load_win = function(winid, config)
           -- Need to schedule, otherwise we're too early.
           vim.schedule(function()
             vim.api.nvim_win_call(qfwinid, function()
-              vim.fn.winrestview(config.view)
+              vim.fn.winrestview(view)
             end)
           end)
           return true

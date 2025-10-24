@@ -494,7 +494,8 @@ local function set_winlayout_data(layout, scale_factor, buflist)
                 win.winid = new_winid
               end,
               win.winid,
-              win.extension_data
+              win.extension_data,
+              win
             )
           end)
         end
