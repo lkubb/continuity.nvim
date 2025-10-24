@@ -448,12 +448,11 @@ local function finish_restore_buf(ctx, buf, snapshot)
     util.try_log(function()
       change_shada:read()
       if buf.changelist[2] > 0 then
-        local prev = vim.api.nvim_win_get_cursor(0)
-        vim.cmd("keepjumps norm! " .. tostring(buf.changelist[2] + 1) .. "g;")
-        -- Need to keep position the same as before call, cannot rely on restore_last_pos logic
-        -- because it intentionally skips setting the cursor if it's anywhere other than (1, 0)
-        vim.api.nvim_win_set_cursor(0, prev)
-        ctx.restore_last_pos = true
+        require("continuity.layout").lock_view(
+          { win = vim.api.nvim_get_current_window() },
+          vim.cmd,
+          "keepjumps norm! " .. tostring(buf.changelist[2] + 1) .. "g;"
+        )
       end
     end, { "Failed to restore changelist for buffer %s: %s", tostring(ctx) }, change_shada)
   end
@@ -577,9 +576,14 @@ local function restore_buf(ctx, buf, snapshot)
 
   -- We need to `keepjumps`, otherwise we reset our jumplist position here/add/move an entry
   util.try_log(function()
-    -- Re-editing a buffer resets the cursor in other windows that show it, make
-    -- sure we don't affect those.
-    require("continuity.core.layout").lock_view({ buf = ctx.bufnr }, function()
+    -- Re-editing a buffer resets the cursor in other windows that show it to (1, 0), make
+    -- sure we don't affect those. Unsure why, but sometimes it also affects other buffer windows
+    -- in a similar way (cursor position is kept, but view is reset/centered) -
+    -- but only if edited in rapid succession during initial load. I noticed the latter in a specific
+    -- layout: Two columns, left column with 2x same lua file, right column a .h file, both with LSP.
+    -- This reproduced for the same file types in this layout only.
+    -- Solution: Lock the whole tab + windows of the buffer in other tabs.
+    require("continuity.core.layout").lock_view({ buf = ctx.bufnr, tab = 0 }, function()
       vim.cmd.edit({ mods = { emsg_silent = true, keepjumps = true } })
     end)
   end, { "Failed to :edit buffer %s: %s", tostring(ctx) })

@@ -633,8 +633,7 @@ function M.restore(snapshot, opts, snapshot_ctx)
         -- Can't rely on tabpagenr later because that assumes 1) reset 2) global scope
         curtab, curtab_wincnt = tabs[i], #(tab.wins or {}) -- or {} to support resession format, which sets `false`
       end
-      util.opts.restore_tab(tab.options)
-      vim.t.continuity_cmdheight_tracker = vim.o.cmdheight -- set this directly because we're ignoring events
+      util.opts.restore_tab(tab.options) -- Restore cmdheight before creating windows
     end
 
     -- Restore windows in tabs in a second step to avoid window height drift in the first tabpage.
@@ -643,6 +642,10 @@ function M.restore(snapshot, opts, snapshot_ctx)
     for i, tab in ipairs(snapshot.tabs) do
       vim.api.nvim_set_current_tabpage(tabs[i])
       curwin = layout.set_winlayout(tab.wins, scale, snapshot.buflist or {}) or curwin
+      -- Restore cmdheight again after creating windows because it can drift because of view restoration
+      -- (e.g. when more vertical space is available than when snapshot was saved)
+      util.opts.restore_tab(tab.options)
+      vim.t.continuity_cmdheight_tracker = vim.o.cmdheight -- set this directly because we're ignoring events
     end
 
     -- curwin can be nil if we saved a session in a window with an unsupported buffer. If this was the only window in the active tabpage,

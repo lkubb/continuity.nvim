@@ -270,11 +270,13 @@ function M.get_win_info(tabnr, winid, current_win, opts, buflist)
   end
   local ctx = Buf.ctx(bufnr)
   local winnr = vim.api.nvim_win_get_number(winid) ---@type WinNr
+  local view = vim.api.nvim_win_call(winid, vim.fn.winsaveview)
   win = vim.tbl_extend("error", win, {
     bufname = ctx.name,
     bufuuid = ctx.uuid,
     current = winid == current_win,
-    cursor = vim.api.nvim_win_get_cursor(winid),
+    view = view,
+    cursor = { view.lnum, view.col }, -- for backwards-compat
     width = vim.api.nvim_win_get_width(winid),
     height = vim.api.nvim_win_get_height(winid),
     options = util.opts.get_win(winid, opts.options or Config.session.options),
@@ -425,21 +427,28 @@ local function set_winlayout_data(layout, scale_factor, buflist)
     local height_scale = vim.wo.winfixheight and 1 or scale_factor[2]
     ---@cast height_scale number
     vim.api.nvim_win_set_height(win.winid --[[@as integer]], scale(win.height, height_scale))
-    log.fmt_debug(
-      "Restoring cursor for buf %s (uuid: %s) in win %s to %s",
+    util.try_log(function()
+      ---@diagnostic disable-next-line: need-check-nil
+      --- conditional for migration/backwards-compat with resession
+      local view = win.view or { lnum = win.cursor[1], col = win.cursor[2] }
+      log.fmt_debug(
+        "Restoring view for buf %s (uuid: %s) in win %s to %s",
+        win.bufname,
+        win.bufuuid or "nil",
+        win.winid or "nil",
+        view
+      )
+      vim.api.nvim_win_call(win.winid, function()
+        -- This can fail, e.g. when an extension has restored the buffer asynchronously.
+        -- In contrast to nvim_win_set_cursor, it's a best effort though, so it does not error.
+        vim.fn.winrestview(view)
+      end)
+    end, {
+      "Failed to restore view for bufnr %s (uuid: %s) in win %s: %s",
       win.bufname,
       win.bufuuid or "nil",
       win.winid or "nil",
-      win.cursor or "nil"
-    )
-    util.try_log(vim.api.nvim_win_set_cursor, {
-      -- This can e.g. happen when an extension has restored the buffer asynchronously
-      "Failed to restore cursor for bufnr %s (uuid: %s) in win %s to %s: %s",
-      win.bufname,
-      win.bufuuid or "nil",
-      win.winid or "nil",
-      win.cursor or "nil",
-    }, win.winid --[[@as integer]], win.cursor)
+    })
     if win.jumps then
       -- Restore jumplist later when the window is actually entered for the first time.
       -- Other restoration steps could otherwise cause modifications of the restored data.
@@ -512,7 +521,8 @@ local function set_winlayout_data(layout, scale_factor, buflist)
         -- Save the last position of the cursor in case buf_load plugins
         -- change the buffer text and request restoration
         local temp_pos_table = ctx.last_win_pos or {}
-        temp_pos_table[tostring(win.winid)] = win.cursor
+        temp_pos_table[tostring(win.winid)] = win.view and { win.view.lnum, win.view.col }
+          or win.cursor -- TODO: Rework this logic into using views?
         ctx.last_win_pos = temp_pos_table
         -- We don't need to restore last cursor position on buffer load
         -- because the triggered :edit command keeps it
@@ -719,26 +729,34 @@ end
 ---@return Rets... #
 ---   `inner` variadic returns
 function M.lock_view(targets, inner)
-  local wins ---@type WinID[]
+  local wins = {} ---@type WinID[]
+  local function flt(win)
+    return not vim.list_contains(wins, win)
+  end
   if targets.win then
     wins = type(targets.win) == "table" and targets.win or { targets.win }
-  elseif targets.buf then
-    wins = vim.fn.win_findbuf(targets.buf)
-  elseif targets.tab then
-    wins = vim.api.nvim_tabpage_list_wins(targets.tab)
-  else
-    error("Missing lock target spec")
   end
-  local bak = {}
+  if targets.buf then
+    wins = vim.list_extend(wins, vim.tbl_filter(flt, vim.fn.win_findbuf(targets.buf)))
+  end
+  if targets.tab then
+    wins = vim.list_extend(wins, vim.tbl_filter(flt, vim.api.nvim_tabpage_list_wins(targets.tab)))
+  end
+  -- Lock window views in outermost call to this function only
+  local locked_here = {}
   vim.iter(wins):each(function(win)
-    vim.api.nvim_win_call(win, function()
-      bak[win] = vim.fn.winsaveview()
-    end)
+    if not vim.w[win]._continuity_locked_view then
+      vim.api.nvim_win_call(win, function()
+        vim.w[win]._continuity_locked_view = vim.fn.winsaveview()
+      end)
+      locked_here[#locked_here + 1] = win
+    end
   end)
   return util.try_finally(inner, function()
-    vim.iter(pairs(bak)):each(function(win, view)
+    vim.iter(locked_here):each(function(win)
       vim.api.nvim_win_call(win, function()
-        vim.fn.winrestview(view)
+        vim.fn.winrestview(vim.w[win]._continuity_locked_view)
+        vim.w[win]._continuity_locked_view = nil
       end)
     end)
   end)

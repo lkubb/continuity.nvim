@@ -7,7 +7,8 @@
 ---@field bufname string The name of the buffer that's displayed in the window.
 ---@field bufuuid BufUUID The buffer's UUID to track it over multiple sessions.
 ---@field current boolean Whether the window was the active one when saved.
----@field cursor AnonymousMark (row, col) tuple of the cursor position, mark-like => (1, 0)-indexed
+---@field cursor? AnonymousMark (row, col) tuple of the cursor position, mark-like => (1, 0)-indexed. Deprecated in favor of view.
+---@field view vim.fn.winsaveview.ret Cursor position in file, relative position of file in window, curswant and other state
 ---@field width integer Width of the window in number of columns.
 ---@field height integer Height of the window in number of rows.
 ---@field options table<string, any> Window-scoped options.
