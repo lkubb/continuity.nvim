@@ -394,7 +394,7 @@ end
 ---   Limit the session to this tab. If unspecified, saves global state.
 ---@param opts? CreateOpts #
 ---   Influence which buffers and options are persisted (overrides global default config).
----@param snapshot_ctx snapshot.Context #
+---@param snapshot_ctx? snapshot.Context #
 ---   Snapshot meta information, for creating snapshot-associated files
 ---   in extensions that cannot (easily) be included in the snapshot table.
 ---@return Snapshot? snapshot Snapshot data
@@ -464,11 +464,13 @@ end
 
 --- Restore a buffer. Ignores hooks (use `restore_as` instead).
 ---@param snapshot Snapshot Snapshot data to restore
----@param opts snapshot.RestoreOpts Restoration options
----@param snapshot_ctx snapshot.Context #
+---@param opts? snapshot.RestoreOpts Restoration options
+---@param snapshot_ctx? snapshot.Context #
 ---   Snapshot meta information, for creating snapshot-associated files
 ---   in extensions that cannot (easily) be included in the snapshot table.
 function M.restore(snapshot, opts, snapshot_ctx)
+  opts = opts or {}
+  snapshot_ctx = snapshot_ctx or {}
   opts.modified =
     util.opts.coalesce_auto("modified", not not snapshot.modified, opts, Config.session)
   for hist_conf, _ in pairs(hist_map) do
