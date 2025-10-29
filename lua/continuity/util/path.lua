@@ -38,9 +38,11 @@ end
 --- Check if a path exists
 ---@param filepath string Path to check
 ---@return boolean exists #
+---@return uv.fs_stat.result? stat #
 function M.exists(filepath)
   local stat = uv.fs_stat(filepath)
-  return stat ~= nil and stat.type ~= nil
+  local exists = stat ~= nil and stat.type ~= nil
+  return exists, exists and stat or nil
 end
 
 --- Join a variable number of path segments into a relative path specific to the OS
@@ -275,6 +277,21 @@ function M.rmdir(dirname, opts)
     vim.fs.rm(dirname, opts)
     return true
   end
+end
+
+--- Move a **file** to a new location.
+---@param path string Path of file to move.
+---@param target string Path to move file to.
+---@param force boolean? Replace target file. Defaults to false.
+function M.mv(path, target, force)
+  if not force then
+    if M.exists(target) then
+      error(("Target '%s' exists, set force to override"):format(target))
+    end
+  else
+    M.delete_file(target)
+  end
+  uv.fs_rename(path, target)
 end
 
 --- Dump a lua variable to a JSON-encoded file (synchronously)

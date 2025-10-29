@@ -191,12 +191,7 @@ function M.call(stage_name, snapshot, ...)
     if snapshot[ext_name] then
       local extmod = M.get(ext_name)
       if extmod and extmod[stage_name] then
-        log.fmt_trace(
-          "Calling extension %s.%s with data %s",
-          ext_name,
-          stage_name,
-          snapshot[ext_name]
-        )
+        log.trace("Calling extension %s.%s with data %s", ext_name, stage_name, snapshot[ext_name])
         local ok, err = pcall(extmod[stage_name], snapshot[ext_name], ...)
         if not ok then
           vim.notify(

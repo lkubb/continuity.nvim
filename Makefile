@@ -69,15 +69,11 @@ _cleantest: .test
 	@mkdir -p ".test/env/cache"
 
 ## deps: Install all library dependencies
-deps: deps/mini.nvim deps/plenary.nvim
+deps: deps/mini.nvim
 
 deps/mini.nvim:
 	@mkdir -p deps
 	git clone --filter=blob:none https://github.com/nvim-mini/mini.nvim $@
-
-deps/plenary.nvim:
-	@mkdir -p deps
-	git clone --filter=blob:none https://github.com/nvim-lua/plenary.nvim $@
 
 ## lint: Run linters and LuaLS typechecking
 .PHONY: lint

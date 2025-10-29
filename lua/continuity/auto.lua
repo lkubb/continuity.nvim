@@ -178,7 +178,7 @@ function M.load(autosession, opts)
   -- We only allow global autosessions at the moment, which would be reset when reset == "auto"
   load_opts.reset = not not load_opts.reset
   ---@cast load_opts LoadOptsParsed & PassthroughOpts
-  log.fmt_debug(
+  log.debug(
     "Loading autosession %s with opts %s.\nData: %s",
     autosession.name,
     load_opts,
@@ -195,7 +195,7 @@ function M.load(autosession, opts)
       Session.from_snapshot(autosession.name, session_file, state_dir, context_dir, load_opts)
     if not session or not snapshot then
       -- This is an edge case, we made sure the file existed and the call above would usually error
-      log.fmt_error(
+      log.error(
         "Failed loading autosession %s in project %s. Consider deleting the saved snapshot at %s.",
         autosession.name,
         autosession.project.name,
@@ -213,7 +213,7 @@ function M.load(autosession, opts)
     if not load_opts.attach then
       -- The autosession is used to setup a default view instead of session persistence,
       -- but the referenced session does not exist.
-      log.fmt_error(
+      log.error(
         "Could not find autosession %s in project %s, cannot start a new one because attach was set to false. "
           .. "Ensure the session file exists if you configure autloading sessions without attaching after.",
         autosession.name,
@@ -259,17 +259,17 @@ end
 --- If an autosession is active, save it and detach.
 --- Then try to start a new one.
 function M.reload()
-  log.fmt_trace("Reload called. Checking if we need to reload")
+  log.trace("Reload called. Checking if we need to reload")
   local effective_cwd = util.auto.cwd()
   local autosession = get_ctx(effective_cwd)
   local cur = current_autosession() or nil
   ---@cast cur ActiveAutosession?
   if not autosession then
     if cur then
-      log.fmt_trace("Reload check result: New context disables active autosession")
+      log.trace("Reload check result: New context disables active autosession")
       cur:detach("auto_reload", { reset = true })
     else
-      log.fmt_trace(
+      log.trace(
         "Reload check result: No active autosession, new context is disabled as well. Nothing to do."
       )
     end
@@ -280,12 +280,12 @@ function M.reload()
     and cur.meta.autosession.project.name == autosession.project.name
     and cur.name == autosession.name
   then
-    log.fmt_trace(
+    log.trace(
       "Reload check result: Not reloading because new context has same project and session name as active session"
     )
     return
   end
-  log.fmt_trace("Reloading. Current session:\n%s\nNew session:\n%s", cur or "nil", autosession)
+  log.trace("Reloading. Current session:\n%s\nNew session:\n%s", cur or "nil", autosession)
   -- FIXME: This could be the whole call. Currently, this doesn't reconfigure monitoring when
   --      disabling an autosession. Need to think about the semantics.
   M.load(autosession)
@@ -378,7 +378,7 @@ function monitor(autosession)
           return
         end
         if last_head ~= vim.g.gitsigns_head then
-          log.fmt_trace(
+          log.trace(
             "Reloading project, switched from branch %s to branch %s",
             last_head or "nil",
             vim.g.gitsigns_head or "nil"
@@ -396,7 +396,7 @@ function monitor(autosession)
   vim.api.nvim_create_autocmd("DirChangedPre", {
     pattern = "global",
     callback = function()
-      log.fmt_trace(
+      log.trace(
         "DirChangedPre: Global directory is going to change, checking if we need to detach before"
       )
       -- FIXME: This should detach non-autosessions as well
@@ -414,7 +414,7 @@ function monitor(autosession)
         or cur.meta.autosession.project.name ~= lookahead.project.name
         or cur.name ~= lookahead.name
       then
-        log.fmt_trace(
+        log.trace(
           "DirChangedPre: Need to detach because session is going to change. Current session:\n%s\nNew session:\n%s",
           cur,
           lookahead or "nil"
@@ -431,7 +431,7 @@ function monitor(autosession)
     pattern = "global",
     callback = function()
       if not Snapshot.is_loading() then
-        log.fmt_trace("DirChanged: trying reload")
+        log.trace("DirChanged: trying reload")
         M.reload()
       end
     end,

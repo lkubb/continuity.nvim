@@ -431,7 +431,7 @@ local function set_winlayout_data(layout, scale_factor, buflist)
       ---@diagnostic disable-next-line: need-check-nil
       --- conditional for migration/backwards-compat with resession
       local view = win.view or { lnum = win.cursor[1], col = win.cursor[2] }
-      log.fmt_debug(
+      log.debug(
         "Restoring view for buf %s (uuid: %s) in win %s to %s",
         win.bufname,
         win.bufuuid or "nil",
@@ -505,7 +505,7 @@ local function set_winlayout_data(layout, scale_factor, buflist)
       else
         -- This force-restores the buffer, regardless of `in_win`
         local ctx = Buf.added(win.bufname, win.bufuuid)
-        log.fmt_debug("Loading buffer %s (uuid: %s) in win %s", win.bufname, win.bufuuid, win.winid)
+        log.debug("Loading buffer %s (uuid: %s) in win %s", win.bufname, win.bufuuid, win.winid)
         vim.api.nvim_win_set_buf(win.winid, ctx.bufnr)
         if win.alt then
           -- Ensure altbuf is restored already in case user decides to switch immediately (or an autocmd causes the switch)
@@ -515,7 +515,7 @@ local function set_winlayout_data(layout, scale_factor, buflist)
           })
         end
         -- After setting the buffer into the window, manually set the filetype to trigger syntax highlighting
-        log.fmt_trace("Triggering filetype from winlayout for buf %s", ctx.bufnr)
+        log.trace("Triggering filetype from winlayout for buf %s", ctx.bufnr)
         util.opts.with({ eventignore = "" }, function()
           vim.bo[ctx.bufnr].filetype = vim.bo[ctx.bufnr].filetype
         end)
@@ -596,14 +596,14 @@ end
 ---@param winid? WinID ID of the window to restore. Defaults to current one.
 function M.restore_jumplist(winid)
   winid = winid or vim.api.nvim_get_current_win()
-  log.fmt_trace("Restore jumplist called for winid %d", winid)
+  log.trace("Restore jumplist called for winid %d", winid)
 
   if vim.w[winid].continuity_jumplist then
     ---@type [WinInfo.JumplistEntry[], integer]
     local jumplist = vim.w[winid].continuity_jumplist
     local jumps, backtrack = jumplist[1], jumplist[2]
 
-    log.fmt_debug("Restoring jumplist for win %s", winid)
+    log.debug("Restoring jumplist for win %s", winid)
     util.opts.with({ eventignore = "all" }, function()
       -- Ensure we don't affect what is shown in the window with our shenanigans
       M.lock_view({ win = winid }, function()

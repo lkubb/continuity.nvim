@@ -1,10 +1,17 @@
 ---@using continuity.tests
 ---@type continuity.tests.helpers
 local helpers = dofile("tests/helpers.lua")
-local eq, ne, ok, no, match =
-  helpers.ex.eq, helpers.ex.ne, helpers.ex.ok, helpers.ex.no, helpers.ex.match
+local eq, ne, ok, no, match, none, some =
+  helpers.ex.eq,
+  helpers.ex.ne,
+  helpers.ex.ok,
+  helpers.ex.no,
+  helpers.ex.match,
+  helpers.ex.none,
+  helpers.ex.some
 
-local T, child = helpers.new_test({ config = { log = { level = "trace" } } })
+local T, child = helpers.new_test()
+
 local snapshot = child.mod("core.snapshot")
 
 T["Basic snapshot works"] = function()
@@ -17,6 +24,11 @@ T["Basic snapshot works"] = function()
   local balt = ss:buf("README")
   local tab = ss:tab()
   local win = ss:win()
+
+  -- Verify no error was logged
+  none(child.filter_log({ level = "error" }))
+  -- But verify that logging has been setup correctly
+  some(child.filter_log())
 
   -- Verify global data consistency
   eq(ss.global.cwd, vim.fn.getcwd())
@@ -53,6 +65,7 @@ T["Basic snapshot works"] = function()
   child.reset()
   snapshot.restore(ss)
   eq(child.get_snapshot(), ss)
+  none(child.filter_log({ level = "error" }))
 
   -- Also test that restoration in VimEnter reproduces the same state
   child.with({
@@ -70,6 +83,7 @@ T["Basic snapshot works"] = function()
     },
   }, function(init_child)
     eq(init_child.get_snapshot(), ss)
+    none(init_child.filter_log({ level = "error" }))
   end)
 end
 

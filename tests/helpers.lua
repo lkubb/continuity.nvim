@@ -177,6 +177,16 @@ M.ex = {
       table.concat(list, ", ")
     )
   end),
+  none = MiniTest.new_expectation("falsy or empty list/string", function(item)
+    return not item or item == "" or (type(item) == "table" and vim.tbl_isempty(item))
+  end, function(item)
+    return ("Not empty: %s"):format(vim.inspect(item))
+  end),
+  some = MiniTest.new_expectation("not falsy or empty list/string", function(item)
+    return item and item ~= "" and (type(item) ~= "table" or not vim.tbl_isempty(item))
+  end, function(item)
+    return ("Empty: %s"):format(vim.inspect(item))
+  end),
   match = MiniTest.new_expectation("string matching", function(str, pattern)
     return str:find(pattern) ~= nil
   end, function(str, pattern)
@@ -216,7 +226,14 @@ function M.unit(mod)
 end
 
 local default_config = {
-  log = { level = "debug" },
+  log = {
+    handler = function(rend)
+      local l = vim.g.LOG or {}
+      l[#l + 1] = rend
+      vim.g.LOG = l
+    end,
+    level = "trace",
+  },
 }
 
 ---@class Child.InitOpts
@@ -324,8 +341,9 @@ local function new_child(init_opts)
     child.restart({ "-u", "scripts/minimal_init.lua" })
     if not child.init and init_opts.setup ~= false then
       child.lua_func(function(config)
-        require("continuity.config").setup(config)
-      end, init_opts.config)
+        local c = assert(loadstring(config))()
+        require("continuity.config").setup(c)
+      end, ldump(init_opts.config))
     end
   end
 
@@ -378,6 +396,30 @@ local function new_child(init_opts)
       error(errmsg)
     end
     return not timed_out
+  end
+
+  --- Filter child log messages by level and/or pattern.
+  ---@param spec? {level?: continuity.log.ConfigLevel, pattern?: string}
+  ---@return string[] log_msgs Filtered log messages
+  child.filter_log = function(spec)
+    local log = child.g.LOG
+    if not log or log == vim.NIL then
+      return {}
+    end
+    spec = spec or {}
+    log = vim.iter(log)
+    if spec.level then
+      local match_level = spec.level:upper()
+      log = log:filter(function(it)
+        return it.level == match_level
+      end)
+    end
+    if spec.pattern then
+      log = log:filter(function(it)
+        return it.message:match(spec.pattern)
+      end)
+    end
+    return log:totable()
   end
 
   --- Get a new child instance, based on this one

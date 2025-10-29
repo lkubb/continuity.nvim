@@ -210,7 +210,7 @@ function Session:restore(opts, snapshot)
     -- The snapshot does not exist, errors were silenced, it might be fine to begin using it
     return self, false
   end
-  log.fmt_trace("Loading session %s. Data: %s", self.name, snapshot)
+  log.trace("Loading session %s. Data: %s", self.name, snapshot)
   local load_opts =
     vim.tbl_extend("keep", self:opts() --[[@as table]], opts, { attach = false, reset = "auto" })
   local tabid = Snapshot.restore_as(self.name, snapshot, load_opts)
@@ -758,7 +758,7 @@ function M.detach(target, reason, opts)
     -- stylua: ignore
     return vim.iter(target):map(function(v) return M.detach(v, reason, opts) end):any(function(v) return v end)
   end
-  log.fmt_error("Invalid detach target: %s", target)
+  log.error("Invalid detach target: %s", target)
   return false
 end
 

@@ -15,3 +15,5 @@ local M = {}
 function M.setup(opts)
   vim.g.continuity_config = opts
 end
+
+return M

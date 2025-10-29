@@ -103,7 +103,7 @@ end
 ---@return string? shada_path #
 local function get_shada_file(snapshot_ctx, op)
   if not snapshot_ctx.state_dir then
-    log.fmt_warn(
+    log.warn(
       "Cannot handle shada, missing state_dir/context_dir. "
         .. "Ensure you use continuity.core.snapshot.%s_as.",
       op
@@ -242,6 +242,12 @@ end
 ---@return Snapshot snapshot Snapshot data
 ---@return BufContext[] included_bufs List of included buffers
 local function create(target_tabpage, opts, snapshot_ctx)
+  log.trace(
+    "Creating %s snapshot with opts: %s\ncontext: %s",
+    target_tabpage and ("tabpage (#%s)"):format(target_tabpage) or "global",
+    opts,
+    snapshot_ctx
+  )
   local hist_opts = {
     command_history = util.opts.coalesce_auto("command_history", false, opts, Config.session),
     search_history = util.opts.coalesce_auto("search_history", false, opts, Config.session),
@@ -422,12 +428,7 @@ function M.save_as(name, opts, target_tabpage, session_file, state_dir, context_
     log.warn("Save triggered while still loading session. Skipping save.")
     return nil, {}
   end
-  log.fmt_debug(
-    "Saving %s session %s with opts %s",
-    target_tabpage and "tab" or "global",
-    name,
-    opts
-  )
+  log.debug("Saving %s session %s with opts %s", target_tabpage and "tab" or "global", name, opts)
   -- Ensure all hooks receive these two params
   opts.session_file, opts.state_dir, opts.context_dir =
     opts.session_file or session_file, opts.state_dir or state_dir, opts.context_dir or context_dir
@@ -530,7 +531,7 @@ function M.restore(snapshot, opts, snapshot_ctx)
       util.opts.restore_global(snapshot.global.options)
       -- and restore histories
       if load_hist then
-        log.fmt_debug("Clearing + restoring histories. Config: %s", opts)
+        log.debug("Clearing + restoring histories. Config: %s", opts)
         rshada_hist(opts, snapshot_ctx)
       end
     end
@@ -538,7 +539,7 @@ function M.restore(snapshot, opts, snapshot_ctx)
     Ext.call("on_pre_load", snapshot, snapshot_ctx, snapshot.buflist or {})
 
     if not snapshot.tab_scoped and opts.global_marks ~= false and snapshot.global.marks then
-      log.fmt_debug("Restoring global marks: %s", snapshot.global.marks)
+      log.debug("Restoring global marks: %s", snapshot.global.marks)
       -- Let's set the global marks via ShaDa to avoid performance impact + interference because
       -- there's only nvim_buf_set_mark, which requires loading the files into bufs and verifies the validity.
       -- We can still clear all unwanted global marks after.
@@ -570,7 +571,7 @@ function M.restore(snapshot, opts, snapshot_ctx)
     ---@param buf Snapshot.BufData
     local function bufrestored(buf)
       scheduled_bufs[buf.uuid] = nil
-      log.fmt_trace("Restored deferred buf: %s\nRemaining:%s", buf.uuid, scheduled_bufs)
+      log.trace("Restored deferred buf: %s\nRemaining:%s", buf.uuid, scheduled_bufs)
       if vim.tbl_isempty(scheduled_bufs) then
         util.opts.with(
           { eventignore = "all", shortmess = "aAF" },

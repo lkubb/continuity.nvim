@@ -54,9 +54,24 @@ local M = {}
 
 --- Configure plugin logging
 ---@class UserConfig.log
----@field level? "trace"|"debug"|"info"|"warn"|"error"|"fatal" Minimum level to log for
----@field use_console? "async"|"sync"|false Print logs to neovim console. Defaults to `async`.
----@field use_file? boolean Print logs to logfile. Defaults to true.
+---@field level? continuity.log.ConfigLevel Minimum level to log at. Defaults to `warn`.
+---@field notify_level? continuity.log.ConfigLevel Minimum level to use `vim.notify` for. Defaults to `warn`.
+---@field notify_opts? table Options to pass to `vim.notify`. Defaults to `{ title = "Continuity" }`
+---@field format? string #
+---   Log line format string. Note that this works like Python's f-strings.
+---   Defaults to `[%(level)s %(time)s] %(message)%(src_sep)s[%(source_path)s:%(source_line)s]`.
+---   Available parameters:
+---   * `level` Uppercase level name
+---   * `dtime` Formatted date/time string
+---   * `hrtime` Time in [ns] without absolute anchor
+---   * `message` Log message
+---   * `src_sep` Whitespace between log line and source of call, 2 tabs for single line, newline + tab for multiline log messages
+---   * `src_path` Path to the file that called the log function
+---   * `src_line` Line in `src_path` that called the log function
+---@field notify_format? string Same as `format`, but for `vim.notify` message display. Defaults to `%(message)s`.
+---@field time_format? string #
+---   `strftime` format string used for rendering time of call. Defaults to `%Y-%m-%d %H:%M:%S`
+---@field handler? fun(line: continuity.log.Line) Custom function in charge of outputting log lines. Mostly useful in tests.
 
 --- Configure default session behavior and contents, affects both manual and autosessions.
 ---@class UserConfig.session: core.Session.InitOpts
@@ -71,7 +86,7 @@ local M = {}
 ---@field autosession Config.autosession Influence autosession behavior
 ---@field extensions table<string,any> Configuration for extensions
 ---@field load Config.load Configure load list contents
----@field log Config.log Configuration for plenary.log
+---@field log Config.log Logging configuration
 ---@field session Config.session Influence session behavior and contents
 
 ---@class Config.autosession
@@ -88,10 +103,14 @@ local M = {}
 ---@field detail boolean
 ---@field order "modification_time"|"creation_time"|"filename"
 
----@class Config.log
----@field level "trace"|"debug"|"info"|"warn"|"error"|"fatal"
----@field use_console "async"|"sync"|false
----@field use_file boolean
+---@class Config.log: UserConfig.log
+---@field level continuity.log.ConfigLevel
+---@field format string
+---@field notify_level continuity.log.ConfigLevel
+---@field notify_format string
+---@field notify_opts table
+---@field time_format string
+---@field handler? fun(line: continuity.log.Line)
 
 ---@class Config.session
 ---@field dir string
@@ -220,8 +239,11 @@ local defaults = {
   },
   log = {
     level = "warn",
-    use_console = "async",
-    use_file = true,
+    format = "[%(level)s %(time)s] %(message)%(src_sep)s[%(source_path)s:%(source_line)s]",
+    notify_level = "warn",
+    notify_format = "%(message)s",
+    notify_opts = { title = "Continuity" },
+    time_format = "%Y-%m-%d %H:%M:%S",
   },
   session = {
     dir = "session",
@@ -275,6 +297,7 @@ function M.setup(config)
 
   vim.g.continuity_config = nil
 
+  require("continuity.log").setup(new.log)
   require("continuity.core.session").setup()
   require("continuity.core.ext").setup()
 end

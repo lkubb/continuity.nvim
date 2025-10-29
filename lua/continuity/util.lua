@@ -183,8 +183,10 @@ function M.try_any(funs, ...)
 end
 
 ---@class TryLog.Params
----@field level? "trace"|"debug"|"info"|"warn"|"error" The level to log at. Defaults to `error`.
----@field notify? boolean Call `vim.notify` in addition to logging. Defaults to false.
+---@field level? continuity.log.Level The level to log at. Defaults to `error`.
+---@field notify? boolean #
+---   Call `vim.notify` in addition to logging. Defaults to false.
+---   Note: Also Influenced by user config, this just forces a notification regardless.
 
 ---@alias TryLog.Format [string, any...] A format string and variable arguments to pass to the formatter. The format string should include a final extra `%s` for the error message.
 ---@alias TryLog TryLog.Format & TryLog.Params The config table passed to `try_log*` functions. List of formatter args, optional key/value config.
@@ -212,13 +214,12 @@ end
 ---   Variadic returns of `success` (or `inner`, if no success specified),
 ---   or nothing in case of error
 function M.try_log_else(inner, msg, success, ...)
-  msg = msg or {}
+  msg = msg or {} ---@type TryLog
   return M.try_catch_else(inner, function(err)
     local log = require("continuity.log")
-    local fun = "fmt_" .. (msg.level or "error")
     msg[#msg + 1] = err
-    log[fun](unpack(msg))
-    if msg.notify then
+    log[msg.level or "error"](unpack(msg))
+    if msg.notify and log.notify_level > vim.log.levels[msg.level or "error"] then
       vim.notify(
         "[continuity] " .. msg[1]:format(unpack(msg, 2)),
         vim.log.levels[
