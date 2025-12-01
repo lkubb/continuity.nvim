@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Before reporting a bug, make sure to search [existing issues](https://github.com/lkubb/continuity.nvim/issues)
+        Before reporting a bug, make sure to search [existing issues](https://github.com/lkubb/finni.nvim/issues)
   - type: checkboxes
     attributes:
       label: Did you check the docs and existing issues?
@@ -49,7 +49,7 @@ body:
       description: Steps to reproduce the behavior.
       placeholder: |
         1. nvim -u repro.lua
-        2. 
+        2.
         3.
     validations:
       required: true
@@ -105,10 +105,10 @@ body:
         local plugins = {
           "folke/tokyonight.nvim",
           {
-                "lkubb/continuity.nvim",
+                "lkubb/finni.nvim",
                 init = function()
-                    vim.g.continuity_autosession = false -- or true
-                    vim.g.continuity_config = {
+                    vim.g.finni_autosession = false -- or true
+                    vim.g.finni_config = {
                       -- add any needed settings here
                     }
                 end,

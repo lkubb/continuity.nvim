@@ -1,0 +1,220 @@
+---@meta
+---@namespace finni.core
+
+--- Options to influence which data is included in a snapshot.
+---@class snapshot.CreateOpts
+---@field options? string[] #
+---   Save and restore these neovim (global/buffer/tab/window) options
+---@field buf_filter? fun(bufnr: integer, opts: snapshot.CreateOpts): boolean #
+---   Custom logic for determining if a buffer should be included
+---@field tab_buf_filter? fun(tabpage: integer, bufnr: integer, opts: snapshot.CreateOpts): boolean #
+---   Custom logic for determining if a buffer should be included in a tab-scoped session
+---@field modified? boolean|"auto" #
+---   Save/load modified buffers and their undo history.
+---   If set to `auto` (default), does not save, but still restores modified buffers.
+---@field jumps? boolean #
+---   Save/load window-specific jumplists, including current position
+---   (yes, for **all windows**, not just the active one like with ShaDa).
+---   If set to `auto` (default), does not save, but still restores saved jumplists.
+---@field changelist? boolean #
+---   Save/load buffer-specific changelist (all buffers) and
+---   changelist position (visible buffers only).
+---
+---   **Important**: Enabling this causes **buffer-local marks to be cleared** during restoration.
+---   Consider tracking `local_marks` in addition to this.
+---@field global_marks? boolean #
+---   Save/load global marks (A-Z, not 0-9 currently).
+---
+---   _Only in global sessions._
+---@field local_marks? boolean #
+---   Save/load buffer-specific (local) marks.
+---
+---   **Note**: Enable this if you track the `changelist`.
+---@field search_history? (integer|boolean)? #
+---   Maximum number of search history items to persist. Defaults to false.
+---   If set to `true`, maps to the `'history'` option.
+---
+---   _Only in global sessions._
+---@field command_history? (integer|boolean)? #
+---   Maximum number of command history items to persist. Defaults to false.
+---   If set to `true`, maps to the `'history'` option.
+---
+---   _Only in global sessions._
+---@field input_history? (integer|boolean)? #
+---   Maximum number of input history items to persist. Defaults to false.
+---   If set to `true`, maps to the `'history'` option.
+---
+---   _Only in global sessions._
+---@field expr_history? boolean? #
+---   Persist expression history. Defaults to false.
+---   **Note**: Cannot set limit (currently), no direct support by neovim.
+---
+---   _Only in global sessions._
+---@field debug_history? boolean? #
+---   Persist debug history. Defaults to false.
+---   **Note**: Cannot set limit (currently), no direct support by neovim.
+---
+---   _Only in global sessions._
+
+---@class snapshot.RestoreOpts
+---@field reset? boolean #
+---   Close everything in this neovim instance.
+---   If unset/false, loads the snapshot into one or several clean tabs.
+---@field modified? boolean|"auto" #
+---   If the snapshot contains unsaved buffer modifications, restore them.
+---@field jumps? boolean #
+---   Restore window-specific jumplists and current position saved in snapshot.
+---   Defaults to true.
+---@field changelist? boolean #
+---   Restore buffer-specific changelists and current changelist position
+---   (visible buffers only) saved in snapshot. Defaults to true.
+---
+---   **Important**: Enabling this causes buffer-local marks to be cleared during restoration.
+---   Consider tracking `local_marks` in addition to this.
+---@field global_marks? boolean #
+---   Restore global marks saved in snapshot. Defaults to true. Only in global sessions.
+---
+---   _Only in global sessions._
+---@field local_marks? boolean #
+---   Restore buffer-local marks saved in snapshot. Defaults to true.
+---@field search_history? (integer|boolean)? #
+---   Reset search history and load it from session shada. Any truish value is accepted.
+---
+---   _Only in global sessions._
+---@field command_history? (integer|boolean)? #
+---   Reset command history and load it from session shada. Any truish value is accepted.
+---
+---   _Only in global sessions._
+---@field input_history? (integer|boolean)? #
+---   Reset input history and load it from session shada. Any truish value is accepted.
+---
+---   _Only in global sessions._
+---@field expr_history? boolean? #
+---   Reset expression history and load it from session shada. Only in global sessions.
+---
+---   _Only in global sessions._
+---@field debug_history? boolean? #
+---   Reset debug history and load it from session shada. Only in global sessions.
+---
+---   _Only in global sessions._
+
+--- Snapshot meta information, for creating snapshot-associated files that cannot (easily) be included in the snapshot table.
+---@class snapshot.Context
+---@field name? string #
+---   Name of the snapshot being saved/restored
+---@field state_dir? string #
+---   Directory session-associated data like unsaved buffer modifications are stored in.
+---   Required for `modified` handling and history persistence.
+---@field context_dir? string #
+---   Shared state directory for all snapshots in this snapshot's context.
+---   Note: Derived from `dir` for manual sessions or the project directory for autosessions.
+---   Intended for shared project state such as ShaDa.
+
+--- A snapshot of nvim's state.
+---@class Snapshot
+---@field buffers Snapshot.BufData[] #
+---   Buffer-specific data like name, buffer options, local marks, changelist
+---@field tabs Snapshot.TabData[] #
+---   Tab-specific and window layout data, including tab cwd and window-specific jumplists
+---@field tab_scoped boolean #
+---   Whether this snapshot was derived from a single tab
+---@field global Snapshot.GlobalData #
+---   Global snapshot data like process CWD, global options and global marks
+---@field modified table<BufUUID, true?>? #
+---   List of buffers (identified by internal UUID) whose unsaved modifications
+---   were backed up in the snapshot
+---@field buflist string[] #
+---   List of named buffers that are referenced somewhere in this snapshot.
+---   Used to reduce repetition of buffer paths in save file, especially lists of named marks
+---   (jumplist, quickfix and location lists).
+
+--- Global snapshot data like cwd, height/width and global options.
+---@class Snapshot.GlobalData
+---@field cwd string #
+---   Nvim's global cwd.
+---@field height integer #
+---   `vim.o.lines` - `vim.o.cmdheight`
+---@field width integer #
+---   `vim.o.columns`
+---@field options table<string, any> #
+---   Global nvim options
+---@field marks? table<string, FileMark?> #
+---   Saved global marks, if enabled
+---@field search_history boolean #
+---   Whether search history was saved in session-associated ShaDa file.
+---   If enabled, corresponding history in nvim process should be cleared before loading.
+---@field command_history boolean #
+---   Whether command history was saved in session-associated ShaDa file.
+---   If enabled, corresponding history in nvim process should be cleared before loading.
+---@field input_history boolean #
+---   Whether input history was saved in session-associated ShaDa file.
+---   If enabled, corresponding history in nvim process should be cleared before loading.
+---@field expr_history boolean #
+---   Whether expression history was saved in session-associated ShaDa file.
+---   If enabled, corresponding history in nvim process should be cleared before loading.
+---@field debug_history boolean #
+---   Whether debug history was saved in session-associated ShaDa file.
+---   If enabled, corresponding history in nvim process should be cleared before loading.
+
+--- Buffer-specific snapshot data like path, loaded state, options and last cursor position.
+---@class Snapshot.BufData
+---@field name string #
+---   Name of the buffer, usually its path.
+---   Can be empty when unsaved modifications are backed up.
+---@field loaded boolean #
+---   Whether the buffer was loaded.
+---@field options table<string, any> #
+---   Buffer-specific nvim options.
+---@field last_pos AnonymousMark #
+---   Position of the cursor when this buffer was last shown in a window (`"` mark).
+---   Only updated once a buffer becomes invisible.
+---   Visible buffer cursors are backed up in the window layout data.
+---@field uuid string #
+---   A buffer-specific UUID intended to track it between sessions. Required to save/restore unnamed buffers.
+---@field in_win boolean #
+---   Whether the buffer is visible in at least one window.
+---@field changelist? [Snapshot.BufData.ChangelistItem[], integer] #
+---   Changelist and changelist position (backwards from most recent entry) for this buffer.
+---   Position is always `0` when invisible buffers are saved.
+---@field marks? table<string, AnonymousMark?> #
+---   Saved buffer-local marks, if enabled
+---@field bt? 'acwrite'|'help'|'nofile'|'nowrite'|'quickfix'|'terminal'|'prompt' #
+---   `buftype` option of buffer. Unset if empty (`""`).
+
+---@class Snapshot.BufData.ChangelistItem: AnonymousMark
+-- TODO: coladd?
+
+--- Tab-specific (options, cwd) and window layout snapshot data.
+---@class Snapshot.TabData
+---@field options table<string, any> #
+---   Tab-specific nvim options. Currently only `cmdheight`.
+---@field wins layout.WinLayout #
+---   Window layout enriched with window-specific snapshot data
+---@field cwd? string #
+---   Tab-local cwd, if different from the global one or a tab-scoped snapshot
+---@field current? boolean
+---   Whether this tabpage was the active one. Only present for global sessions.
+
+--- Represents a quickfix/location list
+---@class Snapshot.QFList
+---@field idx integer Current position in list
+---@field title string Title of list
+---@field context? any Arbitrary context for this list, may be used by plugins
+---@field efm? string Error format string to use for parsing lines
+---@field quickfixtextfunc string Function to customize the displayed text
+---@field items Snapshot.QFListItem[] Items in the list
+
+--- A single item in a quickfix/location list
+---@class Snapshot.QFListItem
+---@field filename? integer Index of path of the file this entry points to in `buflist`
+---@field module string Module name (?)
+---@field lnum integer Referenced line in the file, 1-indexed
+---@field end_lnum? integer For multiline items, last referenced line
+---@field col integer Referenced column in the line of the file, also 1-indexed
+---@field end_col? integer For ranged items, last referenced column number
+---@field vcol boolean Whether `col` is visual index or byte index
+---@field nr integer Item index in the list
+---@field pattern string Search pattern used to locate the item
+---@field text string Item description
+---@field type string Type of the item (?)
+---@field valid boolean Whether error message was recognized (?)
