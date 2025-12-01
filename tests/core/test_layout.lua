@@ -1,6 +1,6 @@
 ---@diagnostic disable: access-invisible, duplicate-set-field
 
----@type continuity.tests.helpers
+---@type finni.tests.helpers
 local helpers = dofile("tests/helpers.lua")
 local eq = helpers.ex.eq
 

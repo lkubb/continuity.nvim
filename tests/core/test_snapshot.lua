@@ -1,5 +1,5 @@
----@using continuity.tests
----@type continuity.tests.helpers
+---@using finni.tests
+---@type finni.tests.helpers
 local helpers = dofile("tests/helpers.lua")
 local eq, ne, ok, no, match, none, some =
   helpers.ex.eq,
@@ -75,7 +75,7 @@ T["Basic snapshot works"] = function()
           nested = true,
           once = true,
           callback = function()
-            require("continuity.core.snapshot").restore(data)
+            require("finni.core.snapshot").restore(data)
           end,
         })
       end,

@@ -12,9 +12,9 @@ all: doc lint test
 .PHONY: doc
 doc: venv
 	@echo "• Rendering markdown docs"
-	@venv/bin/emmylua-render --no-expand '*InitOptsWithMeta' --format md --out README.md templates/continuity.md.jinja
+	@venv/bin/emmylua-render --no-expand '*InitOptsWithMeta' --format md --out README.md templates/finni.md.jinja
 	@echo "• Rendering vim docs"
-	@venv/bin/emmylua-render --no-expand '*InitOptsWithMeta' --format vim --out doc/continuity.txt templates/continuity.txt.jinja
+	@venv/bin/emmylua-render --no-expand '*InitOptsWithMeta' --format vim --out doc/finni.txt templates/finni.txt.jinja
 
 ## test: Run tests. If `FILE` env var is specified, searches for a matching file in `tests`. Substrings are allowed (e.g. `FILE=layout` finds tests/core/test_layout.lua).
 .PHONY: test
@@ -96,13 +96,13 @@ lint: fastlint
 	@VIMRUNTIME=$$(nvim -es '+put=$$VIMRUNTIME|print|quit!') \
 		emmylua_check --warnings-as-errors -c .emmyrc.json lua tests
 	@echo "• Checking vim doc template"
-	@venv/bin/emmylua-render --format vim templates/continuity.txt.jinja >/dev/null
+	@venv/bin/emmylua-render --format vim templates/finni.txt.jinja >/dev/null
 
 ## fastlint: Run only fast linters test-render md docs
 .PHONY: fastlint
 fastlint: deps venv
 	@echo "• Checking markdown doc template"
-	@venv/bin/emmylua-render --format md templates/continuity.md.jinja > /dev/null # todo: markdownlint?
+	@venv/bin/emmylua-render --format md templates/finni.md.jinja > /dev/null # todo: markdownlint?
 	@echo "• Basic static analysis with luacheck"
 	@luacheck lua tests --formatter plain
 	@echo "• Checking formatting"

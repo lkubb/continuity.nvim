@@ -1,14 +1,14 @@
----@class continuity.tests.helpers
+---@class finni.tests.helpers
 local M = {}
 
 ---@module "mini.test"
 _G.MiniTest = _G.MiniTest
 
----@namespace continuity.tests
----@using continuity.core
+---@namespace finni.tests
+---@using finni.core
 
 local ldump = require("tests._ldump")
-local path = require("continuity.util.path")
+local path = require("finni.util.path")
 
 -- NOTE: ldump.preserve_modules should not be set, it inversely queries package.loaded. Some
 --       loaded modules don't return anything and thus contain `true` as the value, meaning
@@ -42,7 +42,7 @@ function Proxy:__newindex(k, v)
 end
 
 --- Snapshot with helper methods
----@class Snapshot: continuity.core.Snapshot
+---@class Snapshot: finni.core.Snapshot
 local Snapshot = {}
 Snapshot.__index = Snapshot
 
@@ -243,19 +243,19 @@ local default_config = {
 
 ---@class Child.InitOpts
 ---@field setup? boolean #
----   Call `continuity.core.setup()` after `init` (if `init` is set),
+---   Call `finni.core.setup()` after `init` (if `init` is set),
 ---   or after neovim has finished starting (if `init` is unset).
 ---   Defaults to true.
 ---@field init? [fun(...), any...] #
 ---   Tuple of function and variable number of arguments to pass to this function during Neovim initialization.
 ---   `setup` is called after this function, if not disabled.
----@field config? continuity.UserConfig #
+---@field config? finni.UserConfig #
 ---   Set the configuration used by this child instance.
 
 --- Setup a new integration test with child neovim instance.
 ---@param init_opts? Child.InitOpts #
----   setup: Whether to call `continuity.config.setup()` after start/init func. Defaults to true.
----   config: Continuity config to set
+---   setup: Whether to call `finni.config.setup()` after start/init func. Defaults to true.
+---   config: Finni config to set
 ---   init: Tuple of function and variable number of arguments to call during initialization.
 ---@return Child child Child neovim process instance.
 local function new_child(init_opts)
@@ -267,14 +267,14 @@ local function new_child(init_opts)
   ---@field _init_stat? uv.fs_stat.result Stat result of init.lua after being written by this child.
   local child = MiniTest.new_child_neovim()
 
-  --- Access `continuity` modules on the child.
+  --- Access `finni` modules on the child.
   ---@generic Module
-  ---@param mod continuity.`Module` Module name, relative to `continuity.`
+  ---@param mod finni.`Module` Module name, relative to `finni.`
   ---@return Module module Proxy for running module functions on child
   child.mod = function(mod)
     -- NOTE: This works in EmmyLua because each module has a type named after its import path.
     --       ModuleProxy<Module> class works for type checking, but breaks goto definition and proper hovers.
-    return setmetatable({ _child = child, _mod = "continuity." .. mod }, Proxy)
+    return setmetatable({ _child = child, _mod = "finni." .. mod }, Proxy)
   end
 
   --- Ensure the passed function is executed during initialization with the passed paramters.
@@ -297,8 +297,8 @@ local function new_child(init_opts)
       func(vim.F.unpack_len(args))
       if do_setup ~= false then
         -- Could pass it in the .setup() call as well, but this is how users should do it.
-        vim.g.continuity_config = config
-        require("continuity.config").setup()
+        vim.g.finni_config = config
+        require("finni.config").setup()
       end
     end
     child.init = ldump(init)
@@ -340,19 +340,19 @@ local function new_child(init_opts)
     return wrapped_start(...)
   end
 
-  --- Restart the child process and ensure continuity has been setup (needed for tests of `core` modules,
+  --- Restart the child process and ensure Finni has been setup (needed for tests of `core` modules,
   --- which don't do that automatically).
   child.reset = function()
     child.restart({ "-u", "scripts/minimal_init.lua" })
     if not child.init and init_opts.setup ~= false then
       child.lua_func(function(config)
         local c = assert(loadstring(config))()
-        require("continuity.config").setup(c)
+        require("finni.config").setup(c)
       end, ldump(init_opts.config))
     end
   end
 
-  --- Helper to create a continuity snapshot from the child's current state with helper methods.
+  --- Helper to create a Finni snapshot from the child's current state with helper methods.
   ---@param target_tabpage? TabID
   ---@param opts? snapshot.CreateOpts
   ---@param snapshot_ctx? snapshot.Context
@@ -404,7 +404,7 @@ local function new_child(init_opts)
   end
 
   --- Filter child log messages by level and/or pattern.
-  ---@param spec? {level?: continuity.log.ConfigLevel, pattern?: string}
+  ---@param spec? {level?: finni.log.ConfigLevel, pattern?: string}
   ---@return string[] log_msgs Filtered log messages
   child.filter_log = function(spec)
     local log = child.g.LOG
@@ -467,8 +467,8 @@ end
 
 --- Setup a new integration test with child neovim instance.
 ---@param init_opts? Child.InitOpts #
----   setup: Whether to call `continuity.config.setup()` after start/init func. Defaults to true.
----   config: Continuity config to set
+---   setup: Whether to call `finni.config.setup()` after start/init func. Defaults to true.
+---   config: Finni config to set
 ---   init: Tuple of function and variable number of arguments to call during initialization.
 ---@return table test_set A MiniTest test set.
 ---@return Child child Child neovim process instance.

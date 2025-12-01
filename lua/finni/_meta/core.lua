@@ -1,0 +1,75 @@
+---@meta
+---@namespace finni.core
+
+---@alias BufUUID string An internal UUID that is used to keep track of buffers between snapshot restorations.
+---@alias WinID integer Nvim window ID
+---@alias WinNr integer Nvim window number
+---@alias BufNr integer Nvim buffer number
+---@alias TabID integer Nvim tab ID
+---@alias TabNr integer Nvim tab number
+
+---@class AnonymousMark: integer[]
+---@field [1] integer Line number
+---@field [2] integer Column number
+
+---@class FileMark
+---@field [1] string - "" Absolute path to file this mark references
+---@field [2] integer Line number
+---@field [3] integer Column number
+
+--- A mark that should have a file name, but is repeated often. The
+--- path to the referenced file is saved in a lookup table instead.
+---@class CompressedFileMark: FileMark
+---@field [1] integer Index of absolute path to file this mark references in `buflist`
+
+--- Finni needs to remember buffer-specific data, which it does via `vim.b`.
+--- This class offers a simplified interface to that context.
+---@class BufContext
+---@field bufnr BufNr #
+---   The buffer number of the buffer this context references
+---@field name string #
+---   The name of the buffer this context references.
+---   Usually the path of the loaded file or the empty string for untitled ones.
+---@field uuid BufUUID #
+---   A UUID to track buffers across session restorations
+---@field last_buffer_pos? AnonymousMark #
+---   Cursor position when last exiting the buffer
+---@field last_win_pos? table<string, AnonymousMark> #
+---   Window (ID as string)-specific cursor positions
+---@field need_edit? boolean #
+---   Indicates the buffer needs :edit to be initialized correctly (autocmds are suppressed during session load)
+---@field needs_restore? boolean #
+---   Only used for buffers with unsaved modifications. Indicates the buffer has been loaded
+---   during session load, but has not been initialized completely because it never has been accessed.
+---@field initialized? boolean #
+---   Unset when buffer has not been restored.
+---   Set to false when a buffer restoration is pending.
+---   Set to true when a loaded buffer has been restored completely from the snapshot,
+---   meaning its `BufEnter` event has been triggered and finished.
+---   Before this, save operations need to consider yet to apply data.
+---@field snapshot_data? Snapshot.BufData #
+---   Set while `initialized` is `false`.
+---   Contains all data concerning this buffer from the partially restored snapshot.
+---   Removed when restoration is finished by loading the buffer into a focused window.
+---@field restore_last_pos? boolean #
+---   Indicates the buffer cursor needs to be restored.
+---   Handled during initial session loading e.g. for previews, and again
+---   in buffer initialization when loaded into a window.
+---@field state_dir? string #
+---   The directory to save session-associated state in. Used for modification persistence.
+---@field swapfile? string #
+---   The path to the buffer's swapfile if it had one when loaded.
+---@field unrestored? boolean #
+---   Indicates the buffer could not be restored properly because it had a swapfile and was opened read-only
+---@field last_changedtick? integer
+---   Tracks the last backed up changedtick when buffer modificataions are persisted.
+
+--- Indicates that any unhandled opts are also passed through to custom hooks.
+---@alias PassthroughOpts table
+
+-- Note: Any other definition for PassthroughOpts caused emmylua to yield param type mismatches when used on top of other aliased intersections.
+-- Example: SaveOpts & PassthroughOpts (where SaveOpts = @alias Attach & Notify & Restore) mismatched Attach & Notify & Restore & PassthroughOpts.
+-- Approaches that were tried:
+-- @class with @field [any] any (preferred, because it can be annotated in a better way)
+-- @class inheriting from table / table<any,any>
+-- @alias table<any,any>
