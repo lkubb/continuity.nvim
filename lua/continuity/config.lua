@@ -245,6 +245,7 @@ local defaults = {
     notify_opts = { title = "Continuity" },
     time_format = "%Y-%m-%d %H:%M:%S",
   },
+  ---@diagnostic disable-next-line: missing-fields -- EmmyLuaLs is confused by on_detach
   session = {
     dir = "session",
     options = {
