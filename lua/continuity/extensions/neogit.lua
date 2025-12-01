@@ -95,6 +95,7 @@ end
 ---@param config Status
 ---@param win layout.WinInfo
 local function open_status(config, win)
+  ---@cast ngrepo NeogitRepo
   local repo = ngrepo.instance(config.cwd)
   local buf = require("neogit.buffers.status").new(
     require("neogit.config").values,

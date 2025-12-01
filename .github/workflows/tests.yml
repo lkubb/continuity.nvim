@@ -5,62 +5,57 @@ on:
     branches:
       - main
   pull_request:
-    branches:
-      - main
 
 jobs:
-  luacheck:
-    name: Luacheck
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Prepare
-        run: |
-          sudo apt-get update
-          sudo add-apt-repository universe
-          sudo apt install luarocks -y
-          sudo luarocks install luacheck
-
-      - name: Run Luacheck
-        run: luacheck lua tests
-
   stylua:
     name: StyLua
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Stylua
         uses: JohnnyMorganz/stylua-action@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          version: v2.0.2
+          version: v2.3.0
           args: --check lua tests
 
   typecheck:
-    name: typecheck
-    runs-on: ubuntu-22.04
+    name: EmmyLuaCheck
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: stevearc/nvim-typecheck-action@v2
+      - uses: actions/checkout@v5
+      - name: Install EmmyLuaCheck
+        uses: jaxxstorm/action-install-gh-release@v2.1.0
         with:
-          path: lua
+          repo: EmmyLuaLs/emmylua-analyzer-rust
+          tag: 0.17.0
+          asset-name: emmylua_check
+          chmod: 0755
+      - name: Install Neovim and dependencies
+        run: |
+          bash ./.github/workflows/install_nvim.sh
+          make deps
+      - name: Run check
+        run: |-
+          export VIMRUNTIME=$(nvim -es '+put=$VIMRUNTIME|print|quit!')
+          emmylua_check --warnings-as-errors -c .emmyrc.json lua tests
 
   run_tests:
     strategy:
       matrix:
         include:
-          - nvim_tag: v0.8.3
-          - nvim_tag: v0.9.4
           - nvim_tag: v0.10.0
           - nvim_tag: v0.10.4
+          - nvim_tag: v0.11.0
+          - nvim_tag: v0.11.4
+          - nvim_tag: nightly
 
     name: Run tests
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     env:
       NVIM_TAG: ${{ matrix.nvim_tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Neovim and dependencies
         run: |
@@ -73,8 +68,9 @@ jobs:
   update_docs:
     name: Update docs
     runs-on: ubuntu-latest
+    if: 'false' # TODO: skip doc generation for now, need to be rewritten
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: true
 
@@ -103,21 +99,19 @@ jobs:
 
   release:
     name: release
-
-    if: ${{ github.ref == 'refs/heads/main' }}
+    if: 'false' # TODO: skip releasing, this is a WIP still
     needs:
-      - luacheck
       - stylua
       - typecheck
       - run_tests
       - update_docs
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: googleapis/release-please-action@v4
         id: release
         with:
           release-type: simple
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: rickstaa/action-create-tag@v1
         if: ${{ steps.release.outputs.release_created }}
         with:

@@ -26,9 +26,9 @@ local M = {}
 ---@field config? core.Session.InitOpts #
 ---   Save/load configuration for autosessions
 ---@field dir? string #
----   Name of the directory to store autosession projects in
----   (interpreted relative to $XDG_STATE_HOME/$NVIM_APPNAME)
----@field spec fun(cwd: string): auto.AutosessionSpec? #
+---   Name of the directory to store autosession projects in.
+---   Interpreted relative to `$XDG_STATE_HOME/$NVIM_APPNAME`.
+---@field spec? fun(cwd: string): auto.AutosessionSpec? #
 ---   This function implements the logic that derives the autosession spec from a path.
 ---   It calls `workspace`, `project_name`, `session_name`, `enabled` and `load_opts` to render it.
 ---   You can implement a custom logic here, but mind that the other functions have no effect then.
@@ -63,7 +63,7 @@ local M = {}
 ---   Available parameters:
 ---   * `level` Uppercase level name
 ---   * `dtime` Formatted date/time string
----   * `hrtime` Time in [ns] without absolute anchor
+---   * `hrtime` Time in `[ns]` without absolute anchor
 ---   * `message` Log message
 ---   * `src_sep` Whitespace between log line and source of call, 2 tabs for single line, newline + tab for multiline log messages
 ---   * `src_path` Path to the file that called the log function
@@ -77,7 +77,7 @@ local M = {}
 ---@class UserConfig.session: core.Session.InitOpts
 ---@field dir? string #
 ---   Name of the directory to store regular sessions in.
----   Interpreted relative to $XDG_STATE_HOME/$NVIM_APPNAME.
+---   Interpreted relative to `$XDG_STATE_HOME/$NVIM_APPNAME`.
 
 -- Until https://github.com/EmmyLuaLs/emmylua-analyzer-rust/issues/328 is resolved:
 -- NOTE: Keep in sync with above
@@ -288,7 +288,7 @@ local defaults = {
 ---   Default config overrides. This table is merged on top of `vim.g.continuity_config`,
 ---   which is itself merged on top of the default config.
 function M.setup(config)
-  ---@diagnostic disable-next-line: param-type-not-match
+  ---@diagnostic disable-next-line: param-type-mismatch, param-type-not-match
   local new = vim.tbl_deep_extend("force", defaults, vim.g.continuity_config or {}, config or {})
 
   for k, v in pairs(new) do

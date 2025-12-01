@@ -253,7 +253,7 @@ function M.load(autosession, opts)
       debug_history = load_opts.debug_history,
     })
   end
-  session = session:attach()
+  session = session:attach() -- luacheck: ignore
 end
 
 --- If an autosession is active, save it and detach.
@@ -702,7 +702,6 @@ function M.migrate_projects(opts)
       ok, msg = pcall(os.rename, src, tgt)
     end
     if opts.dry_run or ok then
-      res = true
       ret.migrated[#ret.migrated].sessions = ret.migrated[#ret.migrated].sessions or {}
       ret.migrated[#ret.migrated].sessions[#ret.migrated[#ret.migrated].sessions + 1] =
         { name = name, old = old, new = new }

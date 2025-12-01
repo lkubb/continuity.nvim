@@ -60,7 +60,7 @@ function Session.new(name, session_file, state_dir, context_dir, opts, tabid, ne
     context_dir = context_dir,
     -- We need to query defaults for these values during load since we cannot
     -- dynamically reconfigure them easily
-    autosave_enabled = util.opts.coalesce("autosave_enabled", false, opts, Config.session),
+    autosave_enabled = util.opts.coalesce("autosave_enabled", false, opts, Config.session), ---@diagnostic disable-line: assign-type-mismatch
     autosave_interval = opts.autosave_interval or Config.session.autosave_interval,
     autosave_notify = opts.autosave_notify,
     meta = opts.meta,
@@ -224,8 +224,8 @@ end
 
 function PendingSession:restore(opts, snapshot)
   self.needs_restore = nil
-  local self = setmetatable(self, { __index = IdleSession })
-  return self:restore(opts, snapshot)
+  local self_idle = setmetatable(self, { __index = IdleSession })
+  return self_idle:restore(opts, snapshot)
 end
 
 function Session:is_attached()

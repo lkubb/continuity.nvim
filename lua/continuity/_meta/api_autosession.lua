@@ -11,7 +11,7 @@
 ---@alias SaveOpts Attach & Notify & Reset
 
 --- API options for `auto.reset`
----@class ResetOpts: Notify & Reset & SilenceErrors
+---@class ResetOpts: Notify, Reset, SilenceErrors
 ---@field cwd? string|true #
 ---   Path to a directory associated with the session to reset
 ---   instead of current one. Set this to `true` to use nvim's current global CWD.

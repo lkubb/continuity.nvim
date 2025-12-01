@@ -389,7 +389,7 @@ end
 ---@param scale_factor [number, number] Scaling factor for [width, height]
 ---@param buflist string[] Indexed buffer list, generated during save
 ---@return WinLayoutRestored restored #
----   Same table as `layout`, but with valid window ID(s) set
+---   Same table as `layout`, but with final window ID(s) set (can be mutated by extensions)
 ---@return WinID? active_winid #
 ---   Window ID of active window, if any
 local function set_winlayout_data(layout, scale_factor, buflist)
@@ -677,7 +677,7 @@ function M.set_winlayout(layout, scale_factor, buflist)
   end
   local focused_winid
   layout = set_winlayout(layout)
-  layout, focused_winid = set_winlayout_data(layout, scale_factor, buflist)
+  layout, focused_winid = set_winlayout_data(layout, scale_factor, buflist) -- luacheck: ignore
   return focused_winid
 end
 

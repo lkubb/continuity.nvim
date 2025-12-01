@@ -51,7 +51,7 @@ function M.setup()
     return
   end
   for hook, _ in pairs(hooks) do
-    ---@diagnostic disable-next-line: param-type-not-match
+    ---@diagnostic disable-next-line: param-type-mismatch, param-type-not-match
     M.add_hook(hook, function()
       event(hook_to_event[hook])
     end)
