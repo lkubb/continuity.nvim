@@ -9,58 +9,46 @@ on:
       - main
 
 jobs:
-  luacheck:
-    name: Luacheck
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Prepare
-        run: |
-          sudo apt-get update
-          sudo add-apt-repository universe
-          sudo apt install luarocks -y
-          sudo luarocks install luacheck
-
-      - name: Run Luacheck
-        run: luacheck lua tests
-
   stylua:
     name: StyLua
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Stylua
         uses: JohnnyMorganz/stylua-action@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          version: v2.0.2
+          version: v2.3.0
           args: --check lua tests
 
   typecheck:
     name: typecheck
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: stevearc/nvim-typecheck-action@v2
-        with:
-          path: lua
+      - uses: actions/checkout@v5
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install emmylua_check
+        run: cargo install emmylua_check
+      - name: Run check
+        run: emmylua_check .
 
   run_tests:
     strategy:
       matrix:
         include:
-          - nvim_tag: v0.8.3
-          - nvim_tag: v0.9.4
           - nvim_tag: v0.10.0
           - nvim_tag: v0.10.4
+          - nvim_tag: v0.11.0
+          - nvim_tag: v0.11.4
+          - nvim_tag: nightly
 
     name: Run tests
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     env:
       NVIM_TAG: ${{ matrix.nvim_tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Neovim and dependencies
         run: |
@@ -73,8 +61,9 @@ jobs:
   update_docs:
     name: Update docs
     runs-on: ubuntu-latest
+    when: false # TODO: skip doc generation for now, need to be rewritten
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: true
 
@@ -103,21 +92,21 @@ jobs:
 
   release:
     name: release
+    when: false # TODO: skip releasing, this is a WIP still
 
     if: ${{ github.ref == 'refs/heads/main' }}
     needs:
-      - luacheck
       - stylua
       - typecheck
       - run_tests
       - update_docs
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: googleapis/release-please-action@v4
         id: release
         with:
           release-type: simple
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: rickstaa/action-create-tag@v1
         if: ${{ steps.release.outputs.release_created }}
         with:

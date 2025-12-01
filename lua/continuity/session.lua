@@ -136,7 +136,7 @@ local function save(name, opts, target_tabpage)
   end
   if opts.attach then
     -- written for type checking, otherwise just session:attach()
-    session = session:attach()
+    session = session:attach() -- luacheck: ignore
   end
 end
 
@@ -270,7 +270,7 @@ function M.load(name, opts)
   end
   session = session:restore(opts, snapshot)
   if opts.attach then
-    session = session:attach()
+    session = session:attach() -- luacheck: ignore
   end
 end
 

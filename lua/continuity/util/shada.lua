@@ -331,11 +331,10 @@ end
 --- Return information about the first header entry
 ---@return {time: integer, [any]: unknown}? rendered_header #
 function Shada:header()
-  for header in self:filter(ENTRY_TYPE.header) do
-    ---@cast header Entry.Header
-    ---@diagnostic disable-next-line: return-type-mismatch
-    return vim.tbl_extend("error", { time = header[1] }, header[4])
-  end
+  ---@type Entry.Header
+  local header = self:filter(ENTRY_TYPE.header):next()
+  ---@diagnostic disable-next-line: return-type-mismatch
+  return header and vim.tbl_extend("error", { time = header[1] }, header[4]) or nil
 end
 
 --- Get a representative mapping of all contained marks

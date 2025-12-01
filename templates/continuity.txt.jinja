@@ -1,0 +1,293 @@
+*continuity.txt*                         Sublime project-focused autosessions.
+
+▄█████  ▄▄▄  ▄▄  ▄▄ ▄▄▄▄▄▄ ▄▄ ▄▄  ▄▄ ▄▄ ▄▄ ▄▄ ▄▄▄▄▄▄ ▄▄ ▄▄
+██     ██▀██ ███▄██   ██   ██ ███▄██ ██ ██ ██   ██   ▀███▀
+▀█████ ▀███▀ ██ ▀██   ██   ██ ██ ▀██ ▀███▀ ██   ██     █
+
+
+{%- anchor "continuity" with literal=true %}
+
+
+A flexible, project-focused autosession plugin for Neovim,
+{%- endanchor %}
+{%- anchor "continuity.nvim" with literal=true %}
+unbound by the limits of `:mksession`.
+{%- endanchor %}
+
+{{ toc }}
+
+{%- section "Features" with markdown=true %}
+* Sessions that persist
+  - tabs
+  - window layout
+  - buffers
+  - cursor positions in all windows/buffers
+  - buffer/window/tab/global options
+  - unwritten buffer modifications and undo histories, including for unnamed buffers (similar to Sublime Text)
+  - jumplists and current position for each window separately
+  - changelists and current position for all buffers
+  - loclists for all windows, including currently selected one + current position + loclist windows
+  - quickfix lists, including currently selected one + current position + quickfix window
+  - buffer-local and global marks
+  - cmd/search/input/expr/debug histories (separately from ShaDa, per session/project)
+* Context-specific autosessions
+* Tab-scoped sessions (manual)
+* Easy to write custom extensions
+* Highly configurable
+{%- endsection %}
+
+{%- section "Dependencies" with markdown=true %}
+* Neovim 0.10+
+* [`lewis6991/gitsigns.nvim`](https://github.com/lewis6991/gitsigns.nvim/)  (optional) for autoswitch on branch change
+{%- endsection %}
+
+{%- section "Setup" %}
+{%-   section "Built-in plugin manager" with anchor="nvim-pack" markdown=true %}
+```lua
+vim.pack.add("https://github.com/lkubb/continuity.nvim")
+vim.g.continuity_autosession = true -- optionally enable startup autosessions
+vim.g.continuity_config = { --[[ custom options/overrides ]] }
+```
+{%-   endsection %}
+{%-   section "lazy.nvim" %}
+{%-     section "Generally" with markdown=true %}
+```lua
+{
+  'lkubb/continuity.nvim',
+  -- This plugin only ever loads as much as needed.
+  -- You don't need to manage lazyloading manually.
+  lazy = false,
+  opts = {
+    -- Custom options/overrides.
+    -- Note: This ends up in `vim.g.continuity_config` (via `continuity.setup()`).
+    --       Initialization is only triggered if you enable autosession-on-load
+    --       and an autosession is defined for the current environment
+    --       or once you invoke the continuity Lua API/Ex command.
+  },
+}
+```
+{%-     endsection %}
+
+{%-     section "Autosession on startup" with markdown=true %}
+If you want to trigger autosession mode when Neovim starts, you need to set `g:continuity_autosession` **early**:
+```lua
+{
+  'lkubb/continuity.nvim',
+  init = function()
+    vim.g.continuity_autosession = true
+    vim.g.continuity_config = { --[[ custom options/overrides ]] }
+  end,
+}
+```
+{%-     endsection %}
+{%-   endsection %}
+{%- endsection %}
+
+{%- section "Configuration" %}
+{%-   section "Defaults" %}
+
+>lua
+    {{ extract_lines("lua/continuity/config.lua", start="^---@type Config$", stop="^}$", skip_start=1, exclude=".*@diagnostic.*")[17:] | indent(4) }}
+<
+{%- endsection %}
+{%- set conf = doc.get("continuity.UserConfig") %}
+{{ conf }}
+{%- for field in conf.fields.values() %}
+{%-   if field.typ.inner.kind.value == "class" %}
+{{ doc.get(field.typ.inner | str) }}
+{%-   endif %}
+{%- endfor %}
+{%- endsection %}
+
+{%- section "Recipes" %}
+{%-   section "Tab-scoped Sessions" with markdown=true %}
+When saving a session, only save the current tab
+
+```lua
+-- Bind `save_tab` instead of `save`
+local session = require("continuity.session")
+
+vim.keymap.set("n", "<leader>ss", session.save_tab)
+vim.keymap.set("n", "<leader>sl", session.load)
+vim.keymap.set("n", "<leader>sd", session.delete)
+```
+
+This only saves the current tabpage layout, but _all_ of the open buffers.
+You can provide a filter to exclude buffers.
+For example, if you are using `:tcd` to have tabs open for different directories,
+this only saves buffers in the current tabpage directory:
+
+```lua
+vim.g.continuity_config = {
+  tab_buf_filter = function(tabpage, bufnr)
+    local dir = vim.fn.getcwd(-1, vim.api.nvim_tabpage_get_number(tabpage))
+    -- ensure dir has trailing /
+    dir = dir:sub(-1) ~= "/" and dir .. "/" or dir
+    return vim.startswith(vim.api.nvim_buf_get_name(bufnr), dir)
+  end,
+}
+```
+{%-   endsection %}
+{%-   section "Custom Extension" with markdown=true %}
+You can save custom session data with your own extension.
+
+To create one, add a file to your runtimepath at `lua/continuity/extensions/<myplugin>.lua`.
+Add the following contents:
+
+```lua
+local M = {}
+
+--- Called when saving a session. Should return necessary state.
+---@param opts (resession.Extension.OnSaveOpts & continuity.core.snapshot.Context)
+---@param buflist continuity.core.snapshot.BufList
+---@return any
+M.on_save = function(opts, buflist)
+  return {}
+end
+
+--- Called before restoring anything, receives the data returned by `on_save`.
+---@param data any Data returned by `on_save`
+---@param opts continuity.core.snapshot.Context
+---@param buflist string[]
+M.on_pre_load = function(data)
+  -- This is run before the buffers, windows, and tabs are restored
+end
+
+--- Called after restoring everything, receives the data returned by `on_save`.
+---@param data any Data returned by `on_save`
+---@param opts continuity.core.snapshot.Context
+---@param buflist string[]
+M.on_post_load = function(data)
+  -- This is run after the buffers, windows, and tabs are restored
+end
+
+--- Called when continuity gets configured.
+--- This function is optional.
+---@param data table Configuration data passed in the config (in `extensions.<extension_name>`)
+M.config = function(data)
+  -- Optional setup for your extension
+end
+
+--- Check if a window is supported by this extension.
+--- This function is optional, but if provided `save_win` and `load_win` must
+--- also be present.
+---@param winid integer
+---@param bufnr integer
+---@return boolean
+M.is_win_supported = function(winid, bufnr)
+  return false
+end
+
+--- Save data for a window. Called when `is_win_supported` returned true.
+--- Note: Continuity does not focus tabs or windows during session save,
+---       so the current window/buffer will most likely be a different one than `winid`.
+---@param winid integer
+---@return any
+M.save_win = function(winid)
+  -- This is used to save the data for a specific window that contains a non-file buffer (e.g. a filetree).
+  return {}
+end
+
+--- Called after creating a tab's windows with the data from `save_win`.
+---@param winid integer
+---@param data any
+---@param win continuity.core.layout.WinInfo
+---@return integer? new_winid If the original window has been replaced, return the new ID that should replace it
+M.load_win = function(winid, config, win)
+  -- Restore the window from the config
+end
+
+return M
+```
+
+Enable your extension by adding a corresponding key in the `extensions` option:
+
+```lua
+vim.g.continuity_config = {
+  extensions = {
+    myplugin = {
+      -- This table is passed to M.config(). It can be empty.
+    },
+  },
+}
+```
+
+For tab-scoped sessions, the `on_save` and `on_load` methods of extensions are **disabled by default**.
+You can force-enable them by setting the `enable_in_tab` option to `true` (it's an inbuilt option respected for all extensions).
+
+```lua
+vim.g.continuity_config = {
+  -- ...
+  extensions = {
+    myplugin = {
+      enable_in_tab = true,
+    },
+  }
+}
+```
+{%-   endsection %}
+{%- endsection %}
+
+{%- section "API" %}
+{%-   section "Manual Sessions" %}
+{{ doc.get("continuity.session") }}
+{%-   endsection %}
+{%-   section "Autosessions" %}
+{{ doc.get("continuity.auto") }}
+{%-   endsection %}
+{%-   section "Relevant Types" %}
+{{ doc.get("continuity.core.Session.InitOpts") }}
+{{ doc.get("continuity.core.Session.InitOptsWithMeta") }}
+{{ doc.get("continuity.core.Session.AttachHook") }}
+{{ doc.get("continuity.core.Session.DetachHook") }}
+{%-   endsection %}
+{%- endsection %}
+
+{%- section "Extensions" %}
+{%- section "Built-in" with markdown=true %}
+quickfix
+: Persist all quickfix lists, currently active list, active position in list and quickfix window.
+
+colorscheme
+: Persist color scheme.
+
+neogit
+: Persist [neogit](https://github.com/NeogitOrg/neogit) status and commit views.
+
+oil.nvim
+: Persist [oil.nvim](https://github.com/stevearc/oil.nvim) windows.
+
+  Note: Customized from the one embedded in `oil.nvim` to correctly restore view.
+
+{%- endsection %}
+{%- section "External" with markdown=true %}
+Here are some examples of external extensions:
+
+aerial.nvim
+: See https://github.com/stevearc/aerial.nvim
+
+  Note: For Resession, which is compatible with Continuity.
+
+overseer.nvim
+: See https://github.com/stevearc/overseer.nvim
+
+  Note: For Resession, which is compatible with Continuity.
+{%- endsection %}
+{%- endsection %}
+{%- section "FAQ" %}
+Q: Why another session plugin? ~
+
+A1: All the other plugins (with the exception of `resession.nvim`)
+    use `:mksession` under the hood
+A2: Resession cannot be bent enough via its interface to support everything
+    Continuity does. Its API is difficult to build another plugin on top of
+    (e.g. cannot get session table without Resession saving it to a file
+    first).
+
+Q: Why don't you want to use `:mksession`? ~
+
+A: While it's amazing that this feature is built-in to vim, and it does an
+   impressively good job for most situations, it is very difficult to
+   customize. If `:help sessionoptions` covers your use case, then you're
+   golden. If you want anything else, you're out of luck.
+{%- endsection %}

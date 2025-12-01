@@ -272,7 +272,7 @@ function ActiveSession:autosave(opts, force) end
 --- otherwise you'll receive an error.
 --- Hint: If you are sure the session should be attached, but still receive an error,
 --- ensure that you call `detach()` on the specific session instance you called `:attach()` on before, not a copy.
-----@param self ActiveSession<T>
+--@param self ActiveSession<T>
 ---@param reason Session.DetachReason #
 ---   A reason for detaching, also passed to detach hooks.
 ---   Only inbuilt reasons influence behavior by default.

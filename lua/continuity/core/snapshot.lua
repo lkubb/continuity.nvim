@@ -26,6 +26,7 @@ end
 ---@param tabpage_bufs table<BufNr, true?> #
 ---   When saving a tab-scoped session, the list of buffers that are displayed in the tabpage.
 ---@param opts CreateOpts Snapshot creation options
+---@return boolean include_buf #
 local function include_buf(tabpage, bufnr, tabpage_bufs, opts)
   if not (opts.buf_filter or Config.session.buf_filter)(bufnr, opts) then
     return false
@@ -266,6 +267,7 @@ local function create(target_tabpage, opts, snapshot_ctx)
     buffers = {},
     tabs = {},
     tab_scoped = target_tabpage ~= nil,
+    ---@diagnostic disable-next-line: missing-fields
     global = {
       cwd = vim.fn.getcwd(-1, -1),
       height = vim.o.lines - vim.o.cmdheight,
@@ -721,7 +723,7 @@ function M.restore(snapshot, opts, snapshot_ctx)
 
   -- Use a timer to rapidly execute autocmds for unfocused buffers/windows
   -- while not blocking the UI any longer than necessary.
-  ---@type uv_timer_t
+  ---@type uv.uv_timer_t
   local edit_timer = assert(vim.uv.new_timer())
   local edited_bufs = { [curbuf] = true } ---@type table<BufNr, true?>
   -- Need to do this very fast (before LSP load) or quite slowly,

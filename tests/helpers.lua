@@ -48,7 +48,8 @@ Snapshot.__index = Snapshot
 ---@return Snapshot.TabData tab Snapshot data for tab
 function Snapshot:tab(number)
   number = number or 1
-  return assert(self.tabs[number], ("Missing tab number %s"):format(number))
+  local tab = assert(self.tabs[number], ("Missing tab number %s"):format(number))
+  return tab
 end
 
 --- Get a saved window by its index in the flattened table of layout leaves.
@@ -57,10 +58,11 @@ end
 ---@return layout.WinInfo win Snapshot data for window
 function Snapshot:win(winnr, tabnr)
   winnr = winnr or 1
-  return assert(
+  local win = assert(
     self:wins(tabnr and { tabnr } or nil)[winnr],
     ("Missing win number %s%s"):format(winnr, tabnr and (" in tab %s"):format(tabnr) or "")
   )
+  return win
 end
 
 --- Find a saved buffer by name and/or UUID.
