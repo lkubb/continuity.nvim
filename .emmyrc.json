@@ -1,16 +1,32 @@
 {
-    "$schema": "https://raw.githubusercontent.com/EmmyLuaLs/emmylua-analyzer-rust/refs/heads/main/crates/emmylua_code_analysis/resources/schema.json",
-    "runtime": {
-        "requireLikeFunction": [
-            "lazy_require"
-        ],
-        "version": "LuaJIT"
-    },
-    "strict": {
-        "requirePath": false,
-        "typeCall": false,
-        "arrayIndex": true,
-        "metaOverrideFileDefine": true,
-        "docBaseConstMatchBaseType": true
-    }
+  "$schema": "https://raw.githubusercontent.com/EmmyLuaLs/emmylua-analyzer-rust/refs/heads/main/crates/emmylua_code_analysis/resources/schema.json",
+  "runtime": {
+    "version": "LuaJIT",
+    "requireLikeFunction": [
+      "lazy_require"
+    ]
+  },
+  "strict": {
+    "arrayIndex": true,
+    "docBaseConstMatchBaseType": true,
+    "metaOverrideFileDefine": true,
+    "requirePath": true,
+    "typeCall": false
+  },
+  "diagnostics": {
+    "disable": []
+  },
+  "workspace": {
+    "ignoreGlobs": [
+      "**/*_spec.lua"
+    ],
+    "library": [
+      "$VIMRUNTIME",
+      "./deps/gitsigns.nvim",
+      "./deps/luv",
+      "./deps/mini.nvim",
+      "./deps/neogit",
+      "./deps/oil.nvim"
+    ]
+  }
 }

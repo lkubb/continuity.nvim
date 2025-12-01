@@ -444,13 +444,14 @@ local function finish_restore_buf(ctx, buf, snapshot)
     end)
     -- There's no `:clearchanges`, need to clear all buffer-local marks.
     -- TODO: Restore them after
-    _, marks_cleared = vim.cmd.delmarks({ bang = true }), true
+    vim.cmd.delmarks({ bang = true })
+    marks_cleared = true
     util.try_log(function()
       change_shada:read()
       if buf.changelist[2] > 0 then
         require("continuity.core.layout").lock_view(
           { win = vim.api.nvim_get_current_win() },
-          ---@diagnostic disable-next-line: param-type-not-match
+          ---@diagnostic disable-next-line: param-type-mismatch, param-type-not-match
           vim.cmd,
           "keepjumps norm! " .. tostring(buf.changelist[2] + 1) .. "g;"
         )
@@ -462,8 +463,16 @@ local function finish_restore_buf(ctx, buf, snapshot)
     if not marks_cleared then
       -- Cannot do delmarks!, which also clears jumplist (that isn't tracked/restored since we're here)
       for _, mark in ipairs(vim.fn.getmarklist(ctx.bufnr)) do
-        -- TODO: Really clear all marks?
-        vim.api.nvim_buf_del_mark(ctx.bufnr, mark.mark:sub(2, 2))
+        local markchar = mark.mark:sub(2, 2)
+        if not IGNORE_LOCAL_MARKS[markchar] then
+          -- TODO: Really clear all marks?
+          util.try_log(
+            vim.api.nvim_buf_del_mark,
+            { "Failed deleting mark %s for buf %s: %s", markchar, tostring(ctx) },
+            ctx.bufnr,
+            markchar
+          )
+        end
       end
     end
     for mark, pos in pairs(buf.marks) do

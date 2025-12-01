@@ -2,6 +2,7 @@ max_comment_line_length = false
 codes = true
 
 exclude_files = {
+  "**/_meta/",
   "tests/",
 }
 

@@ -17,7 +17,7 @@
 ---   * `level` Uppercase level name
 ---   * `message` Log message
 ---   * `dtime` Formatted date/time string
----   * `hrtime` Time in [ns] without absolute anchor
+---   * `hrtime` Time in `[ns]` without absolute anchor
 ---   * `src_path` Path to the file that called the log function
 ---   * `src_line` Line in `src_path` that called the log function
 ---   * `src_sep` Whitespace between log line and source of call, 2 tabs for single line, newline + tab for multiline log messages
@@ -33,7 +33,7 @@
 ---@field level Level Name of log level, uppercase
 ---@field message string Final, formatted log message
 ---@field timestamp integer UNIX timestamp of log message
----@field hrtime number High-resolution time of log message ([ns], arbitrary anchor)
+---@field hrtime number High-resolution time of log message (`[ns]`, arbitrary anchor)
 ---@field src_path string Absolute path to the file the log call originated from
 ---@field src_line integer Line in `src_path` the log call originated from
 

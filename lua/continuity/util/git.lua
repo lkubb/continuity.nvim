@@ -95,10 +95,9 @@ function M.current_branch(opts)
 
   -- We might be in the process of an interactive rebase
   local gitdir = git(opts, "rev-parse", "--absolute-git-dir")
-  if not (gitdir and gitdir[1] and gitdir[1] ~= "") then
+  if not gitdir or not gitdir[1] or gitdir[1] == "" then
     return
   end
-  ---@cast gitdir -nil
   local path = require("continuity.util.path")
   for _, dir in ipairs({ "rebase-merge", "rebase-apply" }) do
     local head_name_path = path.join(gitdir[1], dir, "head-name")

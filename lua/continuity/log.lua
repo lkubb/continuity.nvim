@@ -1,5 +1,9 @@
 local util = require("continuity.util")
 
+--- Logging implementation
+---@class continuity.log: continuity.Log.config
+local Log = {}
+
 ---@namespace continuity.log
 
 local levels_rev = {} ---@type table<vim.log.levels, Level>
@@ -17,10 +21,6 @@ local default_config = {
   notify_opts = { title = "Continuity" },
   time_format = "%Y-%m-%d %H:%M:%S",
 }
-
---- Logging implementation
----@class continuity.Log: continuity.Log.config
-local Log = {}
 
 --- Get the absolute path to the log file in `log` (or `state`) stdpath
 ---@return string logfile #

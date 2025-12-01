@@ -59,6 +59,7 @@ end
 --- like to keep the inner part of the traceback. This function
 --- attempts to add it to the error message, avoiding duplication
 --- of other stacktrace entries.
+---@param err string
 function M.xpcall_handler(err)
   local msg = vim.split(
     "xpcall caught error: "
@@ -144,7 +145,7 @@ end
 --- or the error handler's return.
 --- Note: Avoid differing return value types between `err_handler` and `success_handler`
 ---@generic InnerRets, Rets, Args
----@overload fun(inner: (fun(...: Args...): Rets...), err_handler: (fun(err: string): Rets...)): Rets...
+---@overload fun(inner: (fun(): Rets...), err_handler: (fun(err: string): Rets...)): Rets...
 ---@overload fun(inner: (fun(...: Args...): Rets...), err_handler: (fun(err: string): Rets...), success_handler: nil, ...: Args...): Rets...
 ---@param inner fun(...: Args...): InnerRets... Function to run in protected mode
 ---@param err_handler fun(err: string): Rets... Function to call when `inner` errors
@@ -183,7 +184,7 @@ function M.try_any(funs, ...)
 end
 
 ---@class TryLog.Params
----@field level? continuity.log.Level The level to log at. Defaults to `error`.
+---@field level? continuity.log.ConfigLevel The level to log at. Defaults to `error`.
 ---@field notify? boolean #
 ---   Call `vim.notify` in addition to logging. Defaults to false.
 ---   Note: Also Influenced by user config, this just forces a notification regardless.
@@ -200,7 +201,7 @@ end
 --- Otherwise return the result.
 --- Note: Avoid non-nullable returns.
 ---@generic InnerRets, Args, Rets
----@overload fun(inner: (fun(...: Args...): Rets...), msg: TryLog): Rets...
+---@overload fun(inner: (fun(): Rets...), msg: TryLog): Rets...
 ---@overload fun(inner: (fun(...: Args...): Rets...), msg: TryLog, success: nil, ...: Args...): Rets...
 ---@param inner fun(...: Args...): InnerRets... Function to run in protected mode
 ---@param msg  TryLog #
@@ -218,8 +219,9 @@ function M.try_log_else(inner, msg, success, ...)
   return M.try_catch_else(inner, function(err)
     local log = require("continuity.log")
     msg[#msg + 1] = err
+    ---@diagnostic disable-next-line: undefined-field
     log[msg.level or "error"](unpack(msg))
-    if msg.notify and log.notify_level > vim.log.levels[msg.level or "error"] then
+    if msg.notify and log.notify_level > vim.log.levels[(msg.level or "error"):upper()] then
       vim.notify(
         "[continuity] " .. msg[1]:format(unpack(msg, 2)),
         vim.log.levels[
