@@ -145,7 +145,7 @@ If you want to trigger autosession mode when Neovim starts, you need to set `g:f
   },
   log = {
     level = "warn",
-    format = "[%(level)s %(time)s] %(message)%(src_sep)s[%(source_path)s:%(source_line)s]",
+    format = "[%(level)s %(dtime)s] %(message)s%(src_sep)s[%(src_path)s:%(src_line)s]",
     notify_level = "warn",
     notify_format = "%(message)s",
     notify_opts = { title = "Finni" },
@@ -285,15 +285,15 @@ Configure plugin logging
 * **format**? `string`
 
   Log line format string. Note that this works like Python's f-strings.
-  Defaults to `[%(level)s %(time)s] %(message)%(src_sep)s[%(source_path)s:%(source_line)s]`.
+  Defaults to `[%(level)s %(dtime)s] %(message)s%(src_sep)s[%(src_path)s:%(src_line)s]`.
   Available parameters:
   * `level` Uppercase level name
+  * `message` Log message
   * `dtime` Formatted date/time string
   * `hrtime` Time in `[ns]` without absolute anchor
-  * `message` Log message
-  * `src_sep` Whitespace between log line and source of call, 2 tabs for single line, newline + tab for multiline log messages
   * `src_path` Path to the file that called the log function
   * `src_line` Line in `src_path` that called the log function
+  * `src_sep` Whitespace between log line and source of call, 2 tabs for single line, newline + tab for multiline log messages
 
 * **notify_format**? `string`
 

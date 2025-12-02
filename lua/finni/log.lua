@@ -15,7 +15,7 @@ end
 ---@type finni.Config.log
 local default_config = {
   level = "warn",
-  format = "[%(level)s %(time)s] %(message)%(src_sep)s[%(source_path)s:%(source_line)s]",
+  format = "[%(level)s %(dtime)s] %(message)s%(src_sep)s[%(src_path)s:%(src_line)s]",
   notify_level = "warn",
   notify_format = "%(message)s",
   notify_opts = { title = "Finni" },
@@ -37,7 +37,7 @@ end
 local function f(s, formats)
   --- Source: http://lua-users.org/wiki/StringInterpolation
   return (
-    s:gsub("%%%((%a%w*)%)([-0-9%.]*[cdeEfgGiouxXsq])", function(k, format)
+    s:gsub("%%%((%a[%w_]*)%)([-0-9%.]*[cdeEfgGiouxXsq])", function(k, format)
       return formats[k] and ("%" .. format):format(formats[k]) or "%(" .. k .. ")" .. format
     end)
   )
@@ -124,7 +124,7 @@ end
 ---@param ... any...
 ---@return Line
 local function fmt(level, msg, ...)
-  local timestamp = vim.uv.now()
+  local timestamp = vim.uv.clock_gettime("realtime").sec
   local hrtime = vim.uv.hrtime()
   local args = vim.F.pack_len(...)
   if args.n == 1 and type(args[1]) == "function" then

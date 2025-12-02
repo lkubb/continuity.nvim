@@ -12,7 +12,7 @@
 ---@field level vim.log.levels Minimum log level to log at
 ---@field format string #
 ---   Log line format string. Note that this works like Python's f-strings.
----   Defaults to `[%(level)s %(time)s] %(message)%(src_sep)s[%(source_path)s:%(source_line)s]`.
+---   Defaults to `[%(level)s %(dtime)s] %(message)s%(src_sep)s[%(src_path)s:%(src_line)s]`.
 ---   Available parameters:
 ---   * `level` Uppercase level name
 ---   * `message` Log message
