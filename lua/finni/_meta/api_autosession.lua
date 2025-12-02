@@ -102,7 +102,6 @@
 ---@class AutosessionContext: AutosessionSpec
 ---@field cwd string #
 ---   The effective working directory that was determined when loading this auto-session
----@field project AutosessionConfig.ProjectInfo
 
 ---@class AutosessionConfig.ProjectInfo: AutosessionSpec.ProjectInfo
 ---@field data_dir string #

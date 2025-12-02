@@ -504,7 +504,7 @@ local function list_active_tabpage_sessions(by_name)
   end)
 end
 
----@param reason Session.DetachReason Reason to pass to detach handlers.
+---@param reason Session.DetachReasonBuiltin|string Reason to pass to detach handlers.
 ---@param opts Session.DetachOpts & PassthroughOpts
 ---@return boolean detached Whether we detached from any session
 local function detach_global(reason, opts)
@@ -522,7 +522,7 @@ end
 ---@param target? (string|TabID|(string|TabID)[]) #
 ---   Target a tabpage session by name or associated tabpage.
 ---   Defaults to current tabpage. Also takes a list.
----@param reason Session.DetachReason Reason to pass to detach handlers.
+---@param reason Session.DetachReasonBuiltin|string Reason to pass to detach handlers.
 ---@param opts Session.DetachOpts & PassthroughOpts
 ---@return boolean detached Whether we detached from any session
 local function detach_tabpage(target, reason, opts)
@@ -551,7 +551,7 @@ local function detach_tabpage(target, reason, opts)
 end
 
 --- Detach all sessions (global + tab-scoped).
----@param reason Session.DetachReason Reason to pass to detach handlers.
+---@param reason Session.DetachReasonBuiltin|string Reason to pass to detach handlers.
 ---@param opts Session.DetachOpts & PassthroughOpts
 ---@return boolean detached Whether we detached from any session
 function M.detach_all(reason, opts)
@@ -578,7 +578,7 @@ end
 
 --- Detach a session by name.
 ---@param name string Name of the session to detach
----@param reason Session.DetachReason Reason to pass to detach handlers.
+---@param reason Session.DetachReasonBuiltin|string Reason to pass to detach handlers.
 ---@param opts Session.DetachOpts & PassthroughOpts
 ---@return boolean detached Whether we detached from any session
 local function detach_named(name, reason, opts)
@@ -730,7 +730,7 @@ end
 --- Detach from the session that contains the target (or all active sessions if unspecified).
 ---@param target? ("__global"|"__active"|"__active_tab"|"__all_tabs"|string|integer|(string|integer)[]) #
 ---   The scope/session name/tabid to detach from. If unspecified, detaches all sessions.
----@param reason? Session.DetachReason #
+---@param reason? Session.DetachReasonBuiltin|string #
 ---   Pass a custom reason to detach handlers. Defaults to `request`.
 ---@param opts? Session.DetachOpts & PassthroughOpts
 ---@return boolean detached Whether we detached from any session

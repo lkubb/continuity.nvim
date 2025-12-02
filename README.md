@@ -1324,7 +1324,7 @@ Modifying it in-place should work, but it's not officially supported.
 <a id="finni.core.Session.DetachHook"></a>
 #### `finni.core.Session.DetachHook` (Alias)
 
-**Type:** `(fun(session: finni.core.ActiveSession, reason: finni.core.Session.DetachReason, opts: (finni.core.Session.DetachOpts & finni.core.PassthroughOpts)) -> (finni.core.Session.DetachOpts & finni.core.PassthroughOpts))?`
+**Type:** `(fun(session: finni.core.ActiveSession, reason: (finni.core.Session.DetachReasonBuiltin|string), opts: (finni.core.Session.DetachOpts & finni.core.PassthroughOpts)) -> (finni.core.Session.DetachOpts & finni.core.PassthroughOpts))?`
 
 Detach hooks can modify detach opts in place or return new ones.
 They can inspect the session. Modifying it in-place should work, but it's not officially supported.

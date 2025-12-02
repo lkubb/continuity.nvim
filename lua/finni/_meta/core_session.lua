@@ -64,9 +64,6 @@
 --- detach hooks as well. These are the ones built in to the core session handling.
 ---@alias Session.DetachReasonBuiltin "delete"|"load"|"quit"|"request"|"save"|"tab_closed"
 
---- Custom detach reasons can be given as well.
----@alias Session.DetachReason Session.DetachReasonBuiltin|string
-
 --- Options for basic snapshot restoration (different from session loading!).
 --- Note that `reset` here does not handle detaching other active sessions,
 --- it really resets everything if set to true. If set to false, opens a new tab.
@@ -79,7 +76,7 @@
 
 --- Detach hooks can modify detach opts in place or return new ones.
 --- They can inspect the session. Modifying it in-place should work, but it's not officially supported.
----@alias Session.DetachHook fun(session: ActiveSession, reason: Session.DetachReason, opts: Session.DetachOpts & PassthroughOpts): (Session.DetachOpts & PassthroughOpts)?
+---@alias Session.DetachHook fun(session: ActiveSession, reason: Session.DetachReasonBuiltin|string, opts: Session.DetachOpts & PassthroughOpts): (Session.DetachOpts & PassthroughOpts)?
 
 --- Represents the complete internal state of a session
 ---@class ActiveSessionInfo: Session.Config
@@ -273,7 +270,7 @@ function ActiveSession:autosave(opts, force) end
 --- Hint: If you are sure the session should be attached, but still receive an error,
 --- ensure that you call `detach()` on the specific session instance you called `:attach()` on before, not a copy.
 --@param self ActiveSession<T>
----@param reason Session.DetachReason #
+---@param reason Session.DetachReasonBuiltin|string #
 ---   A reason for detaching, also passed to detach hooks.
 ---   Only inbuilt reasons influence behavior by default.
 ---@param opts Session.DetachOpts & PassthroughOpts #

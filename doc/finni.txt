@@ -714,7 +714,7 @@ detach({target}, {reason}, {opts})                    *finni.session.detach()*
       • {target}? `("__global"|"__active"|"__active_tab"|"__all_tabs"|string|integer...)`
           The scope/session name/tabid to detach from. If unspecified,
           detaches all sessions.
-      • {reason}? |finni.core.Session.DetachReason|
+      • {reason}? `(finni.core.Session.DetachReasonBuiltin|string)`
           Pass a custom reason to detach handlers. Defaults to `request`.
       • {opts}? `(finni.core.Session.DetachOpts & finni.core.PassthroughOpts)`
           Table fields:
@@ -1067,7 +1067,7 @@ RELEVANT TYPES                                      *finni-api-relevant-types*
                                                *finni.core.Session.DetachHook*
 `finni.core.Session.DetachHook` (Alias) ~
     Type: ~
-      `(fun(session: finni.core.ActiveSession, reason: finni.core.Session.DetachReason, opts: (finni.core.Session.DetachOpts & finni.core.PassthroughOpts)) -> (finni.core.Session.DetachOpts & finni.core.PassthroughOpts))?`
+      `(fun(session: finni.core.ActiveSession, reason: (finni.core.Session.DetachReasonBuiltin|string), opts: (finni.core.Session.DetachOpts & finni.core.PassthroughOpts)) -> (finni.core.Session.DetachOpts & finni.core.PassthroughOpts))?`
 
     Detach hooks can modify detach opts in place or return new ones. They
     can inspect the session. Modifying it in-place should work, but it’s
