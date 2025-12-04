@@ -92,14 +92,8 @@ If you want to trigger autosession mode when Neovim starts, you need to set `g:f
 >lua
     {{ extract_lines("lua/finni/config.lua", start="^---@type Config$", stop="^}$", skip_start=1, exclude=".*@diagnostic.*")[17:] | indent(4) }}
 <
-{%- endsection %}
-{%- set conf = doc.get("finni.UserConfig") %}
-{{ conf }}
-{%- for field in conf.fields.values() %}
-{%-   if field.typ.inner.kind.value == "class" %}
-{{ doc.get(field.typ.inner | str) }}
-{%-   endif %}
-{%- endfor %}
+{%-   endsection %}
+{{- doc.get("finni.UserConfig") }}
 {%- endsection %}
 
 {%- section "Recipes" %}
@@ -239,10 +233,7 @@ vim.g.finni_config = {
 {{ doc.get("finni.auto") }}
 {%-   endsection %}
 {%-   section "Relevant Types" %}
-{{ doc.get("finni.core.Session.InitOpts") }}
-{{ doc.get("finni.core.Session.InitOptsWithMeta") }}
-{{ doc.get("finni.core.Session.AttachHook") }}
-{{ doc.get("finni.core.Session.DetachHook") }}
+{{ typeref }}
 {%-   endsection %}
 {%- endsection %}
 

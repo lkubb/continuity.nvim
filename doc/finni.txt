@@ -22,10 +22,6 @@ Table of Contents
 4. Configuration ....................................... |finni-configuration|
    • Defaults ................................. |finni-configuration-defaults|
    • `finni.UserConfig` (Class) ........................... |finni.UserConfig|
-   • `finni.UserConfig.autosession` (Class) ... |finni.UserConfig.autosession|
-   • `finni.UserConfig.load` (Class) ................. |finni.UserConfig.load|
-   • `finni.UserConfig.log` (Class) ................... |finni.UserConfig.log|
-   • `finni.UserConfig.session` (Class) ........... |finni.UserConfig.session|
 5. Recipes ................................................... |finni-recipes|
    • Tab-scoped Sessions ................. |finni-recipes-tab-scoped-sessions|
    • Custom Extension ....................... |finni-recipes-custom-extension|
@@ -194,7 +190,6 @@ DEFAULTS                                        *finni-configuration-defaults*
     }
 <
 
-
                                                             *finni.UserConfig*
 `finni.UserConfig` (CLASS) ~
 
@@ -203,6 +198,19 @@ DEFAULTS                                        *finni-configuration-defaults*
     Fields: ~
       • {autosession}? |finni.UserConfig.autosession|
           Influence autosession behavior and contents
+
+          Table fields:
+          • {config}? |finni.core.Session.InitOpts|
+              Save/load configuration for autosessions
+          • {dir}? `string`
+              Name of the directory to store autosession projects in.
+              Interpreted relative to `$XDG_STATE_HOME/$NVIM_APPNAME`.
+          • {spec}? `fun(cwd: string) -> `|finni.auto.AutosessionSpec|`?`
+          • {workspace}? `fun(cwd: string) -> (string,boolean)`
+          • {project_name}? `fun(workspace: string, git_info: `|finni.auto.AutosessionSpec.GitInfo|`?) -> string`
+          • {session_name}? `fun(meta: {...}) -> string`
+          • {enabled}? `fun(meta: {...}) -> boolean`
+          • {load_opts}? `fun(meta: {...}) -> `|finni.auto.LoadOpts|`?`
       • {extensions}? `table<string,any>`
           Configuration for extensions, both Resession ones and those specific
           to Finni. Note: Finni first tries to load specified extensions in
@@ -211,153 +219,117 @@ DEFAULTS                                        *finni-configuration-defaults*
           in the extension config.
       • {load}? |finni.UserConfig.load|
           Configure session list information detail and sort order
+
+          Table fields:
+          • {detail}? `boolean`
+              Show more detail about the sessions when selecting one to load.
+              Disable if it causes lag.
+          • {order}? `("modification_time"|"creation_time"|"filename")`
+              Session list order
       • {log}? |finni.UserConfig.log|
           Configure plugin logging
+
+          Table fields:
+          • {level}? `("trace"|"debug"|"info"|"warn"|"error"|"off")`
+              Minimum level to log at. Defaults to `warn`.
+          • {notify_level}? `("trace"|"debug"|"info"|"warn"|"error"|"off")`
+              Minimum level to use `vim.notify` for. Defaults to `warn`.
+          • {notify_opts}? `table`
+              Options to pass to `vim.notify`. Defaults to
+              `{ title = "Finni" }`
+          • {format}? `string`
+              Log line format string. Note that this works
+              like Python’s f-strings. Defaults to
+              `[%(level)s %(dtime)s] %(message)s%(src_sep)s[%(src_path)s:%(src_line)s]`.
+              Available parameters: * `level` Uppercase level name * `message`
+              Log message * `dtime` Formatted date/time string * `hrtime` Time
+              in `[ns]` without absolute anchor * `src_path` Path to the file
+              that called the log function * `src_line` Line in `src_path`
+              that called the log function * `src_sep` Whitespace between
+              log line and source of call, 2 tabs for single line, newline
+              + tab for multiline log messages
+          • {notify_format}? `string`
+              Same as `format`, but for `vim.notify` message display. Defaults
+              to `%(message)s`.
+          • {time_format}? `string`
+              `strftime` format string used for rendering time of call.
+              Defaults to `%Y-%m-%d %H:%M:%S`
+          • {handler}? `fun(line: `|finni.log.Line|`)`
       • {session}? |finni.UserConfig.session|
           Influence session behavior and contents
 
+          Table fields:
+          • {autosave_enabled}? `boolean`
+              When this session is attached, automatically save it in
+              intervals. Defaults to false.
+          • {autosave_interval}? `integer`
+              Seconds between autosaves of this session, if enabled. Defaults
+              to 60.
+          • {autosave_notify}? `boolean`
+              Trigger a notification when autosaving this session. Defaults
+              to true.
+          • {on_attach}? |finni.core.Session.AttachHook|
+              A function that’s called when attaching to this session.
+              No global default.
+          • {on_detach}? |finni.core.Session.DetachHook|
+              A function that’s called when detaching from this session.
+              No global default.
+          • {options}? `string[]`
+              Save and restore these neovim (global/buffer/tab/window) options
+          • {buf_filter}? `fun(bufnr: integer, opts: `|finni.core.snapshot.CreateOpts|`) -> boolean`
+          • {tab_buf_filter}? `fun(tabpage: integer, bufnr: integer, opts: `|finni.core.snapshot.CreateOpts|`) -> boolean`
+          • {modified}? `(boolean|"auto")`
+              Save/load modified buffers and their undo history. If set to
+              `auto` (default), does not save, but still restores modified
+              buffers.
+          • {jumps}? `boolean`
+              Save/load window-specific jumplists, including current position
+              (yes, for __all windows__, not just the active one like with
+              ShaDa). If set to `auto` (default), does not save, but still
+              restores saved jumplists.
+          • {changelist}? `boolean`
+              Save/load buffer-specific changelist (all buffers) and
+              changelist position (visible buffers only).
 
-                                                *finni.UserConfig.autosession*
-`finni.UserConfig.autosession` (CLASS) ~
+              {Important}: Enabling this causes __buffer-local marks to be
+              cleared__ during restoration. Consider tracking `local_marks`
+              in addition to this.
+          • {global_marks}? `boolean`
+              Save/load global marks (A-Z, not 0-9 currently).
 
-    Configure autosession behavior and contents
+              _Only in global sessions._
+          • {local_marks}? `boolean`
+              Save/load buffer-specific (local) marks.
 
-    Fields: ~
-      • {config}? |finni.core.Session.InitOpts|
-          Save/load configuration for autosessions
-      • {dir}? `string`
-          Name of the directory to store autosession projects in. Interpreted
-          relative to `$XDG_STATE_HOME/$NVIM_APPNAME`.
-      • {spec}? `fun(cwd: string) -> finni.auto.AutosessionSpec?`
-      • {workspace}? `fun(cwd: string) -> (string,boolean)`
-      • {project_name}? `fun(workspace: string, git_info: finni.auto.AutosessionSpec.GitInfo?) -> string`
-      • {session_name}? `fun(meta: {...}) -> string`
-      • {enabled}? `fun(meta: {...}) -> boolean`
-      • {load_opts}? `fun(meta: {...}) -> finni.auto.LoadOpts?`
+              {Note}: Enable this if you track the `changelist`.
+          • {search_history}? `(integer|boolean)`
+              Maximum number of search history items to persist. Defaults to
+              false. If set to `true`, maps to the 'history' option.
 
+              _Only in global sessions._
+          • {command_history}? `(integer|boolean)`
+              Maximum number of command history items to persist. Defaults to
+              false. If set to `true`, maps to the 'history' option.
 
-                                                       *finni.UserConfig.load*
-`finni.UserConfig.load` (CLASS) ~
+              _Only in global sessions._
+          • {input_history}? `(integer|boolean)`
+              Maximum number of input history items to persist. Defaults to
+              false. If set to `true`, maps to the 'history' option.
 
-    Configure session list information detail and sort order
+              _Only in global sessions._
+          • {expr_history}? `boolean`
+              Persist expression history. Defaults to false. {Note}: Cannot
+              set limit (currently), no direct support by neovim.
 
-    Fields: ~
-      • {detail}? `boolean`
-          Show more detail about the sessions when selecting one to load.
-          Disable if it causes lag.
-      • {order}? `("modification_time"|"creation_time"|"filename")`
-          Session list order
+              _Only in global sessions._
+          • {debug_history}? `boolean`
+              Persist debug history. Defaults to false. {Note}: Cannot set
+              limit (currently), no direct support by neovim.
 
-
-                                                        *finni.UserConfig.log*
-`finni.UserConfig.log` (CLASS) ~
-
-    Configure plugin logging
-
-    Fields: ~
-      • {level}? `("trace"|"debug"|"info"|"warn"|"error"|"off")`
-          Minimum level to log at. Defaults to `warn`.
-      • {notify_level}? `("trace"|"debug"|"info"|"warn"|"error"|"off")`
-          Minimum level to use `vim.notify` for. Defaults to `warn`.
-      • {notify_opts}? `table`
-          Options to pass to `vim.notify`. Defaults to `{ title = "Finni" }`
-      • {format}? `string`
-          Log line format string. Note that this works
-          like Python’s f-strings. Defaults to
-          `[%(level)s %(dtime)s] %(message)s%(src_sep)s[%(src_path)s:%(src_line)s]`.
-          Available parameters: * `level` Uppercase level name * `message`
-          Log message * `dtime` Formatted date/time string * `hrtime` Time
-          in `[ns]` without absolute anchor * `src_path` Path to the file
-          that called the log function * `src_line` Line in `src_path` that
-          called the log function * `src_sep` Whitespace between log line
-          and source of call, 2 tabs for single line, newline + tab for
-          multiline log messages
-      • {notify_format}? `string`
-          Same as `format`, but for `vim.notify` message display. Defaults
-          to `%(message)s`.
-      • {time_format}? `string`
-          `strftime` format string used for rendering time of call. Defaults
-          to `%Y-%m-%d %H:%M:%S`
-      • {handler}? `fun(line: finni.log.Line)`
-
-
-                                                    *finni.UserConfig.session*
-`finni.UserConfig.session` (CLASS) ~
-
-    Configure default session behavior and contents, affects both manual
-    and autosessions.
-
-    Fields: ~
-      • {autosave_enabled}? `boolean`
-          When this session is attached, automatically save it in intervals.
-          Defaults to false.
-      • {autosave_interval}? `integer`
-          Seconds between autosaves of this session, if enabled. Defaults
-          to 60.
-      • {autosave_notify}? `boolean`
-          Trigger a notification when autosaving this session. Defaults
-          to true.
-      • {on_attach}? |finni.core.Session.AttachHook|
-          A function that’s called when attaching to this session. No
-          global default.
-      • {on_detach}? |finni.core.Session.DetachHook|
-          A function that’s called when detaching from this session. No
-          global default.
-      • {options}? `string[]`
-          Save and restore these neovim (global/buffer/tab/window) options
-      • {buf_filter}? `fun(bufnr: integer, opts: finni.core.snapshot.CreateOpts) -> boolean`
-      • {tab_buf_filter}? `fun(tabpage: integer, bufnr: integer, opts: finni.core.snapshot.CreateOpts) -> boolean`
-      • {modified}? `(boolean|"auto")`
-          Save/load modified buffers and their undo history. If set to `auto`
-          (default), does not save, but still restores modified buffers.
-      • {jumps}? `boolean`
-          Save/load window-specific jumplists, including current position
-          (yes, for __all windows__, not just the active one like with ShaDa).
-          If set to `auto` (default), does not save, but still restores
-          saved jumplists.
-      • {changelist}? `boolean`
-          Save/load buffer-specific changelist (all buffers) and changelist
-          position (visible buffers only).
-
-          {Important}: Enabling this causes __buffer-local marks to be
-          cleared__ during restoration. Consider tracking `local_marks` in
-          addition to this.
-      • {global_marks}? `boolean`
-          Save/load global marks (A-Z, not 0-9 currently).
-
-          _Only in global sessions._
-      • {local_marks}? `boolean`
-          Save/load buffer-specific (local) marks.
-
-          {Note}: Enable this if you track the `changelist`.
-      • {search_history}? `(integer|boolean)`
-          Maximum number of search history items to persist. Defaults to
-          false. If set to `true`, maps to the 'history' option.
-
-          _Only in global sessions._
-      • {command_history}? `(integer|boolean)`
-          Maximum number of command history items to persist. Defaults to
-          false. If set to `true`, maps to the 'history' option.
-
-          _Only in global sessions._
-      • {input_history}? `(integer|boolean)`
-          Maximum number of input history items to persist. Defaults to false.
-          If set to `true`, maps to the 'history' option.
-
-          _Only in global sessions._
-      • {expr_history}? `boolean`
-          Persist expression history. Defaults to false. {Note}: Cannot set
-          limit (currently), no direct support by neovim.
-
-          _Only in global sessions._
-      • {debug_history}? `boolean`
-          Persist debug history. Defaults to false. {Note}: Cannot set limit
-          (currently), no direct support by neovim.
-
-          _Only in global sessions._
-      • {dir}? `string`
-          Name of the directory to store regular sessions in. Interpreted
-          relative to `$XDG_STATE_HOME/$NVIM_APPNAME`.
+              _Only in global sessions._
+          • {dir}? `string`
+              Name of the directory to store regular sessions in. Interpreted
+              relative to `$XDG_STATE_HOME/$NVIM_APPNAME`.
 
 ==============================================================================
 Recipes                                                        *finni-recipes*
@@ -497,7 +469,7 @@ MANUAL SESSIONS                                    *finni-api-manual-sessions*
 
 
                                                                *finni.session*
-`finni.session` (Class) ~
+`finni.session` (Module) ~
 
     Interactive API, (mostly) compatible with stevearc/resession.nvim.
 
@@ -509,7 +481,7 @@ save({name}, {opts})                                    *finni.session.save()*
       • {name}? `string`
           Name of the global session to save. If not provided, takes name
           of attached one or prompts user.
-      • {opts}? `(finni.session.SaveOpts & finni.core.PassthroughOpts)`
+      • {opts}? `(`|finni.session.SaveOpts|` & `|finni.core.PassthroughOpts|`)`
           Table fields:
           • {dir}? `string`
               Name of session directory (overrides config.dir)
@@ -530,8 +502,8 @@ save({name}, {opts})                                    *finni.session.save()*
               No global default.
           • {options}? `string[]`
               Save and restore these neovim (global/buffer/tab/window) options
-          • {buf_filter}? `fun(bufnr: integer, opts: finni.core.snapshot.CreateOpts) -> boolean`
-          • {tab_buf_filter}? `fun(tabpage: integer, bufnr: integer, opts: finni.core.snapshot.CreateOpts) -> boolean`
+          • {buf_filter}? `fun(bufnr: integer, opts: `|finni.core.snapshot.CreateOpts|`) -> boolean`
+          • {tab_buf_filter}? `fun(tabpage: integer, bufnr: integer, opts: `|finni.core.snapshot.CreateOpts|`) -> boolean`
           • {modified}? `(boolean|"auto")`
               Save/load modified buffers and their undo history. If set to
               `auto` (default), does not save, but still restores modified
@@ -600,7 +572,7 @@ save_tab({name}, {opts})                            *finni.session.save_tab()*
       • {name}? `string`
           Name of the tabpage session to save. If not provided, takes name of
           attached one in current tabpage or prompts user.
-      • {opts}? `(finni.session.SaveOpts & finni.core.PassthroughOpts)`
+      • {opts}? `(`|finni.session.SaveOpts|` & `|finni.core.PassthroughOpts|`)`
           Table fields:
           • {dir}? `string`
               Name of session directory (overrides config.dir)
@@ -621,8 +593,8 @@ save_tab({name}, {opts})                            *finni.session.save_tab()*
               No global default.
           • {options}? `string[]`
               Save and restore these neovim (global/buffer/tab/window) options
-          • {buf_filter}? `fun(bufnr: integer, opts: finni.core.snapshot.CreateOpts) -> boolean`
-          • {tab_buf_filter}? `fun(tabpage: integer, bufnr: integer, opts: finni.core.snapshot.CreateOpts) -> boolean`
+          • {buf_filter}? `fun(bufnr: integer, opts: `|finni.core.snapshot.CreateOpts|`) -> boolean`
+          • {tab_buf_filter}? `fun(tabpage: integer, bufnr: integer, opts: `|finni.core.snapshot.CreateOpts|`) -> boolean`
           • {modified}? `(boolean|"auto")`
               Save/load modified buffers and their undo history. If set to
               `auto` (default), does not save, but still restores modified
@@ -699,12 +671,98 @@ load({name}, {opts})                                    *finni.session.load()*
       • {name}? `string`
           Name of the session to load from session dir. If not provided,
           prompts user.
-      • {opts}? `(finni.session.LoadOpts & finni.core.PassthroughOpts)`
+      • {opts}? `(`|finni.session.LoadOpts|` & `|finni.core.PassthroughOpts|`)`
           attach? boolean Stay attached to session after loading (default
           true) reset? boolean|"auto" Close everything before loading the
           session (default "auto") silence_errors? boolean Don’t error when
           trying to load a missing session dir? string Name of directory to
           load from (overrides config.dir)
+
+          Table fields:
+          • {dir}? `string`
+              Name of session directory (overrides config.dir)
+          • {autosave_enabled}? `boolean`
+              When this session is attached, automatically save it in
+              intervals. Defaults to false.
+          • {autosave_interval}? `integer`
+              Seconds between autosaves of this session, if enabled. Defaults
+              to 60.
+          • {autosave_notify}? `boolean`
+              Trigger a notification when autosaving this session. Defaults
+              to true.
+          • {on_attach}? |finni.core.Session.AttachHook|
+              A function that’s called when attaching to this session.
+              No global default.
+          • {on_detach}? |finni.core.Session.DetachHook|
+              A function that’s called when detaching from this session.
+              No global default.
+          • {options}? `string[]`
+              Save and restore these neovim (global/buffer/tab/window) options
+          • {buf_filter}? `fun(bufnr: integer, opts: `|finni.core.snapshot.CreateOpts|`) -> boolean`
+          • {tab_buf_filter}? `fun(tabpage: integer, bufnr: integer, opts: `|finni.core.snapshot.CreateOpts|`) -> boolean`
+          • {modified}? `(boolean|"auto")`
+              Save/load modified buffers and their undo history. If set to
+              `auto` (default), does not save, but still restores modified
+              buffers.
+          • {jumps}? `boolean`
+              Save/load window-specific jumplists, including current position
+              (yes, for __all windows__, not just the active one like with
+              ShaDa). If set to `auto` (default), does not save, but still
+              restores saved jumplists.
+          • {changelist}? `boolean`
+              Save/load buffer-specific changelist (all buffers) and
+              changelist position (visible buffers only).
+
+              {Important}: Enabling this causes __buffer-local marks to be
+              cleared__ during restoration. Consider tracking `local_marks`
+              in addition to this.
+          • {global_marks}? `boolean`
+              Save/load global marks (A-Z, not 0-9 currently).
+
+              _Only in global sessions._
+          • {local_marks}? `boolean`
+              Save/load buffer-specific (local) marks.
+
+              {Note}: Enable this if you track the `changelist`.
+          • {search_history}? `(integer|boolean)`
+              Maximum number of search history items to persist. Defaults to
+              false. If set to `true`, maps to the 'history' option.
+
+              _Only in global sessions._
+          • {command_history}? `(integer|boolean)`
+              Maximum number of command history items to persist. Defaults to
+              false. If set to `true`, maps to the 'history' option.
+
+              _Only in global sessions._
+          • {input_history}? `(integer|boolean)`
+              Maximum number of input history items to persist. Defaults to
+              false. If set to `true`, maps to the 'history' option.
+
+              _Only in global sessions._
+          • {expr_history}? `boolean`
+              Persist expression history. Defaults to false. {Note}: Cannot
+              set limit (currently), no direct support by neovim.
+
+              _Only in global sessions._
+          • {debug_history}? `boolean`
+              Persist debug history. Defaults to false. {Note}: Cannot set
+              limit (currently), no direct support by neovim.
+
+              _Only in global sessions._
+          • {meta}? `table`
+              External data remembered in association with this session.
+              Useful to build on top of the core API.
+          • {attach}? `boolean`
+              Attach to/stay attached to session after operation
+          • {reset}? `(boolean|"auto")`
+              When detaching a session in the process, unload associated
+              resources/reset everything during the operation when restoring
+              a snapshot. `auto` resets only for global sessions.
+          • {save}? `boolean`
+              Save/override autosave config for affected sessions before
+              the operation
+          • {silence_errors}? `boolean`
+              Don’t error during this operation
 
 detach({target}, {reason}, {opts})                    *finni.session.detach()*
     M.get_current = Manager.get_current M.get_current_data =
@@ -714,9 +772,9 @@ detach({target}, {reason}, {opts})                    *finni.session.detach()*
       • {target}? `("__global"|"__active"|"__active_tab"|"__all_tabs"|string|integer...)`
           The scope/session name/tabid to detach from. If unspecified,
           detaches all sessions.
-      • {reason}? `(finni.core.Session.DetachReasonBuiltin|string)`
+      • {reason}? `(`|finni.core.Session.DetachReasonBuiltin|`|string)`
           Pass a custom reason to detach handlers. Defaults to `request`.
-      • {opts}? `(finni.core.Session.DetachOpts & finni.core.PassthroughOpts)`
+      • {opts}? `(`|finni.core.Session.DetachOpts|` & `|finni.core.PassthroughOpts|`)`
           Table fields:
           • {reset}? `boolean`
               When detaching a session in the process, unload associated
@@ -745,7 +803,7 @@ delete({name}, {opts})                                *finni.session.delete()*
     Parameters: ~
       • {name}? `string`
           Name of the session. If not provided, prompts user
-      • {opts}? `(finni.session.DeleteOpts & finni.core.PassthroughOpts)`
+      • {opts}? `(`|finni.session.DeleteOpts|` & `|finni.core.PassthroughOpts|`)`
           Table fields:
           • {dir}? `string`
               Name of session directory (overrides config.dir)
@@ -762,13 +820,13 @@ AUTOSESSIONS                                          *finni-api-autosessions*
 
 
                                                                   *finni.auto*
-`finni.auto` (Class) ~
+`finni.auto` (Module) ~
 
 save({opts})                                               *finni.auto.save()*
     Save the currently active autosession.
 
     Parameters: ~
-      • {opts}? `(finni.auto.SaveOpts & finni.core.PassthroughOpts)`
+      • {opts}? `(`|finni.auto.SaveOpts|` & `|finni.core.PassthroughOpts|`)`
           Table fields:
           • {attach}? `boolean`
               Attach to/stay attached to session after operation
@@ -784,7 +842,7 @@ detach({opts})                                           *finni.auto.detach()*
     save it. Optionally close {everything}.
 
     Parameters: ~
-      • {opts}? `(finni.core.Session.DetachOpts & finni.core.PassthroughOpts)`
+      • {opts}? `(`|finni.core.Session.DetachOpts|` & `|finni.core.PassthroughOpts|`)`
           Table fields:
           • {reset}? `boolean`
               When detaching a session in the process, unload associated
@@ -798,9 +856,92 @@ load({autosession}, {opts})                                *finni.auto.load()*
     Load an autosession.
 
     Parameters: ~
-      • {autosession}? `(finni.auto.AutosessionContext|string)`
+      • {autosession}? `(`|finni.auto.AutosessionContext|`|string)`
           The autosession table as rendered by `get_ctx` or cwd to pass to it
       • {opts}? |finni.auto.LoadOpts|
+          Table fields:
+          • {autosave_enabled}? `boolean`
+              When this session is attached, automatically save it in
+              intervals. Defaults to false.
+          • {autosave_interval}? `integer`
+              Seconds between autosaves of this session, if enabled. Defaults
+              to 60.
+          • {autosave_notify}? `boolean`
+              Trigger a notification when autosaving this session. Defaults
+              to true.
+          • {on_attach}? |finni.core.Session.AttachHook|
+              A function that’s called when attaching to this session.
+              No global default.
+          • {on_detach}? |finni.core.Session.DetachHook|
+              A function that’s called when detaching from this session.
+              No global default.
+          • {options}? `string[]`
+              Save and restore these neovim (global/buffer/tab/window) options
+          • {buf_filter}? `fun(bufnr: integer, opts: `|finni.core.snapshot.CreateOpts|`) -> boolean`
+          • {tab_buf_filter}? `fun(tabpage: integer, bufnr: integer, opts: `|finni.core.snapshot.CreateOpts|`) -> boolean`
+          • {modified}? `(boolean|"auto")`
+              Save/load modified buffers and their undo history. If set to
+              `auto` (default), does not save, but still restores modified
+              buffers.
+          • {jumps}? `boolean`
+              Save/load window-specific jumplists, including current position
+              (yes, for __all windows__, not just the active one like with
+              ShaDa). If set to `auto` (default), does not save, but still
+              restores saved jumplists.
+          • {changelist}? `boolean`
+              Save/load buffer-specific changelist (all buffers) and
+              changelist position (visible buffers only).
+
+              {Important}: Enabling this causes __buffer-local marks to be
+              cleared__ during restoration. Consider tracking `local_marks`
+              in addition to this.
+          • {global_marks}? `boolean`
+              Save/load global marks (A-Z, not 0-9 currently).
+
+              _Only in global sessions._
+          • {local_marks}? `boolean`
+              Save/load buffer-specific (local) marks.
+
+              {Note}: Enable this if you track the `changelist`.
+          • {search_history}? `(integer|boolean)`
+              Maximum number of search history items to persist. Defaults to
+              false. If set to `true`, maps to the 'history' option.
+
+              _Only in global sessions._
+          • {command_history}? `(integer|boolean)`
+              Maximum number of command history items to persist. Defaults to
+              false. If set to `true`, maps to the 'history' option.
+
+              _Only in global sessions._
+          • {input_history}? `(integer|boolean)`
+              Maximum number of input history items to persist. Defaults to
+              false. If set to `true`, maps to the 'history' option.
+
+              _Only in global sessions._
+          • {expr_history}? `boolean`
+              Persist expression history. Defaults to false. {Note}: Cannot
+              set limit (currently), no direct support by neovim.
+
+              _Only in global sessions._
+          • {debug_history}? `boolean`
+              Persist debug history. Defaults to false. {Note}: Cannot set
+              limit (currently), no direct support by neovim.
+
+              _Only in global sessions._
+          • {meta}? `table`
+              External data remembered in association with this session.
+              Useful to build on top of the core API.
+          • {attach}? `boolean`
+              Attach to/stay attached to session after operation
+          • {save}? `boolean`
+              Save/override autosave config for affected sessions before
+              the operation
+          • {reset}? `(boolean|"auto")`
+              When detaching a session in the process, unload associated
+              resources/reset everything during the operation when restoring
+              a snapshot. `auto` resets only for global sessions.
+          • {silence_errors}? `boolean`
+              Don’t error during this operation
 
 reload()                                                 *finni.auto.reload()*
     If an autosession is active, save it and detach. Then try to start a
@@ -816,6 +957,89 @@ start({cwd}, {opts})                                      *finni.auto.start()*
           Working directory to switch to before starting autosession. Defaults
           to nvim’s process’ cwd.
       • {opts}? |finni.auto.LoadOpts|
+          Table fields:
+          • {autosave_enabled}? `boolean`
+              When this session is attached, automatically save it in
+              intervals. Defaults to false.
+          • {autosave_interval}? `integer`
+              Seconds between autosaves of this session, if enabled. Defaults
+              to 60.
+          • {autosave_notify}? `boolean`
+              Trigger a notification when autosaving this session. Defaults
+              to true.
+          • {on_attach}? |finni.core.Session.AttachHook|
+              A function that’s called when attaching to this session.
+              No global default.
+          • {on_detach}? |finni.core.Session.DetachHook|
+              A function that’s called when detaching from this session.
+              No global default.
+          • {options}? `string[]`
+              Save and restore these neovim (global/buffer/tab/window) options
+          • {buf_filter}? `fun(bufnr: integer, opts: `|finni.core.snapshot.CreateOpts|`) -> boolean`
+          • {tab_buf_filter}? `fun(tabpage: integer, bufnr: integer, opts: `|finni.core.snapshot.CreateOpts|`) -> boolean`
+          • {modified}? `(boolean|"auto")`
+              Save/load modified buffers and their undo history. If set to
+              `auto` (default), does not save, but still restores modified
+              buffers.
+          • {jumps}? `boolean`
+              Save/load window-specific jumplists, including current position
+              (yes, for __all windows__, not just the active one like with
+              ShaDa). If set to `auto` (default), does not save, but still
+              restores saved jumplists.
+          • {changelist}? `boolean`
+              Save/load buffer-specific changelist (all buffers) and
+              changelist position (visible buffers only).
+
+              {Important}: Enabling this causes __buffer-local marks to be
+              cleared__ during restoration. Consider tracking `local_marks`
+              in addition to this.
+          • {global_marks}? `boolean`
+              Save/load global marks (A-Z, not 0-9 currently).
+
+              _Only in global sessions._
+          • {local_marks}? `boolean`
+              Save/load buffer-specific (local) marks.
+
+              {Note}: Enable this if you track the `changelist`.
+          • {search_history}? `(integer|boolean)`
+              Maximum number of search history items to persist. Defaults to
+              false. If set to `true`, maps to the 'history' option.
+
+              _Only in global sessions._
+          • {command_history}? `(integer|boolean)`
+              Maximum number of command history items to persist. Defaults to
+              false. If set to `true`, maps to the 'history' option.
+
+              _Only in global sessions._
+          • {input_history}? `(integer|boolean)`
+              Maximum number of input history items to persist. Defaults to
+              false. If set to `true`, maps to the 'history' option.
+
+              _Only in global sessions._
+          • {expr_history}? `boolean`
+              Persist expression history. Defaults to false. {Note}: Cannot
+              set limit (currently), no direct support by neovim.
+
+              _Only in global sessions._
+          • {debug_history}? `boolean`
+              Persist debug history. Defaults to false. {Note}: Cannot set
+              limit (currently), no direct support by neovim.
+
+              _Only in global sessions._
+          • {meta}? `table`
+              External data remembered in association with this session.
+              Useful to build on top of the core API.
+          • {attach}? `boolean`
+              Attach to/stay attached to session after operation
+          • {save}? `boolean`
+              Save/override autosave config for affected sessions before
+              the operation
+          • {reset}? `(boolean|"auto")`
+              When detaching a session in the process, unload associated
+              resources/reset everything during the operation when restoring
+              a snapshot. `auto` resets only for global sessions.
+          • {silence_errors}? `boolean`
+              Don’t error during this operation
 
 stop()                                                     *finni.auto.stop()*
     Stop Finni: 1. If we’re inside an active autosession, save it and
@@ -828,6 +1052,22 @@ reset({opts})                                             *finni.auto.reset()*
 
     Parameters: ~
       • {opts}? |finni.auto.ResetOpts|
+          Table fields:
+          • {silence_errors}? `boolean`
+              Don’t error during this operation
+          • {reset}? `boolean`
+              When detaching a session in the process, unload associated
+              resources/reset everything during the operation when restoring
+              a snapshot.
+          • {notify}? `boolean`
+              Notify on success
+          • {cwd}? `(string|true)`
+              Path to a directory associated with the session to reset
+              instead of current one. Set this to `true` to use nvim’s
+              current global CWD.
+          • {reload}? `boolean`
+              Attempt to restart a new autosession after reset. Defaults
+              to true.
 
 reset_project({opts})                             *finni.auto.reset_project()*
     Remove all autosessions associated with a project. If the target is the
@@ -835,6 +1075,13 @@ reset_project({opts})                             *finni.auto.reset_project()*
 
     Parameters: ~
       • {opts}? |finni.auto.ResetProjectOpts|
+          Table fields:
+          • {name}? `string`
+              Specify the project to reset. If unspecified, resets active
+              project, if available.
+          • {force}? `boolean`
+              Force recursive deletion of project dir outside of configured
+              root
 
 list({opts})                                               *finni.auto.list()*
     List autosessions associated with a project.
@@ -843,6 +1090,14 @@ list({opts})                                               *finni.auto.list()*
       • {opts}? |finni.auto.ListOpts|
           Specify the project to list. If unspecified, lists active project,
           if available.
+
+          Table fields:
+          • {cwd}? `string`
+              Path to a directory associated with the project to list
+          • {project_dir}? `string`
+              Path to the project session dir
+          • {project_name}? `string`
+              Name of the project
 
     Returns: ~
         {session_names} `string[]`
@@ -853,6 +1108,10 @@ list_projects({opts})                             *finni.auto.list_projects()*
 
     Parameters: ~
       • {opts}? |finni.auto.ListProjectOpts|
+          Table fields:
+          • {with_sessions}? `boolean`
+              Additionally list all known sessions for each listed project.
+              Defaults to false.
 
     Returns: ~
         `string[]`
@@ -869,6 +1128,15 @@ migrate_projects({opts})                       *finni.auto.migrate_projects()*
       • {opts}? |finni.auto.MigrateProjectsOpts|
           Options for migration. You need to pass `{dry_run = false}` for
           this function to have an effect.
+
+          Table fields:
+          • {dry_run}? `boolean`
+              Don’t execute the migration, only show what would have
+              happened. Defaults to true, meaning you need to explicitly set
+              this to `false` to have an effect.
+          • {old_root}? `string`
+              If the value of `autosession.dir` has changed, the old value.
+              Defaults to `autosession.dir`.
 
     Returns: ~
         {migration_result} `table<("broken"|"missing"|"skipped"|"migrated"...),table[]>`
@@ -892,10 +1160,1959 @@ info({opts})                                               *finni.auto.info()*
 RELEVANT TYPES                                      *finni-api-relevant-types*
 
 
+                                            *finni.auto.ActiveAutosessionInfo*
+`finni.auto.ActiveAutosessionInfo` (Class) ~
+    Fields: ~
+      • {session_file} `string`
+          Path to the session file
+      • {state_dir} `string`
+          Path to the directory holding session-associated data
+      • {context_dir} `string`
+          Directory for shared state between all sessions in the same context
+          (`dir` for manual sessions, project dir for autosessions)
+      • {autosave_enabled} `boolean`
+          When this session is attached, automatically save it in intervals.
+          Defaults to false.
+      • {autosave_interval} `integer`
+          Seconds between autosaves of this session, if enabled. Defaults
+          to 60.
+      • {name} `string`
+          Name of the session
+      • {tab_scoped} `boolean`
+          Whether the session is tab-scoped
+      • {is_autosession} `boolean`
+          Whether this is an autosession or a manual one
+      • {autosave_notify}? `boolean`
+          Trigger a notification when autosaving this session. Defaults
+          to true.
+      • {on_attach}? |finni.core.Session.AttachHook|
+          A function that’s called when attaching to this session. No
+          global default.
+      • {on_detach}? |finni.core.Session.DetachHook|
+          A function that’s called when detaching from this session. No
+          global default.
+      • {meta}? `table`
+          External data remembered in association with this session. Useful
+          to build on top of the core API.
+      • {options}? `string[]`
+          Save and restore these neovim (global/buffer/tab/window) options
+      • {buf_filter}? `fun(bufnr: integer, opts: `|finni.core.snapshot.CreateOpts|`) -> boolean`
+      • {tab_buf_filter}? `fun(tabpage: integer, bufnr: integer, opts: `|finni.core.snapshot.CreateOpts|`) -> boolean`
+      • {modified}? `(boolean|"auto")`
+          Save/load modified buffers and their undo history. If set to `auto`
+          (default), does not save, but still restores modified buffers.
+      • {jumps}? `boolean`
+          Save/load window-specific jumplists, including current position
+          (yes, for __all windows__, not just the active one like with ShaDa).
+          If set to `auto` (default), does not save, but still restores
+          saved jumplists.
+      • {changelist}? `boolean`
+          Save/load buffer-specific changelist (all buffers) and changelist
+          position (visible buffers only).
+
+          {Important}: Enabling this causes __buffer-local marks to be
+          cleared__ during restoration. Consider tracking `local_marks` in
+          addition to this.
+      • {global_marks}? `boolean`
+          Save/load global marks (A-Z, not 0-9 currently).
+
+          _Only in global sessions._
+      • {local_marks}? `boolean`
+          Save/load buffer-specific (local) marks.
+
+          {Note}: Enable this if you track the `changelist`.
+      • {search_history}? `(integer|boolean)`
+          Maximum number of search history items to persist. Defaults to
+          false. If set to `true`, maps to the 'history' option.
+
+          _Only in global sessions._
+      • {command_history}? `(integer|boolean)`
+          Maximum number of command history items to persist. Defaults to
+          false. If set to `true`, maps to the 'history' option.
+
+          _Only in global sessions._
+      • {input_history}? `(integer|boolean)`
+          Maximum number of input history items to persist. Defaults to false.
+          If set to `true`, maps to the 'history' option.
+
+          _Only in global sessions._
+      • {expr_history}? `boolean`
+          Persist expression history. Defaults to false. {Note}: Cannot set
+          limit (currently), no direct support by neovim.
+
+          _Only in global sessions._
+      • {debug_history}? `boolean`
+          Persist debug history. Defaults to false. {Note}: Cannot set limit
+          (currently), no direct support by neovim.
+
+          _Only in global sessions._
+      • {tabid}? `(`|finni.core.TabID|`|true)`
+          Tab number the session is attached to, if any. Can be `true`, which
+          indicates it’s a tab-scoped session that has not been restored
+          yet - although not when requesting via the API
+      • {autosession_config}? |finni.auto.AutosessionContext|
+          WHen this is an autosession, the internal configuration that was
+          rendered.
+
+          Table fields:
+          • {project} |finni.auto.AutosessionSpec.ProjectInfo|
+              Information about the project the session belongs to
+          • {root} `string`
+              The top level directory for this session (workspace root).
+              Usually equals the project root, but can be different when
+              git worktrees are used.
+          • {name} `string`
+              The name of the session
+          • {config} |finni.auto.LoadOpts|
+              Session-specific load/autosave options.
+          • {cwd} `string`
+              The effective working directory that was determined when loading
+              this auto-session
+      • {autosession_data}? |finni.core.Snapshot|
+          The most recent snapshotted state of this named autosession
+
+          Table fields:
+          • {buffers} |finni.core.Snapshot.BufData|`[]`
+              Buffer-specific data like name, buffer options, local marks,
+              changelist
+          • {tabs} |finni.core.Snapshot.TabData|`[]`
+              Tab-specific and window layout data, including tab cwd and
+              window-specific jumplists
+          • {tab_scoped} `boolean`
+              Whether this snapshot was derived from a single tab
+          • {global} |finni.core.Snapshot.GlobalData|
+              Global snapshot data like process CWD, global options and
+              global marks
+          • {modified}? `table<`|finni.core.BufUUID|`,true?>`
+              List of buffers (identified by internal UUID) whose unsaved
+              modifications were backed up in the snapshot
+          • {buflist} `string[]`
+              List of named buffers that are referenced somewhere in this
+              snapshot. Used to reduce repetition of buffer paths in save
+              file, especially lists of named marks (jumplist, quickfix and
+              location lists).
+
+                                               *finni.auto.AutosessionContext*
+`finni.auto.AutosessionContext` (Class) ~
+    Fields: ~
+      • {project} |finni.auto.AutosessionSpec.ProjectInfo|
+          Information about the project the session belongs to
+
+          Table fields:
+          • {data_dir}? `string`
+              The path of the directory that is used to save autosession data
+              related to this project. If unspecified or empty, defaults to
+              `<nvim data stdpath>/<autosession.dir config>/<escaped project name>`.
+              Relative paths are made absolute to
+              `<nvim data stdpath>/<autosession.dir config>`.
+          • {name} `string`
+              The name of the project
+          • {repo}? |finni.auto.AutosessionSpec.GitInfo|
+              When the project is defined as a git repository, meta info
+      • {root} `string`
+          The top level directory for this session (workspace root). Usually
+          equals the project root, but can be different when git worktrees
+          are used.
+      • {name} `string`
+          The name of the session
+      • {config} |finni.auto.LoadOpts|
+          Session-specific load/autosave options.
+
+          Table fields:
+          • {autosave_enabled}? `boolean`
+              When this session is attached, automatically save it in
+              intervals. Defaults to false.
+          • {autosave_interval}? `integer`
+              Seconds between autosaves of this session, if enabled. Defaults
+              to 60.
+          • {autosave_notify}? `boolean`
+              Trigger a notification when autosaving this session. Defaults
+              to true.
+          • {on_attach}? |finni.core.Session.AttachHook|
+              A function that’s called when attaching to this session.
+              No global default.
+          • {on_detach}? |finni.core.Session.DetachHook|
+              A function that’s called when detaching from this session.
+              No global default.
+          • {options}? `string[]`
+              Save and restore these neovim (global/buffer/tab/window) options
+          • {buf_filter}? `fun(bufnr: integer, opts: `|finni.core.snapshot.CreateOpts|`) -> boolean`
+          • {tab_buf_filter}? `fun(tabpage: integer, bufnr: integer, opts: `|finni.core.snapshot.CreateOpts|`) -> boolean`
+          • {modified}? `(boolean|"auto")`
+              Save/load modified buffers and their undo history. If set to
+              `auto` (default), does not save, but still restores modified
+              buffers.
+          • {jumps}? `boolean`
+              Save/load window-specific jumplists, including current position
+              (yes, for __all windows__, not just the active one like with
+              ShaDa). If set to `auto` (default), does not save, but still
+              restores saved jumplists.
+          • {changelist}? `boolean`
+              Save/load buffer-specific changelist (all buffers) and
+              changelist position (visible buffers only).
+
+              {Important}: Enabling this causes __buffer-local marks to be
+              cleared__ during restoration. Consider tracking `local_marks`
+              in addition to this.
+          • {global_marks}? `boolean`
+              Save/load global marks (A-Z, not 0-9 currently).
+
+              _Only in global sessions._
+          • {local_marks}? `boolean`
+              Save/load buffer-specific (local) marks.
+
+              {Note}: Enable this if you track the `changelist`.
+          • {search_history}? `(integer|boolean)`
+              Maximum number of search history items to persist. Defaults to
+              false. If set to `true`, maps to the 'history' option.
+
+              _Only in global sessions._
+          • {command_history}? `(integer|boolean)`
+              Maximum number of command history items to persist. Defaults to
+              false. If set to `true`, maps to the 'history' option.
+
+              _Only in global sessions._
+          • {input_history}? `(integer|boolean)`
+              Maximum number of input history items to persist. Defaults to
+              false. If set to `true`, maps to the 'history' option.
+
+              _Only in global sessions._
+          • {expr_history}? `boolean`
+              Persist expression history. Defaults to false. {Note}: Cannot
+              set limit (currently), no direct support by neovim.
+
+              _Only in global sessions._
+          • {debug_history}? `boolean`
+              Persist debug history. Defaults to false. {Note}: Cannot set
+              limit (currently), no direct support by neovim.
+
+              _Only in global sessions._
+          • {meta}? `table`
+              External data remembered in association with this session.
+              Useful to build on top of the core API.
+          • {attach}? `boolean`
+              Attach to/stay attached to session after operation
+          • {save}? `boolean`
+              Save/override autosave config for affected sessions before
+              the operation
+          • {reset}? `(boolean|"auto")`
+              When detaching a session in the process, unload associated
+              resources/reset everything during the operation when restoring
+              a snapshot. `auto` resets only for global sessions.
+          • {silence_errors}? `boolean`
+              Don’t error during this operation
+      • {cwd} `string`
+          The effective working directory that was determined when loading
+          this auto-session
+
+                                                  *finni.auto.AutosessionSpec*
+`finni.auto.AutosessionSpec` (Class) ~
+    Fields: ~
+      • {project} |finni.auto.AutosessionSpec.ProjectInfo|
+          Information about the project the session belongs to
+
+          Table fields:
+          • {data_dir}? `string`
+              The path of the directory that is used to save autosession data
+              related to this project. If unspecified or empty, defaults to
+              `<nvim data stdpath>/<autosession.dir config>/<escaped project name>`.
+              Relative paths are made absolute to
+              `<nvim data stdpath>/<autosession.dir config>`.
+          • {name} `string`
+              The name of the project
+          • {repo}? |finni.auto.AutosessionSpec.GitInfo|
+              When the project is defined as a git repository, meta info
+      • {root} `string`
+          The top level directory for this session (workspace root). Usually
+          equals the project root, but can be different when git worktrees
+          are used.
+      • {name} `string`
+          The name of the session
+      • {config} |finni.auto.LoadOpts|
+          Session-specific load/autosave options.
+
+          Table fields:
+          • {autosave_enabled}? `boolean`
+              When this session is attached, automatically save it in
+              intervals. Defaults to false.
+          • {autosave_interval}? `integer`
+              Seconds between autosaves of this session, if enabled. Defaults
+              to 60.
+          • {autosave_notify}? `boolean`
+              Trigger a notification when autosaving this session. Defaults
+              to true.
+          • {on_attach}? |finni.core.Session.AttachHook|
+              A function that’s called when attaching to this session.
+              No global default.
+          • {on_detach}? |finni.core.Session.DetachHook|
+              A function that’s called when detaching from this session.
+              No global default.
+          • {options}? `string[]`
+              Save and restore these neovim (global/buffer/tab/window) options
+          • {buf_filter}? `fun(bufnr: integer, opts: `|finni.core.snapshot.CreateOpts|`) -> boolean`
+          • {tab_buf_filter}? `fun(tabpage: integer, bufnr: integer, opts: `|finni.core.snapshot.CreateOpts|`) -> boolean`
+          • {modified}? `(boolean|"auto")`
+              Save/load modified buffers and their undo history. If set to
+              `auto` (default), does not save, but still restores modified
+              buffers.
+          • {jumps}? `boolean`
+              Save/load window-specific jumplists, including current position
+              (yes, for __all windows__, not just the active one like with
+              ShaDa). If set to `auto` (default), does not save, but still
+              restores saved jumplists.
+          • {changelist}? `boolean`
+              Save/load buffer-specific changelist (all buffers) and
+              changelist position (visible buffers only).
+
+              {Important}: Enabling this causes __buffer-local marks to be
+              cleared__ during restoration. Consider tracking `local_marks`
+              in addition to this.
+          • {global_marks}? `boolean`
+              Save/load global marks (A-Z, not 0-9 currently).
+
+              _Only in global sessions._
+          • {local_marks}? `boolean`
+              Save/load buffer-specific (local) marks.
+
+              {Note}: Enable this if you track the `changelist`.
+          • {search_history}? `(integer|boolean)`
+              Maximum number of search history items to persist. Defaults to
+              false. If set to `true`, maps to the 'history' option.
+
+              _Only in global sessions._
+          • {command_history}? `(integer|boolean)`
+              Maximum number of command history items to persist. Defaults to
+              false. If set to `true`, maps to the 'history' option.
+
+              _Only in global sessions._
+          • {input_history}? `(integer|boolean)`
+              Maximum number of input history items to persist. Defaults to
+              false. If set to `true`, maps to the 'history' option.
+
+              _Only in global sessions._
+          • {expr_history}? `boolean`
+              Persist expression history. Defaults to false. {Note}: Cannot
+              set limit (currently), no direct support by neovim.
+
+              _Only in global sessions._
+          • {debug_history}? `boolean`
+              Persist debug history. Defaults to false. {Note}: Cannot set
+              limit (currently), no direct support by neovim.
+
+              _Only in global sessions._
+          • {meta}? `table`
+              External data remembered in association with this session.
+              Useful to build on top of the core API.
+          • {attach}? `boolean`
+              Attach to/stay attached to session after operation
+          • {save}? `boolean`
+              Save/override autosave config for affected sessions before
+              the operation
+          • {reset}? `(boolean|"auto")`
+              When detaching a session in the process, unload associated
+              resources/reset everything during the operation when restoring
+              a snapshot. `auto` resets only for global sessions.
+          • {silence_errors}? `boolean`
+              Don’t error during this operation
+
+                                          *finni.auto.AutosessionSpec.GitInfo*
+`finni.auto.AutosessionSpec.GitInfo` (Class) ~
+    Fields: ~
+      • {commongitdir} `string`
+          The common git dir, usually equal to gitdir, unless the worktree is
+          not the default workdir (e.g.� in worktree checkuots of bare repos).
+          Then it’s the actual repo root and gitdir is /worktrees/
+      • {gitdir} `string`
+          The repository (or worktree) data path
+      • {toplevel} `string`
+          The path of the checked out worktree
+      • {branch}? `string`
+          The branch the worktree has checked out
+      • {default_branch}? `string`
+          The name of the default branch
+
+                                      *finni.auto.AutosessionSpec.ProjectInfo*
+`finni.auto.AutosessionSpec.ProjectInfo` (Class) ~
+    Fields: ~
+      • {name} `string`
+          The name of the project
+      • {data_dir}? `string`
+          The path of the directory that is used to save autosession data
+          related to this project. If unspecified or empty, defaults to
+          `<nvim data stdpath>/<autosession.dir config>/<escaped project name>`.
+          Relative paths are made absolute to
+          `<nvim data stdpath>/<autosession.dir config>`.
+      • {repo}? |finni.auto.AutosessionSpec.GitInfo|
+          When the project is defined as a git repository, meta info
+
+          Table fields:
+          • {commongitdir} `string`
+              The common git dir, usually equal to gitdir, unless the worktree
+              is not the default workdir (e.g.� in worktree checkuots of
+              bare repos). Then it’s the actual repo root and gitdir is
+              /worktrees/
+          • {gitdir} `string`
+              The repository (or worktree) data path
+          • {toplevel} `string`
+              The path of the checked out worktree
+          • {branch}? `string`
+              The branch the worktree has checked out
+          • {default_branch}? `string`
+              The name of the default branch
+
+                                                         *finni.auto.ListOpts*
+`finni.auto.ListOpts` (Class) ~
+
+    Options for listing autosessions in a project. `cwd`, `project_dir` and
+    `project_name` are different ways of referencing a project and only one
+    of them is respected.
+
+    Fields: ~
+      • {cwd}? `string`
+          Path to a directory associated with the project to list
+      • {project_dir}? `string`
+          Path to the project session dir
+      • {project_name}? `string`
+          Name of the project
+
+                                                  *finni.auto.ListProjectOpts*
+`finni.auto.ListProjectOpts` (Class) ~
+    Fields: ~
+      • {with_sessions}? `boolean`
+          Additionally list all known sessions for each listed project.
+          Defaults to false.
+
+                                                         *finni.auto.LoadOpts*
+`finni.auto.LoadOpts` (Alias) ~
+    Type: ~
+      `(`|finni.core.Session.InitOptsWithMeta|` & `|finni.SideEffects.Attach|` & `|finni.SideEffects.Save|` & `|finni.SideEffects.ResetAuto|` & `|finni.SideEffects.SilenceErrors|` & `|finni.core.PassthroughOpts|`)`
+
+    API options for `auto.load`
+
+    Fields: ~
+      • {autosave_enabled}? `boolean`
+          When this session is attached, automatically save it in intervals.
+          Defaults to false.
+      • {autosave_interval}? `integer`
+          Seconds between autosaves of this session, if enabled. Defaults
+          to 60.
+      • {autosave_notify}? `boolean`
+          Trigger a notification when autosaving this session. Defaults
+          to true.
+      • {on_attach}? |finni.core.Session.AttachHook|
+          A function that’s called when attaching to this session. No
+          global default.
+      • {on_detach}? |finni.core.Session.DetachHook|
+          A function that’s called when detaching from this session. No
+          global default.
+      • {options}? `string[]`
+          Save and restore these neovim (global/buffer/tab/window) options
+      • {buf_filter}? `fun(bufnr: integer, opts: `|finni.core.snapshot.CreateOpts|`) -> boolean`
+      • {tab_buf_filter}? `fun(tabpage: integer, bufnr: integer, opts: `|finni.core.snapshot.CreateOpts|`) -> boolean`
+      • {modified}? `(boolean|"auto")`
+          Save/load modified buffers and their undo history. If set to `auto`
+          (default), does not save, but still restores modified buffers.
+      • {jumps}? `boolean`
+          Save/load window-specific jumplists, including current position
+          (yes, for __all windows__, not just the active one like with ShaDa).
+          If set to `auto` (default), does not save, but still restores
+          saved jumplists.
+      • {changelist}? `boolean`
+          Save/load buffer-specific changelist (all buffers) and changelist
+          position (visible buffers only).
+
+          {Important}: Enabling this causes __buffer-local marks to be
+          cleared__ during restoration. Consider tracking `local_marks` in
+          addition to this.
+      • {global_marks}? `boolean`
+          Save/load global marks (A-Z, not 0-9 currently).
+
+          _Only in global sessions._
+      • {local_marks}? `boolean`
+          Save/load buffer-specific (local) marks.
+
+          {Note}: Enable this if you track the `changelist`.
+      • {search_history}? `(integer|boolean)`
+          Maximum number of search history items to persist. Defaults to
+          false. If set to `true`, maps to the 'history' option.
+
+          _Only in global sessions._
+      • {command_history}? `(integer|boolean)`
+          Maximum number of command history items to persist. Defaults to
+          false. If set to `true`, maps to the 'history' option.
+
+          _Only in global sessions._
+      • {input_history}? `(integer|boolean)`
+          Maximum number of input history items to persist. Defaults to false.
+          If set to `true`, maps to the 'history' option.
+
+          _Only in global sessions._
+      • {expr_history}? `boolean`
+          Persist expression history. Defaults to false. {Note}: Cannot set
+          limit (currently), no direct support by neovim.
+
+          _Only in global sessions._
+      • {debug_history}? `boolean`
+          Persist debug history. Defaults to false. {Note}: Cannot set limit
+          (currently), no direct support by neovim.
+
+          _Only in global sessions._
+      • {meta}? `table`
+          External data remembered in association with this session. Useful
+          to build on top of the core API.
+      • {attach}? `boolean`
+          Attach to/stay attached to session after operation
+      • {save}? `boolean`
+          Save/override autosave config for affected sessions before the
+          operation
+      • {reset}? `(boolean|"auto")`
+          When detaching a session in the process, unload associated
+          resources/reset everything during the operation when restoring a
+          snapshot. `auto` resets only for global sessions.
+      • {silence_errors}? `boolean`
+          Don’t error during this operation
+
+                                              *finni.auto.MigrateProjectsOpts*
+`finni.auto.MigrateProjectsOpts` (Class) ~
+    Fields: ~
+      • {dry_run}? `boolean`
+          Don’t execute the migration, only show what would have happened.
+          Defaults to true, meaning you need to explicitly set this to `false`
+          to have an effect.
+      • {old_root}? `string`
+          If the value of `autosession.dir` has changed, the old value.
+          Defaults to `autosession.dir`.
+
+                                                        *finni.auto.ResetOpts*
+`finni.auto.ResetOpts` (Class) ~
+
+    API options for `auto.reset`
+
+    Fields: ~
+      • {silence_errors}? `boolean`
+          Don’t error during this operation
+      • {reset}? `boolean`
+          When detaching a session in the process, unload associated
+          resources/reset everything during the operation when restoring
+          a snapshot.
+      • {notify}? `boolean`
+          Notify on success
+      • {cwd}? `(string|true)`
+          Path to a directory associated with the session to reset instead of
+          current one. Set this to `true` to use nvim’s current global CWD.
+      • {reload}? `boolean`
+          Attempt to restart a new autosession after reset. Defaults to true.
+
+                                                 *finni.auto.ResetProjectOpts*
+`finni.auto.ResetProjectOpts` (Class) ~
+    Fields: ~
+      • {name}? `string`
+          Specify the project to reset. If unspecified, resets active project,
+          if available.
+      • {force}? `boolean`
+          Force recursive deletion of project dir outside of configured root
+
+                                                         *finni.auto.SaveOpts*
+`finni.auto.SaveOpts` (Alias) ~
+    Type: ~
+      `(`|finni.SideEffects.Attach|` & `|finni.SideEffects.Notify|` & `|finni.SideEffects.Reset|`)`
+
+    API options for `auto.save`
+
+    Fields: ~
+      • {attach}? `boolean`
+          Attach to/stay attached to session after operation
+      • {notify}? `boolean`
+          Notify on success
+      • {reset}? `boolean`
+          When detaching a session in the process, unload associated
+          resources/reset everything during the operation when restoring
+          a snapshot.
+
+                                                    *finni.core.ActiveSession*
+`finni.core.ActiveSession` (Class) ~
+
+    An active (attached) session.
+
+    Fields: ~
+      • {session_file} `string`
+          Path to the session file
+      • {state_dir} `string`
+          Path to the directory holding session-associated data
+      • {context_dir} `string`
+          Directory for shared state between all sessions in the same context
+          (`dir` for manual sessions, project dir for autosessions)
+      • {autosave_enabled} `boolean`
+          Autosave this attached session in intervals and when detaching
+      • {autosave_interval} `integer`
+          Seconds between autosaves of this session, if enabled.
+      • {name} `string`
+      • {tab_scoped} `boolean`
+      • {autosave_notify}? `boolean`
+          Trigger a notification when autosaving this session. Defaults
+          to true.
+      • {on_attach}? |finni.core.Session.AttachHook|
+          A function that’s called when attaching to this session. No
+          global default.
+      • {on_detach}? |finni.core.Session.DetachHook|
+          A function that’s called when detaching from this session. No
+          global default.
+      • {meta}? `table`
+          External data remembered in association with this session. Useful
+          to build on top of the core API.
+      • {options}? `string[]`
+          Save and restore these neovim (global/buffer/tab/window) options
+      • {buf_filter}? `fun(bufnr: integer, opts: `|finni.core.snapshot.CreateOpts|`) -> boolean`
+      • {tab_buf_filter}? `fun(tabpage: integer, bufnr: integer, opts: `|finni.core.snapshot.CreateOpts|`) -> boolean`
+      • {modified}? `(boolean|"auto")`
+          Save/load modified buffers and their undo history. If set to `auto`
+          (default), does not save, but still restores modified buffers.
+      • {jumps}? `boolean`
+          Save/load window-specific jumplists, including current position
+          (yes, for __all windows__, not just the active one like with ShaDa).
+          If set to `auto` (default), does not save, but still restores
+          saved jumplists.
+      • {changelist}? `boolean`
+          Save/load buffer-specific changelist (all buffers) and changelist
+          position (visible buffers only).
+
+          {Important}: Enabling this causes __buffer-local marks to be
+          cleared__ during restoration. Consider tracking `local_marks` in
+          addition to this.
+      • {global_marks}? `boolean`
+          Save/load global marks (A-Z, not 0-9 currently).
+
+          _Only in global sessions._
+      • {local_marks}? `boolean`
+          Save/load buffer-specific (local) marks.
+
+          {Note}: Enable this if you track the `changelist`.
+      • {search_history}? `(integer|boolean)`
+          Maximum number of search history items to persist. Defaults to
+          false. If set to `true`, maps to the 'history' option.
+
+          _Only in global sessions._
+      • {command_history}? `(integer|boolean)`
+          Maximum number of command history items to persist. Defaults to
+          false. If set to `true`, maps to the 'history' option.
+
+          _Only in global sessions._
+      • {input_history}? `(integer|boolean)`
+          Maximum number of input history items to persist. Defaults to false.
+          If set to `true`, maps to the 'history' option.
+
+          _Only in global sessions._
+      • {expr_history}? `boolean`
+          Persist expression history. Defaults to false. {Note}: Cannot set
+          limit (currently), no direct support by neovim.
+
+          _Only in global sessions._
+      • {debug_history}? `boolean`
+          Persist debug history. Defaults to false. {Note}: Cannot set limit
+          (currently), no direct support by neovim.
+
+          _Only in global sessions._
+      • {tabid}? |finni.core.TabID|
+
+                                              *finni.core.ActiveSession.new()*
+new({name}, {session_file}, {state_dir}, {context_dir}, {opts}, {tabid}, {needs_restore})
+
+    Parameters: ~
+      • {name} `string`
+      • {session_file} `string`
+      • {state_dir} `string`
+      • {context_dir} `string`
+      • {opts} |finni.core.Session.InitOptsWithMeta|
+      • {tabid} `true`
+      • {needs_restore} `true`
+
+    Returns: ~
+        |finni.core.PendingSession|`<`|finni.core.Session.TabTarget|`>`
+
+                                    *finni.core.ActiveSession.from_snapshot()*
+from_snapshot({name}, {session_file}, {state_dir}, {context_dir}, {opts})
+    Create a new session by loading a snapshot, which you need to restore
+    explicitly.
+
+    Parameters: ~
+      • {name} `string`
+      • {session_file} `string`
+      • {state_dir} `string`
+      • {context_dir} `string`
+      • {opts} `(`|finni.core.Session.InitOptsWithMeta|` & `|finni.SideEffects.SilenceErrors|`)`
+          Table fields:
+          • {autosave_enabled}? `boolean`
+              When this session is attached, automatically save it in
+              intervals. Defaults to false.
+          • {autosave_interval}? `integer`
+              Seconds between autosaves of this session, if enabled. Defaults
+              to 60.
+          • {autosave_notify}? `boolean`
+              Trigger a notification when autosaving this session. Defaults
+              to true.
+          • {on_attach}? |finni.core.Session.AttachHook|
+              A function that’s called when attaching to this session.
+              No global default.
+          • {on_detach}? |finni.core.Session.DetachHook|
+              A function that’s called when detaching from this session.
+              No global default.
+          • {options}? `string[]`
+              Save and restore these neovim (global/buffer/tab/window) options
+          • {buf_filter}? `fun(bufnr: integer, opts: `|finni.core.snapshot.CreateOpts|`) -> boolean`
+          • {tab_buf_filter}? `fun(tabpage: integer, bufnr: integer, opts: `|finni.core.snapshot.CreateOpts|`) -> boolean`
+          • {modified}? `(boolean|"auto")`
+              Save/load modified buffers and their undo history. If set to
+              `auto` (default), does not save, but still restores modified
+              buffers.
+          • {jumps}? `boolean`
+              Save/load window-specific jumplists, including current position
+              (yes, for __all windows__, not just the active one like with
+              ShaDa). If set to `auto` (default), does not save, but still
+              restores saved jumplists.
+          • {changelist}? `boolean`
+              Save/load buffer-specific changelist (all buffers) and
+              changelist position (visible buffers only).
+
+              {Important}: Enabling this causes __buffer-local marks to be
+              cleared__ during restoration. Consider tracking `local_marks`
+              in addition to this.
+          • {global_marks}? `boolean`
+              Save/load global marks (A-Z, not 0-9 currently).
+
+              _Only in global sessions._
+          • {local_marks}? `boolean`
+              Save/load buffer-specific (local) marks.
+
+              {Note}: Enable this if you track the `changelist`.
+          • {search_history}? `(integer|boolean)`
+              Maximum number of search history items to persist. Defaults to
+              false. If set to `true`, maps to the 'history' option.
+
+              _Only in global sessions._
+          • {command_history}? `(integer|boolean)`
+              Maximum number of command history items to persist. Defaults to
+              false. If set to `true`, maps to the 'history' option.
+
+              _Only in global sessions._
+          • {input_history}? `(integer|boolean)`
+              Maximum number of input history items to persist. Defaults to
+              false. If set to `true`, maps to the 'history' option.
+
+              _Only in global sessions._
+          • {expr_history}? `boolean`
+              Persist expression history. Defaults to false. {Note}: Cannot
+              set limit (currently), no direct support by neovim.
+
+              _Only in global sessions._
+          • {debug_history}? `boolean`
+              Persist debug history. Defaults to false. {Note}: Cannot set
+              limit (currently), no direct support by neovim.
+
+              _Only in global sessions._
+          • {meta}? `table`
+              External data remembered in association with this session.
+              Useful to build on top of the core API.
+          • {silence_errors}? `boolean`
+              Don’t error during this operation
+
+    Returns: ~
+      • {loaded_session}? |finni.core.PendingSession|
+          Session object, if the snapshot could be loaded
+      • {snapshot}? |finni.core.Snapshot|
+          Snapshot data, if it could be loaded
+
+                                         *finni.core.ActiveSession:add_hook()*
+ActiveSession:add_hook({event}, {hook})
+
+    Parameters: ~
+      • {event} `"detach"`
+      • {hook} |finni.core.Session.DetachHook|
+
+    Returns: ~
+        `self`
+
+ActiveSession:update({opts})               *finni.core.ActiveSession:update()*
+    Update modifiable options without attaching/detaching a session
+
+    Parameters: ~
+      • {opts} |finni.core.Session.InitOptsWithMeta|
+
+    Returns: ~
+        {modified} `boolean`
+          Indicates whether any config modifications occurred
+
+                                          *finni.core.ActiveSession:restore()*
+ActiveSession:restore({opts}, {snapshot})
+    Restore a snapshot from disk or memory It seems emmylua does not pick up
+    this override and infers IdleSession instead.
+
+    Parameters: ~
+      • {opts}? `(`|finni.core.Session.RestoreOpts|` & `|finni.core.PassthroughOpts|`)`
+          Table fields:
+          • {reset}? `boolean`
+              When detaching a session in the process, unload associated
+              resources/reset everything during the operation when restoring
+              a snapshot.
+          • {silence_errors}? `boolean`
+              Don’t error during this operation
+      • {snapshot}? |finni.core.Snapshot|
+          Snapshot to restore. If unspecified, loads from file.
+
+          Table fields:
+          • {buffers} |finni.core.Snapshot.BufData|`[]`
+              Buffer-specific data like name, buffer options, local marks,
+              changelist
+          • {tabs} |finni.core.Snapshot.TabData|`[]`
+              Tab-specific and window layout data, including tab cwd and
+              window-specific jumplists
+          • {tab_scoped} `boolean`
+              Whether this snapshot was derived from a single tab
+          • {global} |finni.core.Snapshot.GlobalData|
+              Global snapshot data like process CWD, global options and
+              global marks
+          • {modified}? `table<`|finni.core.BufUUID|`,true?>`
+              List of buffers (identified by internal UUID) whose unsaved
+              modifications were backed up in the snapshot
+          • {buflist} `string[]`
+              List of named buffers that are referenced somewhere in this
+              snapshot. Used to reduce repetition of buffer paths in save
+              file, especially lists of named marks (jumplist, quickfix and
+              location lists).
+
+    Returns: ~
+      • {self} |finni.core.ActiveSession|
+          Same object.
+      • {success} `boolean`
+          Whether restoration was successful. Only sensible when
+          `silence_errors` is true.
+
+ActiveSession:is_attached()           *finni.core.ActiveSession:is_attached()*
+    I couldn’t make TypeGuard<ActiveSession> work properly with method
+    syntax
+
+    Returns: ~
+        `TypeGuard<`|finni.core.ActiveSession|`>`
+
+ActiveSession:opts()                         *finni.core.ActiveSession:opts()*
+    Turn the session object into opts for snapshot restore/save operations
+
+    Returns: ~
+        `(`|finni.core.Session.Init.Paths|` & `|finni.core.Session.Init.Autosave|` & `|finni.core.Session.Init.Meta|` & `|finni.core.snapshot.CreateOpts|`)`
+
+ActiveSession:info()                         *finni.core.ActiveSession:info()*
+    Get information about this session
+
+    Returns: ~
+        |finni.core.ActiveSessionInfo|
+
+ActiveSession:delete({opts})               *finni.core.ActiveSession:delete()*
+    Delete a saved session
+
+    Parameters: ~
+      • {opts}? `(`|finni.SideEffects.Notify|` & `|finni.SideEffects.SilenceErrors|`)`
+          Table fields:
+          • {notify}? `boolean`
+              Notify on success
+          • {silence_errors}? `boolean`
+              Don’t error during this operation
+
+ActiveSession:attach()                     *finni.core.ActiveSession:attach()*
+    Attach this session. If it was loaded from a snapshot file, you must
+    ensure you restore the snapshot (`:restore()`) before calling this method.
+    It’s fine to attach an already attached session.
+
+    Returns: ~
+        |finni.core.ActiveSession|
+
+ActiveSession:save({opts})                   *finni.core.ActiveSession:save()*
+    Save this session following its configured configuration. Note: Any save
+    configuration must be applied via `Session.update(opts)` before callig
+    this method since all session-specific options that might be contained in
+    `opts` are overridded with ones configured for the session.
+
+    Parameters: ~
+      • {opts} `unknown`
+          Success notification setting plus options that need to be passed
+          through to pre_save/post_save hooks.
+
+    Returns: ~
+        {success} `boolean`
+
+                                         *finni.core.ActiveSession:autosave()*
+ActiveSession:autosave({opts}, {force})
+
+    Parameters: ~
+      • {opts} `unknown`
+      • {force}? `boolean`
+          Force snapshot to be saved, regardless of autosave config
+
+ActiveSession:detach({reason}, {opts})     *finni.core.ActiveSession:detach()*
+    Detach from this session. Ensure the session is attached before trying to
+    detach, otherwise you’ll receive an error. Hint: If you are sure the
+    session should be attached, but still receive an error, ensure that you
+    call `detach()` on the specific session instance you called `:attach()`
+    on before, not a copy. @param self ActiveSession
+
+    Parameters: ~
+      • {reason} `(`|finni.core.Session.DetachReasonBuiltin|`|string)`
+          A reason for detaching, also passed to detach hooks. Only inbuilt
+          reasons influence behavior by default.
+      • {opts} `(`|finni.core.Session.DetachOpts|` & `|finni.core.PassthroughOpts|`)`
+          Influence side effects. `reset` removes all associated resources.
+          `save` overrides autosave behavior.
+
+          Table fields:
+          • {reset}? `boolean`
+              When detaching a session in the process, unload associated
+              resources/reset everything during the operation when restoring
+              a snapshot.
+          • {save}? `boolean`
+              Save/override autosave config for affected sessions before
+              the operation
+
+    Returns: ~
+        {idle_session} |finni.core.IdleSession|
+          Same data table, but now representing an idle session again.
+
+ActiveSession:forget({self})               *finni.core.ActiveSession:forget()*
+    Mark a {tab} session as invalid (i.e.� remembered as attached, but its tab
+    is gone). Removes associated resources, skips autosave.
+
+    Parameters: ~
+      • {self} |finni.core.ActiveSession|`<`|finni.core.Session.TabTarget|`>`
+          Active {tab} session to forget about. Errors if attempted with
+          global sessions.
+
+          Table fields:
+          • {session_file} `string`
+              Path to the session file
+          • {state_dir} `string`
+              Path to the directory holding session-associated data
+          • {context_dir} `string`
+              Directory for shared state between all sessions in the
+              same context (`dir` for manual sessions, project dir for
+              autosessions)
+          • {autosave_enabled} `boolean`
+              Autosave this attached session in intervals and when detaching
+          • {autosave_interval} `integer`
+              Seconds between autosaves of this session, if enabled.
+          • {autosave_notify}? `boolean`
+              Trigger a notification when autosaving this session. Defaults
+              to true.
+          • {on_attach}? |finni.core.Session.AttachHook|
+              A function that’s called when attaching to this session.
+              No global default.
+          • {on_detach}? |finni.core.Session.DetachHook|
+              A function that’s called when detaching from this session.
+              No global default.
+          • {meta}? `table`
+              External data remembered in association with this session.
+              Useful to build on top of the core API.
+          • {options}? `string[]`
+              Save and restore these neovim (global/buffer/tab/window) options
+          • {buf_filter}? `fun(bufnr: integer, opts: `|finni.core.snapshot.CreateOpts|`) -> boolean`
+          • {tab_buf_filter}? `fun(tabpage: integer, bufnr: integer, opts: `|finni.core.snapshot.CreateOpts|`) -> boolean`
+          • {modified}? `(boolean|"auto")`
+              Save/load modified buffers and their undo history. If set to
+              `auto` (default), does not save, but still restores modified
+              buffers.
+          • {jumps}? `boolean`
+              Save/load window-specific jumplists, including current position
+              (yes, for __all windows__, not just the active one like with
+              ShaDa). If set to `auto` (default), does not save, but still
+              restores saved jumplists.
+          • {changelist}? `boolean`
+              Save/load buffer-specific changelist (all buffers) and
+              changelist position (visible buffers only).
+
+              {Important}: Enabling this causes __buffer-local marks to be
+              cleared__ during restoration. Consider tracking `local_marks`
+              in addition to this.
+          • {global_marks}? `boolean`
+              Save/load global marks (A-Z, not 0-9 currently).
+
+              _Only in global sessions._
+          • {local_marks}? `boolean`
+              Save/load buffer-specific (local) marks.
+
+              {Note}: Enable this if you track the `changelist`.
+          • {search_history}? `(integer|boolean)`
+              Maximum number of search history items to persist. Defaults to
+              false. If set to `true`, maps to the 'history' option.
+
+              _Only in global sessions._
+          • {command_history}? `(integer|boolean)`
+              Maximum number of command history items to persist. Defaults to
+              false. If set to `true`, maps to the 'history' option.
+
+              _Only in global sessions._
+          • {input_history}? `(integer|boolean)`
+              Maximum number of input history items to persist. Defaults to
+              false. If set to `true`, maps to the 'history' option.
+
+              _Only in global sessions._
+          • {expr_history}? `boolean`
+              Persist expression history. Defaults to false. {Note}: Cannot
+              set limit (currently), no direct support by neovim.
+
+              _Only in global sessions._
+          • {debug_history}? `boolean`
+              Persist debug history. Defaults to false. {Note}: Cannot set
+              limit (currently), no direct support by neovim.
+
+              _Only in global sessions._
+          • {tab_scoped} `boolean`
+          • {tabid}? |finni.core.TabID|
+          • {name} `string`
+          • {_on_attach} |finni.core.Session.AttachHook|`[]`
+          • {_on_detach} |finni.core.Session.DetachHook|`[]`
+          • {_aug} `integer`
+              Neovim augroup for this session
+          • {_timer}? `uv.uv_timer_t`
+              Autosave timer, if enabled
+          • {_setup_autosave} `fun(self: `|finni.core.ActiveSession|`<`|finni.core.Session.TabTarget|`>)`
+
+    Returns: ~
+        {idle_session} |finni.core.IdleSession|`<`|finni.core.Session.TabTarget|`>`
+
+                                                *finni.core.ActiveSessionInfo*
+`finni.core.ActiveSessionInfo` (Class) ~
+
+    Represents the complete internal state of a session
+
+    Fields: ~
+      • {session_file} `string`
+          Path to the session file
+      • {state_dir} `string`
+          Path to the directory holding session-associated data
+      • {context_dir} `string`
+          Directory for shared state between all sessions in the same context
+          (`dir` for manual sessions, project dir for autosessions)
+      • {autosave_enabled} `boolean`
+          When this session is attached, automatically save it in intervals.
+          Defaults to false.
+      • {autosave_interval} `integer`
+          Seconds between autosaves of this session, if enabled. Defaults
+          to 60.
+      • {name} `string`
+          Name of the session
+      • {tab_scoped} `boolean`
+          Whether the session is tab-scoped
+      • {autosave_notify}? `boolean`
+          Trigger a notification when autosaving this session. Defaults
+          to true.
+      • {on_attach}? |finni.core.Session.AttachHook|
+          A function that’s called when attaching to this session. No
+          global default.
+      • {on_detach}? |finni.core.Session.DetachHook|
+          A function that’s called when detaching from this session. No
+          global default.
+      • {meta}? `table`
+          External data remembered in association with this session. Useful
+          to build on top of the core API.
+      • {options}? `string[]`
+          Save and restore these neovim (global/buffer/tab/window) options
+      • {buf_filter}? `fun(bufnr: integer, opts: `|finni.core.snapshot.CreateOpts|`) -> boolean`
+      • {tab_buf_filter}? `fun(tabpage: integer, bufnr: integer, opts: `|finni.core.snapshot.CreateOpts|`) -> boolean`
+      • {modified}? `(boolean|"auto")`
+          Save/load modified buffers and their undo history. If set to `auto`
+          (default), does not save, but still restores modified buffers.
+      • {jumps}? `boolean`
+          Save/load window-specific jumplists, including current position
+          (yes, for __all windows__, not just the active one like with ShaDa).
+          If set to `auto` (default), does not save, but still restores
+          saved jumplists.
+      • {changelist}? `boolean`
+          Save/load buffer-specific changelist (all buffers) and changelist
+          position (visible buffers only).
+
+          {Important}: Enabling this causes __buffer-local marks to be
+          cleared__ during restoration. Consider tracking `local_marks` in
+          addition to this.
+      • {global_marks}? `boolean`
+          Save/load global marks (A-Z, not 0-9 currently).
+
+          _Only in global sessions._
+      • {local_marks}? `boolean`
+          Save/load buffer-specific (local) marks.
+
+          {Note}: Enable this if you track the `changelist`.
+      • {search_history}? `(integer|boolean)`
+          Maximum number of search history items to persist. Defaults to
+          false. If set to `true`, maps to the 'history' option.
+
+          _Only in global sessions._
+      • {command_history}? `(integer|boolean)`
+          Maximum number of command history items to persist. Defaults to
+          false. If set to `true`, maps to the 'history' option.
+
+          _Only in global sessions._
+      • {input_history}? `(integer|boolean)`
+          Maximum number of input history items to persist. Defaults to false.
+          If set to `true`, maps to the 'history' option.
+
+          _Only in global sessions._
+      • {expr_history}? `boolean`
+          Persist expression history. Defaults to false. {Note}: Cannot set
+          limit (currently), no direct support by neovim.
+
+          _Only in global sessions._
+      • {debug_history}? `boolean`
+          Persist debug history. Defaults to false. {Note}: Cannot set limit
+          (currently), no direct support by neovim.
+
+          _Only in global sessions._
+      • {tabid}? `(`|finni.core.TabID|`|true)`
+          Tab number the session is attached to, if any. Can be `true`, which
+          indicates it’s a tab-scoped session that has not been restored
+          yet - although not when requesting via the API
+
+                                                    *finni.core.AnonymousMark*
+`finni.core.AnonymousMark` (Class) ~
+    Fields: ~
+      • {[1]} `integer`
+          Line number
+      • {[2]} `integer`
+          Column number
+
+                                                          *finni.core.BufUUID*
+`finni.core.BufUUID` (Alias) ~
+    Type: ~
+      `string`
+
+    An internal UUID that is used to keep track of buffers between snapshot
+    restorations.
+
+                                                         *finni.core.FileMark*
+`finni.core.FileMark` (Class) ~
+    Fields: ~
+      • {[1]} `sub<string,"">`
+          Absolute path to file this mark references
+      • {[2]} `integer`
+          Line number
+      • {[3]} `integer`
+          Column number
+
+                                                      *finni.core.IdleSession*
+`finni.core.IdleSession` (Class) ~
+
+    A general session config that can be attached, turning it into an
+    active session.
+
+    Fields: ~
+      • {session_file} `string`
+          Path to the session file
+      • {state_dir} `string`
+          Path to the directory holding session-associated data
+      • {context_dir} `string`
+          Directory for shared state between all sessions in the same context
+          (`dir` for manual sessions, project dir for autosessions)
+      • {autosave_enabled} `boolean`
+          When this session is attached, automatically save it in intervals.
+          Defaults to false.
+      • {autosave_interval} `integer`
+          Seconds between autosaves of this session, if enabled. Defaults
+          to 60.
+      • {name} `string`
+      • {tab_scoped} `boolean`
+      • {autosave_notify}? `boolean`
+          Trigger a notification when autosaving this session. Defaults
+          to true.
+      • {on_attach}? |finni.core.Session.AttachHook|
+          A function that’s called when attaching to this session. No
+          global default.
+      • {on_detach}? |finni.core.Session.DetachHook|
+          A function that’s called when detaching from this session. No
+          global default.
+      • {meta}? `table`
+          External data remembered in association with this session. Useful
+          to build on top of the core API.
+      • {options}? `string[]`
+          Save and restore these neovim (global/buffer/tab/window) options
+      • {buf_filter}? `fun(bufnr: integer, opts: `|finni.core.snapshot.CreateOpts|`) -> boolean`
+      • {tab_buf_filter}? `fun(tabpage: integer, bufnr: integer, opts: `|finni.core.snapshot.CreateOpts|`) -> boolean`
+      • {modified}? `(boolean|"auto")`
+          Save/load modified buffers and their undo history. If set to `auto`
+          (default), does not save, but still restores modified buffers.
+      • {jumps}? `boolean`
+          Save/load window-specific jumplists, including current position
+          (yes, for __all windows__, not just the active one like with ShaDa).
+          If set to `auto` (default), does not save, but still restores
+          saved jumplists.
+      • {changelist}? `boolean`
+          Save/load buffer-specific changelist (all buffers) and changelist
+          position (visible buffers only).
+
+          {Important}: Enabling this causes __buffer-local marks to be
+          cleared__ during restoration. Consider tracking `local_marks` in
+          addition to this.
+      • {global_marks}? `boolean`
+          Save/load global marks (A-Z, not 0-9 currently).
+
+          _Only in global sessions._
+      • {local_marks}? `boolean`
+          Save/load buffer-specific (local) marks.
+
+          {Note}: Enable this if you track the `changelist`.
+      • {search_history}? `(integer|boolean)`
+          Maximum number of search history items to persist. Defaults to
+          false. If set to `true`, maps to the 'history' option.
+
+          _Only in global sessions._
+      • {command_history}? `(integer|boolean)`
+          Maximum number of command history items to persist. Defaults to
+          false. If set to `true`, maps to the 'history' option.
+
+          _Only in global sessions._
+      • {input_history}? `(integer|boolean)`
+          Maximum number of input history items to persist. Defaults to false.
+          If set to `true`, maps to the 'history' option.
+
+          _Only in global sessions._
+      • {expr_history}? `boolean`
+          Persist expression history. Defaults to false. {Note}: Cannot set
+          limit (currently), no direct support by neovim.
+
+          _Only in global sessions._
+      • {debug_history}? `boolean`
+          Persist debug history. Defaults to false. {Note}: Cannot set limit
+          (currently), no direct support by neovim.
+
+          _Only in global sessions._
+      • {tabid}? |finni.core.TabID|
+
+                                                *finni.core.IdleSession.new()*
+new({name}, {session_file}, {state_dir}, {context_dir}, {opts}, {tabid}, {needs_restore})
+
+    Parameters: ~
+      • {name} `string`
+      • {session_file} `string`
+      • {state_dir} `string`
+      • {context_dir} `string`
+      • {opts} |finni.core.Session.InitOptsWithMeta|
+      • {tabid} `true`
+      • {needs_restore} `true`
+
+    Returns: ~
+        |finni.core.PendingSession|`<`|finni.core.Session.TabTarget|`>`
+
+                                      *finni.core.IdleSession.from_snapshot()*
+from_snapshot({name}, {session_file}, {state_dir}, {context_dir}, {opts})
+    Create a new session by loading a snapshot, which you need to restore
+    explicitly.
+
+    Parameters: ~
+      • {name} `string`
+      • {session_file} `string`
+      • {state_dir} `string`
+      • {context_dir} `string`
+      • {opts} `(`|finni.core.Session.InitOptsWithMeta|` & `|finni.SideEffects.SilenceErrors|`)`
+          Table fields:
+          • {autosave_enabled}? `boolean`
+              When this session is attached, automatically save it in
+              intervals. Defaults to false.
+          • {autosave_interval}? `integer`
+              Seconds between autosaves of this session, if enabled. Defaults
+              to 60.
+          • {autosave_notify}? `boolean`
+              Trigger a notification when autosaving this session. Defaults
+              to true.
+          • {on_attach}? |finni.core.Session.AttachHook|
+              A function that’s called when attaching to this session.
+              No global default.
+          • {on_detach}? |finni.core.Session.DetachHook|
+              A function that’s called when detaching from this session.
+              No global default.
+          • {options}? `string[]`
+              Save and restore these neovim (global/buffer/tab/window) options
+          • {buf_filter}? `fun(bufnr: integer, opts: `|finni.core.snapshot.CreateOpts|`) -> boolean`
+          • {tab_buf_filter}? `fun(tabpage: integer, bufnr: integer, opts: `|finni.core.snapshot.CreateOpts|`) -> boolean`
+          • {modified}? `(boolean|"auto")`
+              Save/load modified buffers and their undo history. If set to
+              `auto` (default), does not save, but still restores modified
+              buffers.
+          • {jumps}? `boolean`
+              Save/load window-specific jumplists, including current position
+              (yes, for __all windows__, not just the active one like with
+              ShaDa). If set to `auto` (default), does not save, but still
+              restores saved jumplists.
+          • {changelist}? `boolean`
+              Save/load buffer-specific changelist (all buffers) and
+              changelist position (visible buffers only).
+
+              {Important}: Enabling this causes __buffer-local marks to be
+              cleared__ during restoration. Consider tracking `local_marks`
+              in addition to this.
+          • {global_marks}? `boolean`
+              Save/load global marks (A-Z, not 0-9 currently).
+
+              _Only in global sessions._
+          • {local_marks}? `boolean`
+              Save/load buffer-specific (local) marks.
+
+              {Note}: Enable this if you track the `changelist`.
+          • {search_history}? `(integer|boolean)`
+              Maximum number of search history items to persist. Defaults to
+              false. If set to `true`, maps to the 'history' option.
+
+              _Only in global sessions._
+          • {command_history}? `(integer|boolean)`
+              Maximum number of command history items to persist. Defaults to
+              false. If set to `true`, maps to the 'history' option.
+
+              _Only in global sessions._
+          • {input_history}? `(integer|boolean)`
+              Maximum number of input history items to persist. Defaults to
+              false. If set to `true`, maps to the 'history' option.
+
+              _Only in global sessions._
+          • {expr_history}? `boolean`
+              Persist expression history. Defaults to false. {Note}: Cannot
+              set limit (currently), no direct support by neovim.
+
+              _Only in global sessions._
+          • {debug_history}? `boolean`
+              Persist debug history. Defaults to false. {Note}: Cannot set
+              limit (currently), no direct support by neovim.
+
+              _Only in global sessions._
+          • {meta}? `table`
+              External data remembered in association with this session.
+              Useful to build on top of the core API.
+          • {silence_errors}? `boolean`
+              Don’t error during this operation
+
+    Returns: ~
+      • {loaded_session}? |finni.core.PendingSession|
+          Session object, if the snapshot could be loaded
+      • {snapshot}? |finni.core.Snapshot|
+          Snapshot data, if it could be loaded
+
+IdleSession:add_hook({event}, {hook})      *finni.core.IdleSession:add_hook()*
+
+    Parameters: ~
+      • {event} `"detach"`
+      • {hook} |finni.core.Session.DetachHook|
+
+    Returns: ~
+        `self`
+
+IdleSession:update({opts})                   *finni.core.IdleSession:update()*
+    Update modifiable options without attaching/detaching a session
+
+    Parameters: ~
+      • {opts} |finni.core.Session.InitOptsWithMeta|
+
+    Returns: ~
+        {modified} `boolean`
+          Indicates whether any config modifications occurred
+
+IdleSession:restore({opts}, {snapshot})     *finni.core.IdleSession:restore()*
+    Restore a snapshot from disk or memory
+
+    Parameters: ~
+      • {opts}? `(`|finni.core.Session.RestoreOpts|` & `|finni.core.PassthroughOpts|`)`
+          Table fields:
+          • {reset}? `boolean`
+              When detaching a session in the process, unload associated
+              resources/reset everything during the operation when restoring
+              a snapshot.
+          • {silence_errors}? `boolean`
+              Don’t error during this operation
+      • {snapshot}? |finni.core.Snapshot|
+          Snapshot data to restore. If unspecified, loads from file.
+
+          Table fields:
+          • {buffers} |finni.core.Snapshot.BufData|`[]`
+              Buffer-specific data like name, buffer options, local marks,
+              changelist
+          • {tabs} |finni.core.Snapshot.TabData|`[]`
+              Tab-specific and window layout data, including tab cwd and
+              window-specific jumplists
+          • {tab_scoped} `boolean`
+              Whether this snapshot was derived from a single tab
+          • {global} |finni.core.Snapshot.GlobalData|
+              Global snapshot data like process CWD, global options and
+              global marks
+          • {modified}? `table<`|finni.core.BufUUID|`,true?>`
+              List of buffers (identified by internal UUID) whose unsaved
+              modifications were backed up in the snapshot
+          • {buflist} `string[]`
+              List of named buffers that are referenced somewhere in this
+              snapshot. Used to reduce repetition of buffer paths in save
+              file, especially lists of named marks (jumplist, quickfix and
+              location lists).
+
+    Returns: ~
+      • {self} |finni.core.IdleSession|
+          The object itself, but now attachable
+      • {success} `boolean`
+          Whether restoration was successful. Only sensible when
+          `silence_errors` is true.
+
+IdleSession:is_attached()               *finni.core.IdleSession:is_attached()*
+    I couldn’t make TypeGuard<ActiveSession> work properly with method
+    syntax
+
+    Returns: ~
+        `TypeGuard<`|finni.core.ActiveSession|`>`
+
+IdleSession:opts()                             *finni.core.IdleSession:opts()*
+    Turn the session object into opts for snapshot restore/save operations
+
+    Returns: ~
+        `(`|finni.core.Session.Init.Paths|` & `|finni.core.Session.Init.Autosave|` & `|finni.core.Session.Init.Meta|` & `|finni.core.snapshot.CreateOpts|`)`
+
+IdleSession:info()                             *finni.core.IdleSession:info()*
+    Get information about this session
+
+    Returns: ~
+        |finni.core.ActiveSessionInfo|
+
+IdleSession:delete({opts})                   *finni.core.IdleSession:delete()*
+    Delete a saved session
+
+    Parameters: ~
+      • {opts}? `(`|finni.SideEffects.Notify|` & `|finni.SideEffects.SilenceErrors|`)`
+          Table fields:
+          • {notify}? `boolean`
+              Notify on success
+          • {silence_errors}? `boolean`
+              Don’t error during this operation
+
+IdleSession:attach()                         *finni.core.IdleSession:attach()*
+    Attach this session. If it was loaded from a snapshot file, you must
+    ensure you restore the snapshot (`:restore()`) before calling this method.
+    It’s fine to attach an already attached session.
+
+    Returns: ~
+        |finni.core.ActiveSession|
+
+IdleSession:save({opts})                       *finni.core.IdleSession:save()*
+    Save this session following its configured configuration. Note: Any save
+    configuration must be applied via `Session.update(opts)` before callig
+    this method since all session-specific options that might be contained in
+    `opts` are overridded with ones configured for the session.
+
+    Parameters: ~
+      • {opts} `unknown`
+          Success notification setting plus options that need to be passed
+          through to pre_save/post_save hooks.
+
+    Returns: ~
+        {success} `boolean`
+
+                                                   *finni.core.layout.WinInfo*
+`finni.core.layout.WinInfo` (Class) ~
+
+    Window-specific snapshot data
+
+    Fields: ~
+      • {bufname} `string`
+          The name of the buffer that’s displayed in the window.
+      • {bufuuid} |finni.core.BufUUID|
+          The buffer’s UUID to track it over multiple sessions.
+      • {current} `boolean`
+          Whether the window was the active one when saved.
+      • {view} `vim.fn.winsaveview.ret`
+          Cursor position in file, relative position of file in window,
+          curswant and other state
+      • {width} `integer`
+          Width of the window in number of columns.
+      • {height} `integer`
+          Height of the window in number of rows.
+      • {options} `table<string,any>`
+          Window-scoped options.
+      • {old_winid} |finni.core.WinID|
+          Window ID when snapshot was saved. Used to keep track of individual
+          windows, especially loclist window restoration.
+      • {extension_data} `any`
+          If the window is supported by an extension, the data it needs
+          to remember.
+      • {cursor}? |finni.core.AnonymousMark|
+          (row, col) tuple of the cursor position, mark-like => (1,
+          0)-indexed. Deprecated in favor of view.
+
+          Table fields:
+          • {[1]} `integer`
+              Line number
+          • {[2]} `integer`
+              Column number
+      • {cwd}? `string`
+          If a local working directory was set for the window, its path.
+      • {extension}? `string`
+          If the window is supported by an extension, the name of the
+          extension.
+      • {jumps}? `(`|finni.core.layout.WinInfo.JumplistEntry|`[],integer)`
+          Window-local jumplist, number of steps from last entry to currently
+          active one
+      • {alt}? `integer`
+          Index of the alternate file for this window in `buflist`, if any
+      • {loclist_win}? |finni.core.WinID|
+          Present for loclist windows. Window ID of the associated window,
+          the one that opens selections (`filewinid`).
+      • {loclists}? `(`|finni.core.Snapshot.QFList|`[],integer)`
+          Location list stack and position of currently active one.
+
+                                     *finni.core.layout.WinInfo.JumplistEntry*
+`finni.core.layout.WinInfo.JumplistEntry` (Class) ~
+    Fields: ~
+      • {[1]} `integer`
+          Index of absolute path to file this mark references in `buflist`
+      • {[2]} `integer`
+          Line number
+      • {[3]} `integer`
+          Column number
+
+                                                 *finni.core.layout.WinLayout*
+`finni.core.layout.WinLayout` (Alias) ~
+    Type: ~
+      `(`|finni.core.layout.WinLayoutLeaf|`|`|finni.core.layout.WinLayoutBranch|`)`
+
+                                           *finni.core.layout.WinLayoutBranch*
+`finni.core.layout.WinLayoutBranch` (Class) ~
+    Fields: ~
+      • {[1]} `("row"|"col")`
+          Node type
+      • {[2]} `(`|finni.core.layout.WinLayoutLeaf|`|`|finni.core.layout.WinLayoutBranch|`)[]`
+          children
+
+                                             *finni.core.layout.WinLayoutLeaf*
+`finni.core.layout.WinLayoutLeaf` (Class) ~
+    Fields: ~
+      • {[1]} `"leaf"`
+          Node type
+      • {[2]} |finni.core.layout.WinInfo|
+          Saved window info
+
+          Table fields:
+          • {bufname} `string`
+              The name of the buffer that’s displayed in the window.
+          • {bufuuid} |finni.core.BufUUID|
+              The buffer’s UUID to track it over multiple sessions.
+          • {current} `boolean`
+              Whether the window was the active one when saved.
+          • {cursor}? |finni.core.AnonymousMark|
+              (row, col) tuple of the cursor position, mark-like => (1,
+              0)-indexed. Deprecated in favor of view.
+          • {view} `vim.fn.winsaveview.ret`
+              Cursor position in file, relative position of file in window,
+              curswant and other state
+          • {width} `integer`
+              Width of the window in number of columns.
+          • {height} `integer`
+              Height of the window in number of rows.
+          • {options} `table<string,any>`
+              Window-scoped options.
+          • {old_winid} |finni.core.WinID|
+              Window ID when snapshot was saved. Used to keep track of
+              individual windows, especially loclist window restoration.
+          • {cwd}? `string`
+              If a local working directory was set for the window, its path.
+          • {extension_data} `any`
+              If the window is supported by an extension, the data it needs
+              to remember.
+          • {extension}? `string`
+              If the window is supported by an extension, the name of the
+              extension.
+          • {jumps}? `(`|finni.core.layout.WinInfo.JumplistEntry|`[],integer)`
+              Window-local jumplist, number of steps from last entry to
+              currently active one
+          • {alt}? `integer`
+              Index of the alternate file for this window in `buflist`, if any
+          • {loclist_win}? |finni.core.WinID|
+              Present for loclist windows. Window ID of the associated window,
+              the one that opens selections (`filewinid`).
+          • {loclists}? `(`|finni.core.Snapshot.QFList|`[],integer)`
+              Location list stack and position of currently active one.
+
+                                                  *finni.core.PassthroughOpts*
+`finni.core.PassthroughOpts` (Alias) ~
+    Type: ~
+      `table`
+
+    Indicates that any unhandled opts are also passed through to custom hooks.
+
+                                                   *finni.core.PendingSession*
+`finni.core.PendingSession` (Class) ~
+
+    Represents a session that has been loaded from a snapshot and needs to
+    be applied still before being able to attach it.
+
+    Fields: ~
+      • {session_file} `string`
+          Path to the session file
+      • {state_dir} `string`
+          Path to the directory holding session-associated data
+      • {context_dir} `string`
+          Directory for shared state between all sessions in the same context
+          (`dir` for manual sessions, project dir for autosessions)
+      • {autosave_enabled} `boolean`
+          When this session is attached, automatically save it in intervals.
+          Defaults to false.
+      • {autosave_interval} `integer`
+          Seconds between autosaves of this session, if enabled. Defaults
+          to 60.
+      • {name} `string`
+      • {tab_scoped} `boolean`
+      • {needs_restore} `true`
+          Indicates this session has been loaded from a snapshot, but not
+          restored yet. This session object cannot be attached yet, it needs
+          to be restored first.
+      • {autosave_notify}? `boolean`
+          Trigger a notification when autosaving this session. Defaults
+          to true.
+      • {on_attach}? |finni.core.Session.AttachHook|
+          A function that’s called when attaching to this session. No
+          global default.
+      • {on_detach}? |finni.core.Session.DetachHook|
+          A function that’s called when detaching from this session. No
+          global default.
+      • {meta}? `table`
+          External data remembered in association with this session. Useful
+          to build on top of the core API.
+      • {options}? `string[]`
+          Save and restore these neovim (global/buffer/tab/window) options
+      • {buf_filter}? `fun(bufnr: integer, opts: `|finni.core.snapshot.CreateOpts|`) -> boolean`
+      • {tab_buf_filter}? `fun(tabpage: integer, bufnr: integer, opts: `|finni.core.snapshot.CreateOpts|`) -> boolean`
+      • {modified}? `(boolean|"auto")`
+          Save/load modified buffers and their undo history. If set to `auto`
+          (default), does not save, but still restores modified buffers.
+      • {jumps}? `boolean`
+          Save/load window-specific jumplists, including current position
+          (yes, for __all windows__, not just the active one like with ShaDa).
+          If set to `auto` (default), does not save, but still restores
+          saved jumplists.
+      • {changelist}? `boolean`
+          Save/load buffer-specific changelist (all buffers) and changelist
+          position (visible buffers only).
+
+          {Important}: Enabling this causes __buffer-local marks to be
+          cleared__ during restoration. Consider tracking `local_marks` in
+          addition to this.
+      • {global_marks}? `boolean`
+          Save/load global marks (A-Z, not 0-9 currently).
+
+          _Only in global sessions._
+      • {local_marks}? `boolean`
+          Save/load buffer-specific (local) marks.
+
+          {Note}: Enable this if you track the `changelist`.
+      • {search_history}? `(integer|boolean)`
+          Maximum number of search history items to persist. Defaults to
+          false. If set to `true`, maps to the 'history' option.
+
+          _Only in global sessions._
+      • {command_history}? `(integer|boolean)`
+          Maximum number of command history items to persist. Defaults to
+          false. If set to `true`, maps to the 'history' option.
+
+          _Only in global sessions._
+      • {input_history}? `(integer|boolean)`
+          Maximum number of input history items to persist. Defaults to false.
+          If set to `true`, maps to the 'history' option.
+
+          _Only in global sessions._
+      • {expr_history}? `boolean`
+          Persist expression history. Defaults to false. {Note}: Cannot set
+          limit (currently), no direct support by neovim.
+
+          _Only in global sessions._
+      • {debug_history}? `boolean`
+          Persist debug history. Defaults to false. {Note}: Cannot set limit
+          (currently), no direct support by neovim.
+
+          _Only in global sessions._
+      • {tabid}? |finni.core.TabID|
+
+                                             *finni.core.PendingSession.new()*
+new({name}, {session_file}, {state_dir}, {context_dir}, {opts}, {tabid}, {needs_restore})
+
+    Parameters: ~
+      • {name} `string`
+      • {session_file} `string`
+      • {state_dir} `string`
+      • {context_dir} `string`
+      • {opts} |finni.core.Session.InitOptsWithMeta|
+      • {tabid} `true`
+      • {needs_restore} `true`
+
+    Returns: ~
+        |finni.core.PendingSession|`<`|finni.core.Session.TabTarget|`>`
+
+                                   *finni.core.PendingSession.from_snapshot()*
+from_snapshot({name}, {session_file}, {state_dir}, {context_dir}, {opts})
+    Create a new session by loading a snapshot, which you need to restore
+    explicitly.
+
+    Parameters: ~
+      • {name} `string`
+      • {session_file} `string`
+      • {state_dir} `string`
+      • {context_dir} `string`
+      • {opts} `(`|finni.core.Session.InitOptsWithMeta|` & `|finni.SideEffects.SilenceErrors|`)`
+          Table fields:
+          • {autosave_enabled}? `boolean`
+              When this session is attached, automatically save it in
+              intervals. Defaults to false.
+          • {autosave_interval}? `integer`
+              Seconds between autosaves of this session, if enabled. Defaults
+              to 60.
+          • {autosave_notify}? `boolean`
+              Trigger a notification when autosaving this session. Defaults
+              to true.
+          • {on_attach}? |finni.core.Session.AttachHook|
+              A function that’s called when attaching to this session.
+              No global default.
+          • {on_detach}? |finni.core.Session.DetachHook|
+              A function that’s called when detaching from this session.
+              No global default.
+          • {options}? `string[]`
+              Save and restore these neovim (global/buffer/tab/window) options
+          • {buf_filter}? `fun(bufnr: integer, opts: `|finni.core.snapshot.CreateOpts|`) -> boolean`
+          • {tab_buf_filter}? `fun(tabpage: integer, bufnr: integer, opts: `|finni.core.snapshot.CreateOpts|`) -> boolean`
+          • {modified}? `(boolean|"auto")`
+              Save/load modified buffers and their undo history. If set to
+              `auto` (default), does not save, but still restores modified
+              buffers.
+          • {jumps}? `boolean`
+              Save/load window-specific jumplists, including current position
+              (yes, for __all windows__, not just the active one like with
+              ShaDa). If set to `auto` (default), does not save, but still
+              restores saved jumplists.
+          • {changelist}? `boolean`
+              Save/load buffer-specific changelist (all buffers) and
+              changelist position (visible buffers only).
+
+              {Important}: Enabling this causes __buffer-local marks to be
+              cleared__ during restoration. Consider tracking `local_marks`
+              in addition to this.
+          • {global_marks}? `boolean`
+              Save/load global marks (A-Z, not 0-9 currently).
+
+              _Only in global sessions._
+          • {local_marks}? `boolean`
+              Save/load buffer-specific (local) marks.
+
+              {Note}: Enable this if you track the `changelist`.
+          • {search_history}? `(integer|boolean)`
+              Maximum number of search history items to persist. Defaults to
+              false. If set to `true`, maps to the 'history' option.
+
+              _Only in global sessions._
+          • {command_history}? `(integer|boolean)`
+              Maximum number of command history items to persist. Defaults to
+              false. If set to `true`, maps to the 'history' option.
+
+              _Only in global sessions._
+          • {input_history}? `(integer|boolean)`
+              Maximum number of input history items to persist. Defaults to
+              false. If set to `true`, maps to the 'history' option.
+
+              _Only in global sessions._
+          • {expr_history}? `boolean`
+              Persist expression history. Defaults to false. {Note}: Cannot
+              set limit (currently), no direct support by neovim.
+
+              _Only in global sessions._
+          • {debug_history}? `boolean`
+              Persist debug history. Defaults to false. {Note}: Cannot set
+              limit (currently), no direct support by neovim.
+
+              _Only in global sessions._
+          • {meta}? `table`
+              External data remembered in association with this session.
+              Useful to build on top of the core API.
+          • {silence_errors}? `boolean`
+              Don’t error during this operation
+
+    Returns: ~
+      • {loaded_session}? |finni.core.PendingSession|
+          Session object, if the snapshot could be loaded
+      • {snapshot}? |finni.core.Snapshot|
+          Snapshot data, if it could be loaded
+
+                                        *finni.core.PendingSession:add_hook()*
+PendingSession:add_hook({event}, {hook})
+
+    Parameters: ~
+      • {event} `"detach"`
+      • {hook} |finni.core.Session.DetachHook|
+
+    Returns: ~
+        `self`
+
+PendingSession:update({opts})             *finni.core.PendingSession:update()*
+    Update modifiable options without attaching/detaching a session
+
+    Parameters: ~
+      • {opts} |finni.core.Session.InitOptsWithMeta|
+
+    Returns: ~
+        {modified} `boolean`
+          Indicates whether any config modifications occurred
+
+                                         *finni.core.PendingSession:restore()*
+PendingSession:restore({opts}, {snapshot})
+    Restore a snapshot from disk or memory
+
+    Parameters: ~
+      • {opts}? `(`|finni.core.Session.RestoreOpts|` & `|finni.core.PassthroughOpts|`)`
+          Table fields:
+          • {reset}? `boolean`
+              When detaching a session in the process, unload associated
+              resources/reset everything during the operation when restoring
+              a snapshot.
+          • {silence_errors}? `boolean`
+              Don’t error during this operation
+      • {snapshot}? |finni.core.Snapshot|
+          Snapshot data to restore. If unspecified, loads from file.
+
+          Table fields:
+          • {buffers} |finni.core.Snapshot.BufData|`[]`
+              Buffer-specific data like name, buffer options, local marks,
+              changelist
+          • {tabs} |finni.core.Snapshot.TabData|`[]`
+              Tab-specific and window layout data, including tab cwd and
+              window-specific jumplists
+          • {tab_scoped} `boolean`
+              Whether this snapshot was derived from a single tab
+          • {global} |finni.core.Snapshot.GlobalData|
+              Global snapshot data like process CWD, global options and
+              global marks
+          • {modified}? `table<`|finni.core.BufUUID|`,true?>`
+              List of buffers (identified by internal UUID) whose unsaved
+              modifications were backed up in the snapshot
+          • {buflist} `string[]`
+              List of named buffers that are referenced somewhere in this
+              snapshot. Used to reduce repetition of buffer paths in save
+              file, especially lists of named marks (jumplist, quickfix and
+              location lists).
+
+    Returns: ~
+      • {self} |finni.core.IdleSession|
+          The object itself, but now attachable
+      • {success} `boolean`
+          Whether restoration was successful. Only sensible when
+          `silence_errors` is true.
+
+PendingSession:is_attached()         *finni.core.PendingSession:is_attached()*
+    I couldn’t make TypeGuard<ActiveSession> work properly with method
+    syntax
+
+    Returns: ~
+        `TypeGuard<`|finni.core.ActiveSession|`>`
+
+PendingSession:opts()                       *finni.core.PendingSession:opts()*
+    Turn the session object into opts for snapshot restore/save operations
+
+    Returns: ~
+        `(`|finni.core.Session.Init.Paths|` & `|finni.core.Session.Init.Autosave|` & `|finni.core.Session.Init.Meta|` & `|finni.core.snapshot.CreateOpts|`)`
+
+PendingSession:info()                       *finni.core.PendingSession:info()*
+    Get information about this session
+
+    Returns: ~
+        |finni.core.ActiveSessionInfo|
+
+PendingSession:delete({opts})             *finni.core.PendingSession:delete()*
+    Delete a saved session
+
+    Parameters: ~
+      • {opts}? `(`|finni.SideEffects.Notify|` & `|finni.SideEffects.SilenceErrors|`)`
+          Table fields:
+          • {notify}? `boolean`
+              Notify on success
+          • {silence_errors}? `boolean`
+              Don’t error during this operation
+
+                                               *finni.core.Session.AttachHook*
+`finni.core.Session.AttachHook` (Alias) ~
+    Type: ~
+      `fun(session: `|finni.core.IdleSession|`)`
+
+    Attach hooks can inspect the session. Modifying it in-place should work,
+    but it’s not officially supported.
+
+                                               *finni.core.Session.DetachHook*
+`finni.core.Session.DetachHook` (Alias) ~
+    Type: ~
+      `(fun(session: `|finni.core.ActiveSession|`, reason: (`|finni.core.Session.DetachReasonBuiltin|`|string), opts: (`|finni.core.Session.DetachOpts|` & `|finni.core.PassthroughOpts|`)) -> (`|finni.core.Session.DetachOpts|` & `|finni.core.PassthroughOpts|`))?`
+
+    Detach hooks can modify detach opts in place or return new ones. They
+    can inspect the session. Modifying it in-place should work, but it’s
+    not officially supported.
+
+                                               *finni.core.Session.DetachOpts*
+`finni.core.Session.DetachOpts` (Alias) ~
+    Type: ~
+      `(`|finni.SideEffects.Reset|` & `|finni.SideEffects.Save|`)`
+
+    Options for detaching sessions
+
+    Fields: ~
+      • {reset}? `boolean`
+          When detaching a session in the process, unload associated
+          resources/reset everything during the operation when restoring
+          a snapshot.
+      • {save}? `boolean`
+          Save/override autosave config for affected sessions before the
+          operation
+
+                                      *finni.core.Session.DetachReasonBuiltin*
+`finni.core.Session.DetachReasonBuiltin` (Alias) ~
+    Type: ~
+      `("delete"|"load"|"quit"|"request"|"save"|"tab_closed")`
+
+    Detach reasons are passed to avoid unintended side effects during
+    operations. They are passed to detach hooks as well. These are the ones
+    built in to the core session handling.
+
+                                            *finni.core.Session.Init.Autosave*
+`finni.core.Session.Init.Autosave` (Class) ~
+    Fields: ~
+      • {autosave_enabled}? `boolean`
+          When this session is attached, automatically save it in intervals.
+          Defaults to false.
+      • {autosave_interval}? `integer`
+          Seconds between autosaves of this session, if enabled. Defaults
+          to 60.
+      • {autosave_notify}? `boolean`
+          Trigger a notification when autosaving this session. Defaults
+          to true.
+
+                                               *finni.core.Session.Init.Hooks*
+`finni.core.Session.Init.Hooks` (Class) ~
+    Fields: ~
+      • {on_attach}? |finni.core.Session.AttachHook|
+          A function that’s called when attaching to this session. No
+          global default.
+      • {on_detach}? |finni.core.Session.DetachHook|
+          A function that’s called when detaching from this session. No
+          global default.
+
+                                                *finni.core.Session.Init.Meta*
+`finni.core.Session.Init.Meta` (Class) ~
+    Fields: ~
+      • {meta}? `table`
+          External data remembered in association with this session. Useful
+          to build on top of the core API.
+
+                                               *finni.core.Session.Init.Paths*
+`finni.core.Session.Init.Paths` (Class) ~
+    Fields: ~
+      • {session_file} `string`
+          Path to the session file
+      • {state_dir} `string`
+          Path to the directory holding session-associated data
+      • {context_dir} `string`
+          Directory for shared state between all sessions in the same context
+          (`dir` for manual sessions, project dir for autosessions)
+
                                                  *finni.core.Session.InitOpts*
 `finni.core.Session.InitOpts` (Alias) ~
     Type: ~
-      `(finni.core.Session.Init.Autosave & finni.core.Session.Init.Hooks & finni.core.snapshot.CreateOpts)`
+      `(`|finni.core.Session.Init.Autosave|` & `|finni.core.Session.Init.Hooks|` & `|finni.core.snapshot.CreateOpts|`)`
 
     Options to influence how an attached session is handled.
 
@@ -917,8 +3134,8 @@ RELEVANT TYPES                                      *finni-api-relevant-types*
           global default.
       • {options}? `string[]`
           Save and restore these neovim (global/buffer/tab/window) options
-      • {buf_filter}? `fun(bufnr: integer, opts: finni.core.snapshot.CreateOpts) -> boolean`
-      • {tab_buf_filter}? `fun(tabpage: integer, bufnr: integer, opts: finni.core.snapshot.CreateOpts) -> boolean`
+      • {buf_filter}? `fun(bufnr: integer, opts: `|finni.core.snapshot.CreateOpts|`) -> boolean`
+      • {tab_buf_filter}? `fun(tabpage: integer, bufnr: integer, opts: `|finni.core.snapshot.CreateOpts|`) -> boolean`
       • {modified}? `(boolean|"auto")`
           Save/load modified buffers and their undo history. If set to `auto`
           (default), does not save, but still restores modified buffers.
@@ -968,12 +3185,10 @@ RELEVANT TYPES                                      *finni-api-relevant-types*
 
           _Only in global sessions._
 
-
-
                                          *finni.core.Session.InitOptsWithMeta*
 `finni.core.Session.InitOptsWithMeta` (Alias) ~
     Type: ~
-      `(finni.core.Session.InitOpts & finni.core.Session.Init.Meta)`
+      `(`|finni.core.Session.InitOpts|` & `|finni.core.Session.Init.Meta|`)`
 
     Options to influence how an attached session is handled plus `meta` field,
     which can only be populated by passing it to the session constructor and
@@ -997,8 +3212,8 @@ RELEVANT TYPES                                      *finni-api-relevant-types*
           global default.
       • {options}? `string[]`
           Save and restore these neovim (global/buffer/tab/window) options
-      • {buf_filter}? `fun(bufnr: integer, opts: finni.core.snapshot.CreateOpts) -> boolean`
-      • {tab_buf_filter}? `fun(tabpage: integer, bufnr: integer, opts: finni.core.snapshot.CreateOpts) -> boolean`
+      • {buf_filter}? `fun(bufnr: integer, opts: `|finni.core.snapshot.CreateOpts|`) -> boolean`
+      • {tab_buf_filter}? `fun(tabpage: integer, bufnr: integer, opts: `|finni.core.snapshot.CreateOpts|`) -> boolean`
       • {modified}? `(boolean|"auto")`
           Save/load modified buffers and their undo history. If set to `auto`
           (default), does not save, but still restores modified buffers.
@@ -1051,27 +3266,824 @@ RELEVANT TYPES                                      *finni-api-relevant-types*
           External data remembered in association with this session. Useful
           to build on top of the core API.
 
-
-
-                                               *finni.core.Session.AttachHook*
-`finni.core.Session.AttachHook` (Alias) ~
+                                              *finni.core.Session.RestoreOpts*
+`finni.core.Session.RestoreOpts` (Alias) ~
     Type: ~
-      `fun(session: finni.core.IdleSession)`
+      `(`|finni.SideEffects.Reset|` & `|finni.SideEffects.SilenceErrors|`)`
 
-    Attach hooks can inspect the session. Modifying it in-place should work,
-    but it’s not officially supported.
+    Options for basic snapshot restoration (different from session loading!).
+    Note that `reset` here does not handle detaching other active sessions,
+    it really resets everything if set to true. If set to false, opens a
+    new tab. Handle with care!
 
+    Fields: ~
+      • {reset}? `boolean`
+          When detaching a session in the process, unload associated
+          resources/reset everything during the operation when restoring
+          a snapshot.
+      • {silence_errors}? `boolean`
+          Don’t error during this operation
 
+                                                *finni.core.Session.TabTarget*
+`finni.core.Session.TabTarget` (Class) ~
 
+    The associated session is tab-scoped to this specific tab
 
-                                               *finni.core.Session.DetachHook*
-`finni.core.Session.DetachHook` (Alias) ~
+    Fields: ~
+      • {tab_scoped} `true`
+      • {tabid} |finni.core.TabID|
+
+                                                         *finni.core.Snapshot*
+`finni.core.Snapshot` (Class) ~
+
+    A snapshot of nvim’s state.
+
+    Fields: ~
+      • {buffers} |finni.core.Snapshot.BufData|`[]`
+          Buffer-specific data like name, buffer options, local marks,
+          changelist
+
+          Table fields:
+          • {name} `string`
+              Name of the buffer, usually its path. Can be empty when unsaved
+              modifications are backed up.
+          • {loaded} `boolean`
+              Whether the buffer was loaded.
+          • {options} `table<string,any>`
+              Buffer-specific nvim options.
+          • {last_pos} |finni.core.AnonymousMark|
+              Position of the cursor when this buffer was last shown in a
+              window (`"` mark). Only updated once a buffer becomes invisible.
+              Visible buffer cursors are backed up in the window layout data.
+          • {uuid} `string`
+              A buffer-specific UUID intended to track it between sessions.
+              Required to save/restore unnamed buffers.
+          • {in_win} `boolean`
+              Whether the buffer is visible in at least one window.
+          • {changelist}? `(`|finni.core.Snapshot.BufData.ChangelistItem|`[],integer)`
+              Changelist and changelist position (backwards from most recent
+              entry) for this buffer. Position is always `0` when invisible
+              buffers are saved.
+          • {marks}? `table<string,`|finni.core.AnonymousMark|`?>`
+              Saved buffer-local marks, if enabled
+          • {bt}? `("acwrite"|"help"|"nofile"|"nowrite"|"quickfix"|"terminal"...)`
+              `buftype` option of buffer. Unset if empty (`""`).
+      • {tabs} |finni.core.Snapshot.TabData|`[]`
+          Tab-specific and window layout data, including tab cwd and
+          window-specific jumplists
+
+          Table fields:
+          • {options} `table<string,any>`
+              Tab-specific nvim options. Currently only `cmdheight`.
+          • {wins} |finni.core.layout.WinLayout|
+              Window layout enriched with window-specific snapshot data
+          • {cwd}? `string`
+              Tab-local cwd, if different from the global one or a tab-scoped
+              snapshot
+          • {current}? `boolean`
+      • {tab_scoped} `boolean`
+          Whether this snapshot was derived from a single tab
+      • {global} |finni.core.Snapshot.GlobalData|
+          Global snapshot data like process CWD, global options and global
+          marks
+
+          Table fields:
+          • {cwd} `string`
+              Nvim’s global cwd.
+          • {height} `integer`
+              `vim.o.lines` - `vim.o.cmdheight`
+          • {width} `integer`
+              `vim.o.columns`
+          • {options} `table<string,any>`
+              Global nvim options
+          • {marks}? `table<string,`|finni.core.FileMark|`?>`
+              Saved global marks, if enabled
+          • {search_history} `boolean`
+              Whether search history was saved in session-associated ShaDa
+              file. If enabled, corresponding history in nvim process should
+              be cleared before loading.
+          • {command_history} `boolean`
+              Whether command history was saved in session-associated ShaDa
+              file. If enabled, corresponding history in nvim process should
+              be cleared before loading.
+          • {input_history} `boolean`
+              Whether input history was saved in session-associated ShaDa
+              file. If enabled, corresponding history in nvim process should
+              be cleared before loading.
+          • {expr_history} `boolean`
+              Whether expression history was saved in session-associated
+              ShaDa file. If enabled, corresponding history in nvim process
+              should be cleared before loading.
+          • {debug_history} `boolean`
+              Whether debug history was saved in session-associated ShaDa
+              file. If enabled, corresponding history in nvim process should
+              be cleared before loading.
+      • {buflist} `string[]`
+          List of named buffers that are referenced somewhere in this
+          snapshot. Used to reduce repetition of buffer paths in save file,
+          especially lists of named marks (jumplist, quickfix and location
+          lists).
+      • {modified}? `table<`|finni.core.BufUUID|`,true?>`
+          List of buffers (identified by internal UUID) whose unsaved
+          modifications were backed up in the snapshot
+
+                                                 *finni.core.Snapshot.BufData*
+`finni.core.Snapshot.BufData` (Class) ~
+
+    Buffer-specific snapshot data like path, loaded state, options and last
+    cursor position.
+
+    Fields: ~
+      • {name} `string`
+          Name of the buffer, usually its path. Can be empty when unsaved
+          modifications are backed up.
+      • {loaded} `boolean`
+          Whether the buffer was loaded.
+      • {options} `table<string,any>`
+          Buffer-specific nvim options.
+      • {last_pos} |finni.core.AnonymousMark|
+          Position of the cursor when this buffer was last shown in a window
+          (`"` mark). Only updated once a buffer becomes invisible. Visible
+          buffer cursors are backed up in the window layout data.
+
+          Table fields:
+          • {[1]} `integer`
+              Line number
+          • {[2]} `integer`
+              Column number
+      • {uuid} `string`
+          A buffer-specific UUID intended to track it between sessions.
+          Required to save/restore unnamed buffers.
+      • {in_win} `boolean`
+          Whether the buffer is visible in at least one window.
+      • {changelist}? `(`|finni.core.Snapshot.BufData.ChangelistItem|`[],integer)`
+          Changelist and changelist position (backwards from most recent
+          entry) for this buffer. Position is always `0` when invisible
+          buffers are saved.
+      • {marks}? `table<string,`|finni.core.AnonymousMark|`?>`
+          Saved buffer-local marks, if enabled
+      • {bt}? `("acwrite"|"help"|"nofile"|"nowrite"|"quickfix"|"terminal"...)`
+          `buftype` option of buffer. Unset if empty (`""`).
+
+                                  *finni.core.Snapshot.BufData.ChangelistItem*
+`finni.core.Snapshot.BufData.ChangelistItem` (Class) ~
+    Fields: ~
+      • {[1]} `integer`
+          Line number
+      • {[2]} `integer`
+          Column number
+
+                                              *finni.core.snapshot.CreateOpts*
+`finni.core.snapshot.CreateOpts` (Class) ~
+
+    Options to influence which data is included in a snapshot.
+
+    Fields: ~
+      • {options}? `string[]`
+          Save and restore these neovim (global/buffer/tab/window) options
+      • {buf_filter}? `fun(bufnr: integer, opts: `|finni.core.snapshot.CreateOpts|`) -> boolean`
+      • {tab_buf_filter}? `fun(tabpage: integer, bufnr: integer, opts: `|finni.core.snapshot.CreateOpts|`) -> boolean`
+      • {modified}? `(boolean|"auto")`
+          Save/load modified buffers and their undo history. If set to `auto`
+          (default), does not save, but still restores modified buffers.
+      • {jumps}? `boolean`
+          Save/load window-specific jumplists, including current position
+          (yes, for __all windows__, not just the active one like with ShaDa).
+          If set to `auto` (default), does not save, but still restores
+          saved jumplists.
+      • {changelist}? `boolean`
+          Save/load buffer-specific changelist (all buffers) and changelist
+          position (visible buffers only).
+
+          {Important}: Enabling this causes __buffer-local marks to be
+          cleared__ during restoration. Consider tracking `local_marks` in
+          addition to this.
+      • {global_marks}? `boolean`
+          Save/load global marks (A-Z, not 0-9 currently).
+
+          _Only in global sessions._
+      • {local_marks}? `boolean`
+          Save/load buffer-specific (local) marks.
+
+          {Note}: Enable this if you track the `changelist`.
+      • {search_history}? `(integer|boolean)`
+          Maximum number of search history items to persist. Defaults to
+          false. If set to `true`, maps to the 'history' option.
+
+          _Only in global sessions._
+      • {command_history}? `(integer|boolean)`
+          Maximum number of command history items to persist. Defaults to
+          false. If set to `true`, maps to the 'history' option.
+
+          _Only in global sessions._
+      • {input_history}? `(integer|boolean)`
+          Maximum number of input history items to persist. Defaults to false.
+          If set to `true`, maps to the 'history' option.
+
+          _Only in global sessions._
+      • {expr_history}? `boolean`
+          Persist expression history. Defaults to false. {Note}: Cannot set
+          limit (currently), no direct support by neovim.
+
+          _Only in global sessions._
+      • {debug_history}? `boolean`
+          Persist debug history. Defaults to false. {Note}: Cannot set limit
+          (currently), no direct support by neovim.
+
+          _Only in global sessions._
+
+                                              *finni.core.Snapshot.GlobalData*
+`finni.core.Snapshot.GlobalData` (Class) ~
+
+    Global snapshot data like cwd, height/width and global options.
+
+    Fields: ~
+      • {cwd} `string`
+          Nvim’s global cwd.
+      • {height} `integer`
+          `vim.o.lines` - `vim.o.cmdheight`
+      • {width} `integer`
+          `vim.o.columns`
+      • {options} `table<string,any>`
+          Global nvim options
+      • {search_history} `boolean`
+          Whether search history was saved in session-associated ShaDa
+          file. If enabled, corresponding history in nvim process should be
+          cleared before loading.
+      • {command_history} `boolean`
+          Whether command history was saved in session-associated ShaDa
+          file. If enabled, corresponding history in nvim process should be
+          cleared before loading.
+      • {input_history} `boolean`
+          Whether input history was saved in session-associated ShaDa file.
+          If enabled, corresponding history in nvim process should be cleared
+          before loading.
+      • {expr_history} `boolean`
+          Whether expression history was saved in session-associated ShaDa
+          file. If enabled, corresponding history in nvim process should be
+          cleared before loading.
+      • {debug_history} `boolean`
+          Whether debug history was saved in session-associated ShaDa file.
+          If enabled, corresponding history in nvim process should be cleared
+          before loading.
+      • {marks}? `table<string,`|finni.core.FileMark|`?>`
+          Saved global marks, if enabled
+
+                                                  *finni.core.Snapshot.QFList*
+`finni.core.Snapshot.QFList` (Class) ~
+
+    Represents a quickfix/location list
+
+    Fields: ~
+      • {idx} `integer`
+          Current position in list
+      • {title} `string`
+          Title of list
+      • {context} `any`
+          Arbitrary context for this list, may be used by plugins
+      • {quickfixtextfunc} `string`
+          Function to customize the displayed text
+      • {items} |finni.core.Snapshot.QFListItem|`[]`
+          Items in the list
+
+          Table fields:
+          • {filename}? `integer`
+              Index of path of the file this entry points to in `buflist`
+          • {module} `string`
+              Module name (?)
+          • {lnum} `integer`
+              Referenced line in the file, 1-indexed
+          • {end_lnum}? `integer`
+              For multiline items, last referenced line
+          • {col} `integer`
+              Referenced column in the line of the file, also 1-indexed
+          • {end_col}? `integer`
+              For ranged items, last referenced column number
+          • {vcol} `boolean`
+              Whether `col` is visual index or byte index
+          • {nr} `integer`
+              Item index in the list
+          • {pattern} `string`
+              Search pattern used to locate the item
+          • {text} `string`
+              Item description
+          • {type} `string`
+              Type of the item (?)
+          • {valid} `boolean`
+              Whether error message was recognized (?)
+      • {efm}? `string`
+          Error format string to use for parsing lines
+
+                                                 *finni.core.Snapshot.TabData*
+`finni.core.Snapshot.TabData` (Class) ~
+
+    Tab-specific (options, cwd) and window layout snapshot data.
+
+    Fields: ~
+      • {options} `table<string,any>`
+          Tab-specific nvim options. Currently only `cmdheight`.
+      • {wins} |finni.core.layout.WinLayout|
+          Window layout enriched with window-specific snapshot data
+      • {cwd}? `string`
+          Tab-local cwd, if different from the global one or a tab-scoped
+          snapshot
+      • {current}? `boolean`
+
+                                                            *finni.core.TabID*
+`finni.core.TabID` (Alias) ~
     Type: ~
-      `(fun(session: finni.core.ActiveSession, reason: (finni.core.Session.DetachReasonBuiltin|string), opts: (finni.core.Session.DetachOpts & finni.core.PassthroughOpts)) -> (finni.core.Session.DetachOpts & finni.core.PassthroughOpts))?`
+      `integer`
 
-    Detach hooks can modify detach opts in place or return new ones. They
-    can inspect the session. Modifying it in-place should work, but it’s
-    not officially supported.
+    Nvim tab ID
+
+                                                            *finni.core.WinID*
+`finni.core.WinID` (Alias) ~
+    Type: ~
+      `integer`
+
+    Nvim window ID
+
+                                                             *finni.log.Level*
+`finni.log.Level` (Alias) ~
+    Type: ~
+      `("TRACE"|"DEBUG"|"INFO"|"WARN"|"ERROR"|"OFF")`
+
+    Log level name in uppercase, for internal references and log output
+
+                                                              *finni.log.Line*
+`finni.log.Line` (Class) ~
+
+    Log call information passed to `handler`
+
+    Fields: ~
+      • {level} |finni.log.Level|
+          Name of log level, uppercase
+      • {message} `string`
+          Final, formatted log message
+      • {timestamp} `integer`
+          UNIX timestamp of log message
+      • {hrtime} `number`
+          High-resolution time of log message (`[ns]`, arbitrary anchor)
+      • {src_path} `string`
+          Absolute path to the file the log call originated from
+      • {src_line} `integer`
+          Line in `src_path` the log call originated from
+
+                                                    *finni.session.DeleteOpts*
+`finni.session.DeleteOpts` (Alias) ~
+    Type: ~
+      `(`|finni.session.DirParam|` & `|finni.SideEffects.Notify|` & `|finni.SideEffects.Reset|` & `|finni.SideEffects.SilenceErrors|`)`
+
+    API options for `session.delete`
+
+    Fields: ~
+      • {dir}? `string`
+          Name of session directory (overrides config.dir)
+      • {notify}? `boolean`
+          Notify on success
+      • {reset}? `boolean`
+          When detaching a session in the process, unload associated
+          resources/reset everything during the operation when restoring
+          a snapshot.
+      • {silence_errors}? `boolean`
+          Don’t error during this operation
+
+                                                      *finni.session.DirParam*
+`finni.session.DirParam` (Class) ~
+    Fields: ~
+      • {dir}? `string`
+          Name of session directory (overrides config.dir)
+
+                                                      *finni.session.LoadOpts*
+`finni.session.LoadOpts` (Alias) ~
+    Type: ~
+      `(`|finni.session.DirParam|` & `|finni.core.Session.InitOptsWithMeta|` & `|finni.SideEffects.Attach|` & `|finni.SideEffects.ResetAuto|` & `|finni.SideEffects.Save|` & `|finni.SideEffects.SilenceErrors|`)`
+
+    API options for `session.load`
+
+    Fields: ~
+      • {dir}? `string`
+          Name of session directory (overrides config.dir)
+      • {autosave_enabled}? `boolean`
+          When this session is attached, automatically save it in intervals.
+          Defaults to false.
+      • {autosave_interval}? `integer`
+          Seconds between autosaves of this session, if enabled. Defaults
+          to 60.
+      • {autosave_notify}? `boolean`
+          Trigger a notification when autosaving this session. Defaults
+          to true.
+      • {on_attach}? |finni.core.Session.AttachHook|
+          A function that’s called when attaching to this session. No
+          global default.
+      • {on_detach}? |finni.core.Session.DetachHook|
+          A function that’s called when detaching from this session. No
+          global default.
+      • {options}? `string[]`
+          Save and restore these neovim (global/buffer/tab/window) options
+      • {buf_filter}? `fun(bufnr: integer, opts: `|finni.core.snapshot.CreateOpts|`) -> boolean`
+      • {tab_buf_filter}? `fun(tabpage: integer, bufnr: integer, opts: `|finni.core.snapshot.CreateOpts|`) -> boolean`
+      • {modified}? `(boolean|"auto")`
+          Save/load modified buffers and their undo history. If set to `auto`
+          (default), does not save, but still restores modified buffers.
+      • {jumps}? `boolean`
+          Save/load window-specific jumplists, including current position
+          (yes, for __all windows__, not just the active one like with ShaDa).
+          If set to `auto` (default), does not save, but still restores
+          saved jumplists.
+      • {changelist}? `boolean`
+          Save/load buffer-specific changelist (all buffers) and changelist
+          position (visible buffers only).
+
+          {Important}: Enabling this causes __buffer-local marks to be
+          cleared__ during restoration. Consider tracking `local_marks` in
+          addition to this.
+      • {global_marks}? `boolean`
+          Save/load global marks (A-Z, not 0-9 currently).
+
+          _Only in global sessions._
+      • {local_marks}? `boolean`
+          Save/load buffer-specific (local) marks.
+
+          {Note}: Enable this if you track the `changelist`.
+      • {search_history}? `(integer|boolean)`
+          Maximum number of search history items to persist. Defaults to
+          false. If set to `true`, maps to the 'history' option.
+
+          _Only in global sessions._
+      • {command_history}? `(integer|boolean)`
+          Maximum number of command history items to persist. Defaults to
+          false. If set to `true`, maps to the 'history' option.
+
+          _Only in global sessions._
+      • {input_history}? `(integer|boolean)`
+          Maximum number of input history items to persist. Defaults to false.
+          If set to `true`, maps to the 'history' option.
+
+          _Only in global sessions._
+      • {expr_history}? `boolean`
+          Persist expression history. Defaults to false. {Note}: Cannot set
+          limit (currently), no direct support by neovim.
+
+          _Only in global sessions._
+      • {debug_history}? `boolean`
+          Persist debug history. Defaults to false. {Note}: Cannot set limit
+          (currently), no direct support by neovim.
+
+          _Only in global sessions._
+      • {meta}? `table`
+          External data remembered in association with this session. Useful
+          to build on top of the core API.
+      • {attach}? `boolean`
+          Attach to/stay attached to session after operation
+      • {reset}? `(boolean|"auto")`
+          When detaching a session in the process, unload associated
+          resources/reset everything during the operation when restoring a
+          snapshot. `auto` resets only for global sessions.
+      • {save}? `boolean`
+          Save/override autosave config for affected sessions before the
+          operation
+      • {silence_errors}? `boolean`
+          Don’t error during this operation
+
+                                                      *finni.session.SaveOpts*
+`finni.session.SaveOpts` (Alias) ~
+    Type: ~
+      `(`|finni.session.DirParam|` & `|finni.core.Session.InitOptsWithMeta|` & `|finni.SideEffects.Attach|` & `|finni.SideEffects.Notify|` & `|finni.SideEffects.Reset|`)`
+
+    API options for `session.save`
+
+    Fields: ~
+      • {dir}? `string`
+          Name of session directory (overrides config.dir)
+      • {autosave_enabled}? `boolean`
+          When this session is attached, automatically save it in intervals.
+          Defaults to false.
+      • {autosave_interval}? `integer`
+          Seconds between autosaves of this session, if enabled. Defaults
+          to 60.
+      • {autosave_notify}? `boolean`
+          Trigger a notification when autosaving this session. Defaults
+          to true.
+      • {on_attach}? |finni.core.Session.AttachHook|
+          A function that’s called when attaching to this session. No
+          global default.
+      • {on_detach}? |finni.core.Session.DetachHook|
+          A function that’s called when detaching from this session. No
+          global default.
+      • {options}? `string[]`
+          Save and restore these neovim (global/buffer/tab/window) options
+      • {buf_filter}? `fun(bufnr: integer, opts: `|finni.core.snapshot.CreateOpts|`) -> boolean`
+      • {tab_buf_filter}? `fun(tabpage: integer, bufnr: integer, opts: `|finni.core.snapshot.CreateOpts|`) -> boolean`
+      • {modified}? `(boolean|"auto")`
+          Save/load modified buffers and their undo history. If set to `auto`
+          (default), does not save, but still restores modified buffers.
+      • {jumps}? `boolean`
+          Save/load window-specific jumplists, including current position
+          (yes, for __all windows__, not just the active one like with ShaDa).
+          If set to `auto` (default), does not save, but still restores
+          saved jumplists.
+      • {changelist}? `boolean`
+          Save/load buffer-specific changelist (all buffers) and changelist
+          position (visible buffers only).
+
+          {Important}: Enabling this causes __buffer-local marks to be
+          cleared__ during restoration. Consider tracking `local_marks` in
+          addition to this.
+      • {global_marks}? `boolean`
+          Save/load global marks (A-Z, not 0-9 currently).
+
+          _Only in global sessions._
+      • {local_marks}? `boolean`
+          Save/load buffer-specific (local) marks.
+
+          {Note}: Enable this if you track the `changelist`.
+      • {search_history}? `(integer|boolean)`
+          Maximum number of search history items to persist. Defaults to
+          false. If set to `true`, maps to the 'history' option.
+
+          _Only in global sessions._
+      • {command_history}? `(integer|boolean)`
+          Maximum number of command history items to persist. Defaults to
+          false. If set to `true`, maps to the 'history' option.
+
+          _Only in global sessions._
+      • {input_history}? `(integer|boolean)`
+          Maximum number of input history items to persist. Defaults to false.
+          If set to `true`, maps to the 'history' option.
+
+          _Only in global sessions._
+      • {expr_history}? `boolean`
+          Persist expression history. Defaults to false. {Note}: Cannot set
+          limit (currently), no direct support by neovim.
+
+          _Only in global sessions._
+      • {debug_history}? `boolean`
+          Persist debug history. Defaults to false. {Note}: Cannot set limit
+          (currently), no direct support by neovim.
+
+          _Only in global sessions._
+      • {meta}? `table`
+          External data remembered in association with this session. Useful
+          to build on top of the core API.
+      • {attach}? `boolean`
+          Attach to/stay attached to session after operation
+      • {notify}? `boolean`
+          Notify on success
+      • {reset}? `boolean`
+          When detaching a session in the process, unload associated
+          resources/reset everything during the operation when restoring
+          a snapshot.
+
+                                                    *finni.SideEffects.Attach*
+`finni.SideEffects.Attach` (Class) ~
+    Fields: ~
+      • {attach}? `boolean`
+          Attach to/stay attached to session after operation
+
+                                                    *finni.SideEffects.Notify*
+`finni.SideEffects.Notify` (Class) ~
+    Fields: ~
+      • {notify}? `boolean`
+          Notify on success
+
+                                                     *finni.SideEffects.Reset*
+`finni.SideEffects.Reset` (Class) ~
+    Fields: ~
+      • {reset}? `boolean`
+          When detaching a session in the process, unload associated
+          resources/reset everything during the operation when restoring
+          a snapshot.
+
+                                                 *finni.SideEffects.ResetAuto*
+`finni.SideEffects.ResetAuto` (Class) ~
+    Fields: ~
+      • {reset}? `(boolean|"auto")`
+          When detaching a session in the process, unload associated
+          resources/reset everything during the operation when restoring a
+          snapshot. `auto` resets only for global sessions.
+
+                                                      *finni.SideEffects.Save*
+`finni.SideEffects.Save` (Class) ~
+    Fields: ~
+      • {save}? `boolean`
+          Save/override autosave config for affected sessions before the
+          operation
+
+                                             *finni.SideEffects.SilenceErrors*
+`finni.SideEffects.SilenceErrors` (Class) ~
+    Fields: ~
+      • {silence_errors}? `boolean`
+          Don’t error during this operation
+
+                                                *finni.UserConfig.autosession*
+`finni.UserConfig.autosession` (Class) ~
+
+    Configure autosession behavior and contents
+
+    Fields: ~
+      • {config}? |finni.core.Session.InitOpts|
+          Save/load configuration for autosessions
+
+          Table fields:
+          • {autosave_enabled}? `boolean`
+              When this session is attached, automatically save it in
+              intervals. Defaults to false.
+          • {autosave_interval}? `integer`
+              Seconds between autosaves of this session, if enabled. Defaults
+              to 60.
+          • {autosave_notify}? `boolean`
+              Trigger a notification when autosaving this session. Defaults
+              to true.
+          • {on_attach}? |finni.core.Session.AttachHook|
+              A function that’s called when attaching to this session.
+              No global default.
+          • {on_detach}? |finni.core.Session.DetachHook|
+              A function that’s called when detaching from this session.
+              No global default.
+          • {options}? `string[]`
+              Save and restore these neovim (global/buffer/tab/window) options
+          • {buf_filter}? `fun(bufnr: integer, opts: `|finni.core.snapshot.CreateOpts|`) -> boolean`
+          • {tab_buf_filter}? `fun(tabpage: integer, bufnr: integer, opts: `|finni.core.snapshot.CreateOpts|`) -> boolean`
+          • {modified}? `(boolean|"auto")`
+              Save/load modified buffers and their undo history. If set to
+              `auto` (default), does not save, but still restores modified
+              buffers.
+          • {jumps}? `boolean`
+              Save/load window-specific jumplists, including current position
+              (yes, for __all windows__, not just the active one like with
+              ShaDa). If set to `auto` (default), does not save, but still
+              restores saved jumplists.
+          • {changelist}? `boolean`
+              Save/load buffer-specific changelist (all buffers) and
+              changelist position (visible buffers only).
+
+              {Important}: Enabling this causes __buffer-local marks to be
+              cleared__ during restoration. Consider tracking `local_marks`
+              in addition to this.
+          • {global_marks}? `boolean`
+              Save/load global marks (A-Z, not 0-9 currently).
+
+              _Only in global sessions._
+          • {local_marks}? `boolean`
+              Save/load buffer-specific (local) marks.
+
+              {Note}: Enable this if you track the `changelist`.
+          • {search_history}? `(integer|boolean)`
+              Maximum number of search history items to persist. Defaults to
+              false. If set to `true`, maps to the 'history' option.
+
+              _Only in global sessions._
+          • {command_history}? `(integer|boolean)`
+              Maximum number of command history items to persist. Defaults to
+              false. If set to `true`, maps to the 'history' option.
+
+              _Only in global sessions._
+          • {input_history}? `(integer|boolean)`
+              Maximum number of input history items to persist. Defaults to
+              false. If set to `true`, maps to the 'history' option.
+
+              _Only in global sessions._
+          • {expr_history}? `boolean`
+              Persist expression history. Defaults to false. {Note}: Cannot
+              set limit (currently), no direct support by neovim.
+
+              _Only in global sessions._
+          • {debug_history}? `boolean`
+              Persist debug history. Defaults to false. {Note}: Cannot set
+              limit (currently), no direct support by neovim.
+
+              _Only in global sessions._
+      • {dir}? `string`
+          Name of the directory to store autosession projects in. Interpreted
+          relative to `$XDG_STATE_HOME/$NVIM_APPNAME`.
+      • {spec}? `fun(cwd: string) -> `|finni.auto.AutosessionSpec|`?`
+      • {workspace}? `fun(cwd: string) -> (string,boolean)`
+      • {project_name}? `fun(workspace: string, git_info: `|finni.auto.AutosessionSpec.GitInfo|`?) -> string`
+      • {session_name}? `fun(meta: {...}) -> string`
+      • {enabled}? `fun(meta: {...}) -> boolean`
+      • {load_opts}? `fun(meta: {...}) -> `|finni.auto.LoadOpts|`?`
+
+                                                       *finni.UserConfig.load*
+`finni.UserConfig.load` (Class) ~
+
+    Configure session list information detail and sort order
+
+    Fields: ~
+      • {detail}? `boolean`
+          Show more detail about the sessions when selecting one to load.
+          Disable if it causes lag.
+      • {order}? `("modification_time"|"creation_time"|"filename")`
+          Session list order
+
+                                                        *finni.UserConfig.log*
+`finni.UserConfig.log` (Class) ~
+
+    Configure plugin logging
+
+    Fields: ~
+      • {level}? `("trace"|"debug"|"info"|"warn"|"error"|"off")`
+          Minimum level to log at. Defaults to `warn`.
+      • {notify_level}? `("trace"|"debug"|"info"|"warn"|"error"|"off")`
+          Minimum level to use `vim.notify` for. Defaults to `warn`.
+      • {notify_opts}? `table`
+          Options to pass to `vim.notify`. Defaults to `{ title = "Finni" }`
+      • {format}? `string`
+          Log line format string. Note that this works
+          like Python’s f-strings. Defaults to
+          `[%(level)s %(dtime)s] %(message)s%(src_sep)s[%(src_path)s:%(src_line)s]`.
+          Available parameters: * `level` Uppercase level name * `message`
+          Log message * `dtime` Formatted date/time string * `hrtime` Time
+          in `[ns]` without absolute anchor * `src_path` Path to the file
+          that called the log function * `src_line` Line in `src_path` that
+          called the log function * `src_sep` Whitespace between log line
+          and source of call, 2 tabs for single line, newline + tab for
+          multiline log messages
+      • {notify_format}? `string`
+          Same as `format`, but for `vim.notify` message display. Defaults
+          to `%(message)s`.
+      • {time_format}? `string`
+          `strftime` format string used for rendering time of call. Defaults
+          to `%Y-%m-%d %H:%M:%S`
+      • {handler}? `fun(line: `|finni.log.Line|`)`
+
+                                                    *finni.UserConfig.session*
+`finni.UserConfig.session` (Class) ~
+
+    Configure default session behavior and contents, affects both manual
+    and autosessions.
+
+    Fields: ~
+      • {autosave_enabled}? `boolean`
+          When this session is attached, automatically save it in intervals.
+          Defaults to false.
+      • {autosave_interval}? `integer`
+          Seconds between autosaves of this session, if enabled. Defaults
+          to 60.
+      • {autosave_notify}? `boolean`
+          Trigger a notification when autosaving this session. Defaults
+          to true.
+      • {on_attach}? |finni.core.Session.AttachHook|
+          A function that’s called when attaching to this session. No
+          global default.
+      • {on_detach}? |finni.core.Session.DetachHook|
+          A function that’s called when detaching from this session. No
+          global default.
+      • {options}? `string[]`
+          Save and restore these neovim (global/buffer/tab/window) options
+      • {buf_filter}? `fun(bufnr: integer, opts: `|finni.core.snapshot.CreateOpts|`) -> boolean`
+      • {tab_buf_filter}? `fun(tabpage: integer, bufnr: integer, opts: `|finni.core.snapshot.CreateOpts|`) -> boolean`
+      • {modified}? `(boolean|"auto")`
+          Save/load modified buffers and their undo history. If set to `auto`
+          (default), does not save, but still restores modified buffers.
+      • {jumps}? `boolean`
+          Save/load window-specific jumplists, including current position
+          (yes, for __all windows__, not just the active one like with ShaDa).
+          If set to `auto` (default), does not save, but still restores
+          saved jumplists.
+      • {changelist}? `boolean`
+          Save/load buffer-specific changelist (all buffers) and changelist
+          position (visible buffers only).
+
+          {Important}: Enabling this causes __buffer-local marks to be
+          cleared__ during restoration. Consider tracking `local_marks` in
+          addition to this.
+      • {global_marks}? `boolean`
+          Save/load global marks (A-Z, not 0-9 currently).
+
+          _Only in global sessions._
+      • {local_marks}? `boolean`
+          Save/load buffer-specific (local) marks.
+
+          {Note}: Enable this if you track the `changelist`.
+      • {search_history}? `(integer|boolean)`
+          Maximum number of search history items to persist. Defaults to
+          false. If set to `true`, maps to the 'history' option.
+
+          _Only in global sessions._
+      • {command_history}? `(integer|boolean)`
+          Maximum number of command history items to persist. Defaults to
+          false. If set to `true`, maps to the 'history' option.
+
+          _Only in global sessions._
+      • {input_history}? `(integer|boolean)`
+          Maximum number of input history items to persist. Defaults to false.
+          If set to `true`, maps to the 'history' option.
+
+          _Only in global sessions._
+      • {expr_history}? `boolean`
+          Persist expression history. Defaults to false. {Note}: Cannot set
+          limit (currently), no direct support by neovim.
+
+          _Only in global sessions._
+      • {debug_history}? `boolean`
+          Persist debug history. Defaults to false. {Note}: Cannot set limit
+          (currently), no direct support by neovim.
+
+          _Only in global sessions._
+      • {dir}? `string`
+          Name of the directory to store regular sessions in. Interpreted
+          relative to `$XDG_STATE_HOME/$NVIM_APPNAME`.
 
 
 

@@ -91,15 +91,9 @@ If you want to trigger autosession mode when Neovim starts, you need to set `g:f
 ```lua
 {{ extract_lines("lua/finni/config.lua", start="^---@type Config$", stop="^}$", skip_start=1, exclude=".*@diagnostic.*")[17:] }}
 ```
-{%- endsection %}
+{%-   endsection %}
 
-{%- set conf = doc.get("finni.UserConfig") %}
-{{ conf }}
-{%- for field in conf.fields.values() %}
-{%-   if field.typ.inner.kind.value == "class" %}
-{{ doc.get(field.typ.inner | str) }}
-{%-   endif %}
-{%- endfor %}
+{{- doc.get("finni.UserConfig") }}
 {%- endsection %}
 
 {%- section "Recipes" %}
@@ -239,15 +233,12 @@ vim.g.finni_config = {
 {{ doc.get("finni.auto") }}
 {%-   endsection %}
 {%-   section "Relevant Types" %}
-{{ doc.get("finni.core.Session.InitOpts") }}
-{{ doc.get("finni.core.Session.InitOptsWithMeta") }}
-{{ doc.get("finni.core.Session.AttachHook") }}
-{{ doc.get("finni.core.Session.DetachHook") }}
+{{ typeref }}
 {%-   endsection %}
 {%- endsection %}
 
 {%- section "Extensions" %}
-{%- section "Built-in" with markdown=true %}
+{%-   section "Built-in" with markdown=true %}
 * **quickfix**:
 
   Persist all quickfix lists, currently active list, active position in list and quickfix window.
@@ -266,8 +257,8 @@ vim.g.finni_config = {
 
   Note: Customized from the one embedded in `oil.nvim` to correctly restore view.
 
-{%- endsection %}
-{%- section "External" with markdown=true %}
+{%-   endsection %}
+{%-   section "External" with markdown=true %}
 Here are some examples of external extensions:
 
 * [**aerial.nvim**](https://github.com/stevearc/aerial.nvim):
@@ -277,7 +268,7 @@ Here are some examples of external extensions:
 * [**overseer.nvim**](https://github.com/stevearc/overseer.nvim):
 
   Note: For Resession, which is compatible with Finni.
-{%- endsection %}
+{%-   endsection %}
 {%- endsection %}
 {%- section "FAQ" %}
 **Q: Why another session plugin?**
